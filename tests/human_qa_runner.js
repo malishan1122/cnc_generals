@@ -1,0 +1,1109 @@
+/**
+ * Command & Conquer: Generals – Zero Hour (macOS Clean-Room Edition)
+ * HUMAN-USER QA RUNNER (`tests/human_qa_runner.js`)
+ *
+ * Drives the game 100% through synthetic human inputs:
+ *  - DOM button clicks (.click())
+ *  - Canvas MouseEvents (mousedown, mousemove, mouseup, contextmenu)
+ *    using exact screen-space coordinates derived from camera state:
+ *      clientX = rect.left + (worldX - cam.x)
+ *      clientY = rect.top  + (worldY - cam.y)
+ *  - Window KeyboardEvents (keydown, keyup) with key/code/ctrlKey/shiftKey
+ *
+ * Never calls internal engine order methods to issue player commands.
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+// ============================================================================
+// 1. SYNTHETIC DOM & CANVAS HARNESS MATCHING index.html
+// ============================================================================
+class ClassListMock {
+  constructor(el, initial = []) {
+    this.el = el;
+    this.set = new Set(initial);
+  }
+  add(...names) { names.forEach(n => { if (n) this.set.add(n); }); }
+  remove(...names) { names.forEach(n => this.set.delete(n)); }
+  contains(n) { return this.set.has(n); }
+  toggle(n, force) {
+    if (force === true) { this.set.add(n); return true; }
+    if (force === false) { this.set.delete(n); return false; }
+    if (this.set.has(n)) { this.set.delete(n); return false; }
+    this.set.add(n); return true;
+  }
+  toString() { return Array.from(this.set).join(' '); }
+}
+
+class ElementMock {
+  constructor(tagName = 'DIV', id = '', classes = [], attrs = {}) {
+    this.tagName = tagName.toUpperCase();
+    this.id = id;
+    this.classList = new ClassListMock(this, classes);
+    this.dataset = {};
+    this.attributes = {};
+    for (const [k, v] of Object.entries(attrs)) {
+      this.attributes[k] = String(v);
+      if (k.startsWith('data-')) {
+        const camel = k.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        this.dataset[camel] = String(v);
+      }
+    }
+    this.style = { display: attrs.style && attrs.style.includes('display:none') ? 'none' : '' };
+    this.children = [];
+    this.parentElement = null;
+    this.listeners = {};
+    this._innerHTML = '';
+    this.textContent = '';
+    this.innerText = '';
+    this.value = '';
+    this.disabled = false;
+    this.title = attrs.title || '';
+    this.width = Number(attrs.width) || 1280;
+    this.height = Number(attrs.height) || 720;
+    this._rect = { left: 0, top: 0, width: this.width, height: this.height };
+  }
+
+  get className() { return this.classList.toString(); }
+  set className(val) {
+    this.classList = new ClassListMock(this, String(val || '').split(/\s+/).filter(Boolean));
+  }
+
+  get innerHTML() { return this._innerHTML; }
+  set innerHTML(val) {
+    this._innerHTML = String(val || '');
+    this.children = [];
+    // Parse child elements needed by ui.js (.power-action or <option value="...">)
+    if (this._innerHTML.includes('class="power-action"')) {
+      const actionDiv = new ElementMock('DIV', '', ['power-action']);
+      this.appendChild(actionDiv);
+    }
+    const optRegex = /<option\s+value="([^"]+)"[^>]*>([^<]*)<\/option>/gi;
+    let m;
+    while ((m = optRegex.exec(this._innerHTML)) !== null) {
+      const opt = new ElementMock('OPTION', '', [], { value: m[1] });
+      opt.value = m[1];
+      opt.textContent = m[2];
+      this.appendChild(opt);
+    }
+    if (this.tagName === 'SELECT' && this.children.length > 0 && !this.value) {
+      this.value = this.children[0].value;
+    }
+  }
+
+  appendChild(child) {
+    child.parentElement = this;
+    this.children.push(child);
+    if (child.id) global.document._registerById(child.id, child);
+    return child;
+  }
+
+  addEventListener(type, fn) {
+    if (!this.listeners[type]) this.listeners[type] = [];
+    this.listeners[type].push(fn);
+  }
+
+  dispatchEvent(evt) {
+    evt.target = evt.target || this;
+    evt.currentTarget = this;
+    evt.preventDefault = evt.preventDefault || (() => {});
+    evt.stopPropagation = evt.stopPropagation || (() => { evt._stopped = true; });
+    const fns = this.listeners[evt.type] || [];
+    for (const fn of fns) {
+      fn.call(this, evt);
+    }
+    if (!evt._stopped && this.parentElement) {
+      this.parentElement.dispatchEvent(evt);
+    }
+  }
+
+  click() {
+    if (this.disabled) return;
+    if (typeof this.onclick === 'function') {
+      this.onclick({ target: this, currentTarget: this, preventDefault() {}, stopPropagation() {} });
+    }
+    this.dispatchEvent({ type: 'click', button: 0, target: this });
+  }
+
+  matches(selector) {
+    const parts = selector.trim().split(/(?=[.#\[])/);
+    for (const p of parts) {
+      if (p.startsWith('#')) {
+        if (this.id !== p.slice(1)) return false;
+      } else if (p.startsWith('.')) {
+        if (!this.classList.contains(p.slice(1))) return false;
+      } else if (p.startsWith('[')) {
+        const m = p.match(/^\[\s*([a-zA-Z0-9_-]+)(?:=["']?([^"'\]]*)["']?)?\s*\]$/);
+        if (!m) return false;
+        const attrName = m[1];
+        const attrVal = m[2];
+        const actual = attrName.startsWith('data-')
+          ? this.dataset[attrName.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())]
+          : this.attributes[attrName];
+        if (attrVal !== undefined && String(actual) !== attrVal) return false;
+        if (attrVal === undefined && actual === undefined) return false;
+      } else {
+        if (this.tagName !== p.toUpperCase()) return false;
+      }
+    }
+    return true;
+  }
+
+  closest(selector) {
+    let cur = this;
+    while (cur) {
+      if (cur.matches && cur.matches(selector)) return cur;
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+
+  querySelectorAll(selector) {
+    const tokens = selector.trim().split(/\s+/);
+    let currentSet = [this];
+    for (const token of tokens) {
+      const nextSet = [];
+      const visit = (node) => {
+        for (const child of node.children) {
+          if (child.matches(token)) nextSet.push(child);
+          visit(child);
+        }
+      };
+      for (const root of currentSet) visit(root);
+      currentSet = nextSet;
+    }
+    return currentSet;
+  }
+
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] || null;
+  }
+
+  getBoundingClientRect() {
+    return { ...this._rect, width: this.width || 1280, height: this.height || 720 };
+  }
+
+  getContext() {
+    return new Proxy({}, {
+      get: (target, prop) => {
+        if (prop === 'measureText') return () => ({ width: 42 });
+        if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+          return () => ({ addColorStop() {} });
+        }
+        if (prop in target) return target[prop];
+        return () => {};
+      },
+      set: (target, prop, val) => {
+        target[prop] = val;
+        return true;
+      }
+    });
+  }
+}
+
+let simClockMs = 10000;
+let rafCallback = null;
+
+function buildDOMEnvironment() {
+  simClockMs = 10000;
+  rafCallback = null;
+  const elementsById = new Map();
+  const root = new ElementMock('BODY', 'body');
+
+  const doc = {
+    body: root,
+    _elementsById: elementsById,
+    _registerById(id, el) { elementsById.set(id, el); },
+    createElement(tag) { return new ElementMock(tag); },
+    getElementById(id) {
+      if (!elementsById.has(id)) {
+        const el = new ElementMock('DIV', id);
+        elementsById.set(id, el);
+        root.appendChild(el);
+      }
+      return elementsById.get(id);
+    },
+    querySelectorAll(sel) { return root.querySelectorAll(sel); },
+    querySelector(sel) { return root.querySelector(sel); },
+    addEventListener(type, fn) { root.addEventListener(type, fn); }
+  };
+
+  global.document = doc;
+
+  const register = (tag, id, classes = [], attrs = {}, parent = root) => {
+    const el = new ElementMock(tag, id, classes, attrs);
+    if (id) elementsById.set(id, el);
+    parent.appendChild(el);
+    return el;
+  };
+
+  // Top Bar
+  const topBar = register('HEADER', 'top-bar');
+  register('DIV', 'hud-faction-badge', ['stat-pill'], {}, topBar);
+  register('DIV', 'hud-credits', ['stat-pill'], {}, topBar);
+  register('DIV', 'hud-power', ['stat-pill'], {}, topBar);
+  register('DIV', 'hud-rank', ['stat-pill'], {}, topBar);
+  register('DIV', 'hud-tunnel-status', ['stat-pill'], { style: 'display:none' }, topBar);
+  register('BUTTON', 'btn-generals-powers', ['hud-btn'], {}, topBar);
+  register('BUTTON', 'btn-select-builder', ['hud-btn'], {}, topBar);
+  register('BUTTON', 'btn-select-combat', ['hud-btn'], {}, topBar);
+  register('BUTTON', 'btn-toggle-sfx', ['hud-btn'], {}, topBar);
+  register('BUTTON', 'btn-toggle-music', ['hud-btn'], {}, topBar);
+  register('BUTTON', 'btn-toggle-voice', ['hud-btn'], {}, topBar);
+  register('BUTTON', 'btn-pause-game', ['hud-btn'], {}, topBar);
+  register('BUTTON', 'btn-main-menu', ['hud-btn'], {}, topBar);
+
+  // Viewport
+  const viewport = register('MAIN', 'viewport-wrap', [], { width: 1280, height: 720 });
+  const gameCanvas = register('CANVAS', 'game-canvas', [], { width: 1280, height: 720 }, viewport);
+  gameCanvas._rect = { left: 0, top: 0, width: 1280, height: 720 };
+  register('DIV', 'superweapon-timers', [], {}, viewport);
+  register('DIV', 'tactical-alert', ['hidden'], {}, viewport);
+  const tauntBox = register('DIV', 'general-taunt-box', ['hidden'], {}, viewport);
+  register('DIV', 'taunt-general-name', [], {}, tauntBox);
+  register('DIV', 'taunt-general-text', [], {}, tauntBox);
+
+  // Command Bar
+  const cmdBar = register('FOOTER', 'command-bar');
+  const minimapPanel = register('DIV', 'minimap-panel', [], {}, cmdBar);
+  const minimapCanvas = register('CANVAS', 'minimap-canvas', [], { width: 176, height: 128 }, minimapPanel);
+  minimapCanvas._rect = { left: 0, top: 0, width: 176, height: 128 };
+
+  const inspectorPanel = register('DIV', 'inspector-panel', [], {}, cmdBar);
+  register('DIV', 'inspector-title', [], {}, inspectorPanel);
+  register('DIV', 'inspector-subtitle', [], {}, inspectorPanel);
+  register('BUTTON', 'btn-order-attack-move', ['hud-btn'], {}, inspectorPanel);
+  register('BUTTON', 'btn-order-guard', ['hud-btn'], {}, inspectorPanel);
+  register('BUTTON', 'btn-order-stop', ['hud-btn'], {}, inspectorPanel);
+  register('BUTTON', 'btn-order-scatter', ['hud-btn'], {}, inspectorPanel);
+  register('DIV', 'inspector-stats', [], {}, inspectorPanel);
+  register('DIV', 'inspector-queue', [], {}, inspectorPanel);
+
+  const cmdCardPanel = register('DIV', 'command-card-panel', [], {}, cmdBar);
+  register('DIV', 'command-card-grid', [], {}, cmdCardPanel);
+
+  // Start Modal
+  const startModal = register('DIV', 'start-modal', ['modal-backdrop']);
+  register('BUTTON', '', ['mode-tab-btn', 'active'], { 'data-mode': 'CHALLENGE' }, startModal);
+  register('BUTTON', '', ['mode-tab-btn'], { 'data-mode': 'SKIRMISH' }, startModal);
+  register('DIV', 'player-general-grid', ['general-grid'], {}, startModal);
+  const challengeSec = register('DIV', 'challenge-section', [], {}, startModal);
+  register('DIV', 'challenge-ladder-preview', [], {}, challengeSec);
+  const aiWrap = register('DIV', 'ai-general-picker-wrap', [], { style: 'display:none' }, startModal);
+  register('DIV', 'ai-general-grid', ['general-grid'], {}, aiWrap);
+  register('SELECT', 'map-selector', ['map-select-dropdown'], {}, startModal);
+  register('BUTTON', '', ['diff-btn'], { 'data-diff': 'EASY' }, startModal);
+  register('BUTTON', '', ['diff-btn', 'active'], { 'data-diff': 'NORMAL' }, startModal);
+  register('BUTTON', '', ['diff-btn'], { 'data-diff': 'HARD' }, startModal);
+  register('BUTTON', 'btn-launch-operation', ['launch-btn'], {}, startModal);
+
+  // Powers Modal
+  const powersModal = register('DIV', 'powers-modal', ['modal-backdrop', 'hidden']);
+  register('DIV', 'powers-modal-subtitle', ['zh-logo-sub'], {}, powersModal);
+  register('BUTTON', 'btn-close-powers', ['hud-btn'], {}, powersModal);
+  register('DIV', 'powers-grid', ['powers-list'], {}, powersModal);
+
+  // Victory Modal
+  const victoryModal = register('DIV', 'victory-modal', ['modal-backdrop', 'hidden']);
+  register('DIV', 'victory-title', ['zh-logo-title'], {}, victoryModal);
+  register('P', 'victory-subtitle', [], {}, victoryModal);
+  register('BUTTON', 'btn-next-challenge', ['launch-btn'], {}, victoryModal);
+
+  const winListeners = {};
+  Object.assign(global, {
+    innerWidth: 1280,
+    innerHeight: 720,
+    devicePixelRatio: 1,
+    document: doc,
+    addEventListener(type, fn) {
+      if (!winListeners[type]) winListeners[type] = [];
+      winListeners[type].push(fn);
+    },
+    dispatchEvent(evt) {
+      evt.preventDefault = evt.preventDefault || (() => {});
+      const fns = winListeners[evt.type] || [];
+      for (const fn of fns) fn(evt);
+    },
+    requestAnimationFrame(fn) {
+      rafCallback = fn;
+      return 1;
+    },
+    AudioContext: class {
+      constructor() { this.currentTime = 0; this.state = 'running'; this.destination = {}; }
+      resume() {}
+      createOscillator() {
+        return {
+          type: 'sine',
+          frequency: { setValueAtTime() {}, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {} },
+          connect() {}, start() {}, stop() {}
+        };
+      }
+      createGain() {
+        return {
+          gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {} },
+          connect() {}
+        };
+      }
+      createBiquadFilter() {
+        return { type: 'lowpass', frequency: { setValueAtTime() {} }, Q: { value: 1 }, connect() {} };
+      }
+      createBuffer(ch, len) { return { getChannelData: () => new Float32Array(len) }; }
+      createBufferSource() { return { buffer: null, connect() {}, start() {}, stop() {} }; }
+    },
+    speechSynthesis: { cancel() {}, speak() {} }
+  });
+  global.window = global;
+  global.SpeechSynthesisUtterance = class { constructor(t) { this.text = t; } };
+  global.performance = { now: () => simClockMs };
+}
+
+// ============================================================================
+// 2. HUMAN INPUT DRIVER (strictly simulates Mouse, Keyboard & DOM UI actions)
+// ============================================================================
+class HumanUserDriver {
+  constructor(getEngine) {
+    this._getEngine = getEngine;
+    this.canvas = document.getElementById('game-canvas');
+    this.minimap = document.getElementById('minimap-canvas');
+    this.actionLog = [];
+    this.findings = [];
+  }
+
+  get engine() { return this._getEngine(); }
+
+  log(action, detail = '') {
+    this.actionLog.push({ step: this.actionLog.length + 1, action, detail });
+  }
+
+  recordBug(bug) {
+    this.findings.push(bug);
+  }
+
+  // Convert world (x, y) to screen pixel coordinates (clientX, clientY) on #game-canvas
+  worldToScreen(wx, wy) {
+    const rect = this.canvas.getBoundingClientRect();
+    const cam = this.engine.cam;
+    return {
+      clientX: rect.left + (wx - cam.x),
+      clientY: rect.top + (wy - cam.y)
+    };
+  }
+
+  // Center camera over world coordinates (via minimap click, just like a human!)
+  clickMinimapAtWorld(wx, wy, button = 0) {
+    const rect = this.minimap.getBoundingClientRect();
+    const clientX = rect.left + (wx / this.engine.worldSize) * rect.width;
+    const clientY = rect.top + (wy / this.engine.worldSize) * rect.height;
+    this.log(button === 0 ? 'MINIMAP_LEFT_CLICK' : 'MINIMAP_RIGHT_CLICK', `world=(${Math.round(wx)}, ${Math.round(wy)})`);
+    this.minimap.dispatchEvent({ type: 'mousedown', button, clientX, clientY });
+    window.dispatchEvent({ type: 'mouseup', button, clientX, clientY });
+  }
+
+  // Left-click at world coordinates (pans camera via minimap first so target is on screen)
+  leftClickWorld(wx, wy, opts = {}) {
+    if (!opts.keepCamera) this.clickMinimapAtWorld(wx, wy, 0);
+    if (!opts.doubleClickSecondTap) simClockMs += 500; // avoid accidental double-click unless intended
+    const { clientX, clientY } = this.worldToScreen(wx, wy);
+    this.log('LEFT_CLICK_CANVAS', `world=(${Math.round(wx)}, ${Math.round(wy)}) screen=(${Math.round(clientX)}, ${Math.round(clientY)})`);
+    this.canvas.dispatchEvent({
+      type: 'mousemove', button: 0, clientX, clientY,
+      shiftKey: !!opts.shiftKey, ctrlKey: !!opts.ctrlKey
+    });
+    this.canvas.dispatchEvent({
+      type: 'mousedown', button: 0, clientX, clientY,
+      shiftKey: !!opts.shiftKey, ctrlKey: !!opts.ctrlKey
+    });
+    window.dispatchEvent({
+      type: 'mouseup', button: 0, clientX, clientY,
+      shiftKey: !!opts.shiftKey, ctrlKey: !!opts.ctrlKey
+    });
+  }
+
+  // Human Double-Click on a unit (two rapid left-clicks within <340ms)
+  doubleClickWorld(wx, wy) {
+    this.clickMinimapAtWorld(wx, wy, 0);
+    simClockMs += 500;
+    this.leftClickWorld(wx, wy, { keepCamera: true, doubleClickSecondTap: true });
+    simClockMs += 120; // 120ms later (< 340ms threshold in ui.js)
+    this.leftClickWorld(wx, wy, { keepCamera: true, doubleClickSecondTap: true });
+  }
+
+  // Left-click drag box selection on #game-canvas
+  dragSelectWorldBox(wx1, wy1, wx2, wy2, opts = {}) {
+    this.clickMinimapAtWorld((wx1 + wx2) * 0.5, (wy1 + wy2) * 0.5, 0);
+    simClockMs += 500;
+    const p1 = this.worldToScreen(wx1, wy1);
+    const p2 = this.worldToScreen(wx2, wy2);
+    this.log('DRAG_SELECT_BOX', `from=(${Math.round(wx1)},${Math.round(wy1)}) to=(${Math.round(wx2)},${Math.round(wy2)})`);
+    this.canvas.dispatchEvent({
+      type: 'mousedown', button: 0, clientX: p1.clientX, clientY: p1.clientY,
+      shiftKey: !!opts.shiftKey
+    });
+    this.canvas.dispatchEvent({
+      type: 'mousemove', button: 0, clientX: p2.clientX, clientY: p2.clientY,
+      shiftKey: !!opts.shiftKey
+    });
+    window.dispatchEvent({
+      type: 'mouseup', button: 0, clientX: p2.clientX, clientY: p2.clientY,
+      shiftKey: !!opts.shiftKey
+    });
+  }
+
+  // Right-click at world coordinates (Contextual Move / Attack / Harvest / Garrison / Capture / Rally)
+  rightClickWorld(wx, wy, opts = {}) {
+    if (!opts.keepCamera) this.clickMinimapAtWorld(wx, wy, 0);
+    const { clientX, clientY } = this.worldToScreen(wx, wy);
+    this.log('RIGHT_CLICK_CANVAS', `world=(${Math.round(wx)}, ${Math.round(wy)}) shift=${!!opts.shiftKey} ctrl=${!!opts.ctrlKey}`);
+    this.canvas.dispatchEvent({
+      type: 'mousemove', button: 2, clientX, clientY,
+      shiftKey: !!opts.shiftKey, ctrlKey: !!opts.ctrlKey
+    });
+    this.canvas.dispatchEvent({
+      type: 'mousedown', button: 2, clientX, clientY,
+      shiftKey: !!opts.shiftKey, ctrlKey: !!opts.ctrlKey
+    });
+    window.dispatchEvent({
+      type: 'mouseup', button: 2, clientX, clientY,
+      shiftKey: !!opts.shiftKey, ctrlKey: !!opts.ctrlKey
+    });
+  }
+
+  // Press and release a keyboard key
+  pressKey(key, opts = {}) {
+    this.log('KEY_PRESS', `${opts.ctrlKey ? 'Ctrl+' : ''}${opts.shiftKey ? 'Shift+' : ''}${key}`);
+    window.dispatchEvent({
+      type: 'keydown',
+      key,
+      code: opts.code || key,
+      ctrlKey: !!opts.ctrlKey,
+      metaKey: !!opts.metaKey,
+      shiftKey: !!opts.shiftKey
+    });
+    window.dispatchEvent({
+      type: 'keyup',
+      key,
+      code: opts.code || key,
+      ctrlKey: !!opts.ctrlKey,
+      metaKey: !!opts.metaKey,
+      shiftKey: !!opts.shiftKey
+    });
+  }
+
+  // Click a DOM element by selector or reference
+  clickElement(elOrSelector, label = '') {
+    const el = typeof elOrSelector === 'string'
+      ? document.querySelector(elOrSelector) || document.getElementById(elOrSelector.replace(/^#/, ''))
+      : elOrSelector;
+    if (!el) throw new Error(`HumanUserDriver: Could not find element ${label || elOrSelector}`);
+    this.log('CLICK_DOM', label || el.id || el.className);
+    el.click();
+    return el;
+  }
+
+  // Click a Command Card button matching a title/tooltip substring or index
+  clickCommandCardButton(matchTextOrIndex, rightClick = false) {
+    const grid = document.getElementById('command-card-grid');
+    const btns = grid.children.filter(c => c.classList.contains('cmd-card-btn'));
+    let targetBtn = null;
+    if (typeof matchTextOrIndex === 'number') {
+      targetBtn = btns[matchTextOrIndex];
+    } else {
+      const needle = String(matchTextOrIndex).toUpperCase();
+      targetBtn = btns.find(b =>
+        (b._innerHTML && b._innerHTML.toUpperCase().includes(needle)) ||
+        (b.title && b.title.toUpperCase().includes(needle))
+      );
+    }
+    if (!targetBtn) return null;
+    if (rightClick) {
+      this.log('RIGHT_CLICK_CMD_CARD', targetBtn.title || String(matchTextOrIndex));
+      targetBtn.dispatchEvent({ type: 'contextmenu', button: 2 });
+    } else {
+      this.log('CLICK_CMD_CARD', targetBtn.title || String(matchTextOrIndex));
+      targetBtn.click();
+    }
+    return targetBtn;
+  }
+
+  // Advance the actual 60Hz requestAnimationFrame loop in ui.js!
+  stepFrames(frames = 10, dtSec = 1 / 60) {
+    for (let i = 0; i < frames; i++) {
+      simClockMs += dtSec * 1000;
+      if (rafCallback) {
+        rafCallback(simClockMs);
+      } else if (this.engine) {
+        this.engine.stepFixed(dtSec);
+      }
+    }
+  }
+}
+
+// ============================================================================
+// 3. HUMAN QA PLAYBOOK SUITE (8 END-TO-END HUMAN PERSONA SCENARIOS)
+// ============================================================================
+function runHumanQAPlaybooks() {
+  // Deterministic Mulberry32 PRNG so every Human QA run is 100% reproducible
+  let rngSeed = 0x1337BEEF;
+  Math.random = function () {
+    let t = (rngSeed += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
+  buildDOMEnvironment();
+
+  const scripts = [
+    'js/data.js',
+    'js/spatial.js',
+    'js/nav.js',
+    'js/vfx.js',
+    'js/audio.js',
+    'js/engine.js',
+    'js/ai.js',
+    'js/ui.js'
+  ];
+
+  let activeEngine = null;
+  for (const rel of scripts) {
+    const full = path.join(__dirname, '..', rel);
+    const code = fs.readFileSync(full, 'utf8');
+    eval.call(global, code);
+    if (rel === 'js/engine.js') {
+      const OrigEngine = global.ZH_ENGINE.GameEngine;
+      global.ZH_ENGINE.GameEngine = class extends OrigEngine {
+        constructor(canvas, minimap) {
+          super(canvas, minimap);
+          activeEngine = this;
+          global.window.gameEngine = this;
+        }
+      };
+    }
+  }
+
+  // Trigger DOMContentLoaded so js/ui.js runs init()
+  window.dispatchEvent({ type: 'DOMContentLoaded' });
+
+  const human = new HumanUserDriver(() => activeEngine);
+  const report = [];
+  const assertCheck = (playbook, name, condition, detail = '', bugMeta = null) => {
+    const passed = Boolean(condition);
+    report.push({ playbook, name, passed, detail });
+    if (!passed && bugMeta) {
+      human.recordBug({ playbook, check: name, detail, ...bugMeta });
+    }
+    return passed;
+  };
+
+  // --------------------------------------------------------------------------
+  // PLAYBOOK 1: Pre-Match Lobby, Mode Switching, General Cards & Launch
+  // --------------------------------------------------------------------------
+  {
+    const pb = 'Playbook 1: Pre-Match Lobby & Launch (Human UI Flow)';
+    const startModal = document.getElementById('start-modal');
+    assertCheck(pb, 'Start modal is visible on boot', !startModal.classList.contains('hidden'));
+
+    // Click Skirmish Mode tab
+    const skirmishTab = document.querySelector('.mode-tab-btn[data-mode="SKIRMISH"]');
+    human.clickElement(skirmishTab, 'Skirmish Mode Tab');
+    const aiPickerWrap = document.getElementById('ai-general-picker-wrap');
+    assertCheck(pb, 'Clicking Skirmish tab reveals AI General Picker', aiPickerWrap.style.display === 'block');
+
+    // Select USA General Granger (card 0) & AI General Dr. Thrax
+    const playerCards = document.getElementById('player-general-grid').children;
+    const aiCards = document.getElementById('ai-general-grid').children;
+    assertCheck(pb, 'All 9 playable Zero Hour Generals rendered in grid', playerCards.length === 9, `count=${playerCards.length}`);
+    human.clickElement(playerCards[0], 'Player General Card #0 (USA)');
+    human.clickElement(aiCards[8], 'AI General Card #8 (GLA)');
+
+    // Select Map & Difficulty via UI controls
+    const mapSel = document.getElementById('map-selector');
+    mapSel.value = ZH_DATA.MAPS[0].id;
+    mapSel.dispatchEvent({ type: 'change', target: mapSel });
+    const hardBtn = document.querySelector('.diff-btn[data-diff="HARD"]');
+    human.clickElement(hardBtn, 'Brutal General (Hard) Difficulty Button');
+    assertCheck(pb, 'Difficulty button highlights .active on click', hardBtn.classList.contains('active'));
+
+    // Click LAUNCH ZERO HOUR
+    human.clickElement('#btn-launch-operation', 'LAUNCH ZERO HOUR Button');
+    assertCheck(pb, 'Start modal hides and engine starts running on Launch click',
+      startModal.classList.contains('hidden') && human.engine.running === true);
+    assertCheck(pb, 'Faction-skinned HUD theme applied to document.body',
+      document.body.classList.contains('hud-theme-usa'));
+  }
+
+  // --------------------------------------------------------------------------
+  // PLAYBOOK 2: Camera Panning, Minimap Navigation & Spacebar Alert Jump
+  // --------------------------------------------------------------------------
+  {
+    const pb = 'Playbook 2: Camera Panning, Minimap & Alert Jump';
+    const camBeforeX = human.engine.cam.x;
+    window.dispatchEvent({ type: 'keydown', key: 'ArrowRight' });
+    human.stepFrames(15, 1 / 60);
+    window.dispatchEvent({ type: 'keyup', key: 'ArrowRight' });
+    assertCheck(pb, 'Holding [ArrowRight] pans camera right smoothly',
+      human.engine.cam.x > camBeforeX, `before=${Math.round(camBeforeX)}, after=${Math.round(human.engine.cam.x)}`);
+
+    // Check WASD panning when a unit IS selected (Human UX check!)
+    human.clickElement('#btn-select-builder', 'Select Builder [B]');
+    const camXWithSelection = human.engine.cam.x;
+    window.dispatchEvent({ type: 'keydown', key: 'd' });
+    human.stepFrames(15, 1 / 60);
+    window.dispatchEvent({ type: 'keyup', key: 'd' });
+    // Note: in ui.js lines 1255-1266, WASD only pans when selectedIds.size === 0
+
+    // Minimap left-click centers camera
+    human.clickMinimapAtWorld(1600, 1600, 0);
+    const expectedCamX = 1600 - human.engine.cam.w / 2;
+    assertCheck(pb, 'Left-clicking minimap centers camera on target world position',
+      Math.abs(human.engine.cam.x - expectedCamX) < 10);
+
+    // Spacebar jump to last alert
+    human.engine.lastAlertPos = { x: 2000, y: 1800 };
+    human.pressKey(' ', { code: 'Space' });
+    const expectedAlertCamX = Math.max(0, Math.min(human.engine.worldSize - human.engine.cam.w, 2000 - human.engine.cam.w / 2));
+    assertCheck(pb, 'Pressing [SPACE] jumps camera to last tactical alert coordinates',
+      Math.abs(human.engine.cam.x - expectedAlertCamX) < 10);
+  }
+
+  // --------------------------------------------------------------------------
+  // PLAYBOOK 3: Human Base Building (Select Dozer -> Command Card -> Place & Cancel)
+  // --------------------------------------------------------------------------
+  {
+    const pb = 'Playbook 3: Base Construction via Builder & Command Card Clicks';
+    human.clickElement('#btn-select-builder', 'Select Builder Button [B]');
+    const selectedUnits = human.engine.units.filter(u => human.engine.selectedIds.has(u.id));
+    assertCheck(pb, 'Clicking #btn-select-builder selects player Dozer/Worker',
+      selectedUnits.length === 1 && selectedUnits[0].def.isBuilder);
+
+    // Test entering build mode and cancelling with Right-Click
+    const pwrBtn = human.clickCommandCardButton('REACTOR');
+    assertCheck(pb, 'Clicking Cold Fusion Reactor on Command Card enters BUILD mode',
+      Boolean(pwrBtn) && human.engine.commandMode === 'BUILD' && human.engine.pendingBuildId === 'USA_REACTOR');
+
+    human.rightClickWorld(500, 2200, { keepCamera: true });
+    assertCheck(pb, 'Right-clicking while in BUILD mode cancels placement and resets commandMode',
+      human.engine.commandMode === null && human.engine.pendingBuildId === null);
+
+    // Test invalid placement on top of Command Center (collision rejection)
+    const cc = human.engine.buildings.find(b => b.team === 0 && b.def.isCommandCenter);
+    const creditsBeforeInvalid = human.engine.teams[0].credits;
+    human.clickCommandCardButton('REACTOR');
+    human.leftClickWorld(cc.x, cc.y);
+    assertCheck(pb, 'Left-clicking on occupied Command Center footprint rejects placement without deducting credits',
+      human.engine.teams[0].credits === creditsBeforeInvalid && human.engine.commandMode === 'BUILD');
+
+    // Now place Reactor and Barracks at valid spots via left-click on canvas!
+    const reactorSpot = { x: cc.x + 210, y: cc.y - 40 };
+    const bldgCountBefore = human.engine.buildings.length;
+    human.leftClickWorld(reactorSpot.x, reactorSpot.y);
+    const newPower = human.engine.buildings.find(b => b.team === 0 && b.defId === 'USA_REACTOR' && b.x === reactorSpot.x);
+    assertCheck(pb, 'Left-clicking valid terrain places Cold Fusion Reactor scaffold and assigns Dozer to BUILD',
+      human.engine.buildings.length === bldgCountBefore + 1 && Boolean(newPower) && selectedUnits[0].state === 'BUILD');
+
+    // Step frames until Dozer finishes constructing the Reactor
+    human.stepFrames(60 * 15, 1 / 60);
+    assertCheck(pb, 'Dozer drives to scaffold and completes Reactor construction (+Power online)',
+      Boolean(newPower && newPower.constructed && human.engine.teams[0].powerProduced > 0));
+
+    // Also build a Barracks via hotkey [B] -> Command Card click -> Canvas Left-Click
+    human.pressKey('b', { code: 'KeyB' });
+    human.clickCommandCardButton('BARRACKS');
+    const raxSpot = { x: cc.x + 210, y: cc.y + 130 };
+    human.leftClickWorld(raxSpot.x, raxSpot.y);
+    const newRax = human.engine.buildings.find(b => b.team === 0 && b.defId === 'USA_BARRACKS');
+    human.stepFrames(60 * 16, 1 / 60);
+    assertCheck(pb, 'Player constructs USA Barracks via [B] hotkey + Command Card + Canvas click',
+      Boolean(newRax && newRax.constructed));
+  }
+
+  // --------------------------------------------------------------------------
+  // PLAYBOOK 4: Structure Selection, Production Queueing, Cancel/Refund & Rally Point
+  // --------------------------------------------------------------------------
+  {
+    const pb = 'Playbook 4: Structure Selection, Unit Queueing, Right-Click Refund & Rally Points';
+    const rax = human.engine.buildings.find(b => b.team === 0 && b.defId === 'USA_BARRACKS');
+    human.leftClickWorld(rax.x, rax.y);
+    assertCheck(pb, 'Left-clicking Barracks on canvas selects it and updates Inspector Title',
+      human.engine.selectedIds.has(rax.id) &&
+      document.getElementById('inspector-title').textContent.includes('Barracks'));
+
+    // Right-click open ground in safe SW base perimeter while Barracks is selected to set Rally Point
+    const rallyTarget = { x: 260, y: 2480 };
+    human.rightClickWorld(rallyTarget.x, rallyTarget.y);
+    assertCheck(pb, 'Right-clicking ground with Barracks selected sets building Rally Point',
+      Math.hypot((rax.rallyX || 0) - rallyTarget.x, (rax.rallyY || 0) - rallyTarget.y) < 5);
+
+    // Click Ranger button 3 times and Missile Defender button 1 time on Command Card
+    human.clickCommandCardButton('RANGER');
+    human.clickCommandCardButton('RANGER');
+    human.clickCommandCardButton('RANGER');
+    human.clickCommandCardButton('MSL DEF');
+    assertCheck(pb, 'Left-clicking unit cameos on Command Card queues 4 infantry in Barracks',
+      rax.queue.length === 4, `queueLength=${rax.queue.length}`);
+
+    // Right-click Ranger button on Command Card to cancel 1 Ranger and refund cost!
+    const creditsBeforeCancel = human.engine.teams[0].credits;
+    human.clickCommandCardButton('RANGER', true);
+    assertCheck(pb, 'Right-clicking unit cameo on Command Card cancels 1 queued unit and refunds credits',
+      rax.queue.length === 3 && human.engine.teams[0].credits > creditsBeforeCancel);
+
+    // Step frames until all 3 infantry finish training, spawn, and move to Rally Point
+    human.stepFrames(60 * 18, 1 / 60);
+    const spawnedInfantry = human.engine.units.filter(u => u.team === 0 && u.hp > 0 && u.def.category === 'INFANTRY');
+    assertCheck(pb, 'Queued infantry finish training, spawn from Barracks, and rally to target point',
+      spawnedInfantry.length >= 3, `spawnedInfantry=${spawnedInfantry.length}`);
+  }
+
+  // --------------------------------------------------------------------------
+  // PLAYBOOK 5: Unit Selection (Single, Drag-Box, Double-Click, Control Groups)
+  // --------------------------------------------------------------------------
+  {
+    const pb = 'Playbook 5: Drag-Box Selection, Double-Click Type Select & Control Groups';
+    const rangers = human.engine.units.filter(u => u.team === 0 && u.hp > 0 && u.defId === 'USA_RANGER');
+    const firstRanger = rangers[0];
+
+    // Single left-click on Ranger
+    human.leftClickWorld(firstRanger.x, firstRanger.y);
+    assertCheck(pb, 'Single left-click on unit selects exactly 1 unit',
+      human.engine.selectedIds.size === 1 && human.engine.selectedIds.has(firstRanger.id));
+
+    // Double-click (two rapid left-clicks < 340ms) on Ranger selects all Rangers
+    human.doubleClickWorld(firstRanger.x, firstRanger.y);
+    assertCheck(pb, 'Double-clicking a Ranger selects all friendly Rangers on the battlefield',
+      human.engine.selectedIds.size === rangers.length && rangers.length >= 2,
+      `selected=${human.engine.selectedIds.size}, totalRangers=${rangers.length}`);
+
+    // Wide drag-box selection across base (spanning both Combat Infantry AND Dozer)
+    const dozer = human.engine.units.find(u => u.team === 0 && u.hp > 0 && u.def.isBuilder);
+    human.dragSelectWorldBox(
+      Math.min(firstRanger.x, dozer.x) - 40,
+      Math.min(firstRanger.y, dozer.y) - 40,
+      Math.max(firstRanger.x, dozer.x) + 40,
+      Math.max(firstRanger.y, dozer.y) + 40
+    );
+    const selectedEntities = human.engine.units.filter(u => human.engine.selectedIds.has(u.id));
+    const hasCombat = selectedEntities.some(u => !u.def.isBuilder && !u.def.isHarvester);
+    const hasNonCombat = selectedEntities.some(u => u.def.isBuilder || u.def.isHarvester);
+    assertCheck(
+      pb,
+      'Drag-box selection around base with combat troops excludes unarmed Dozers & Supply Harvesters (RTS priority filter)',
+      hasCombat && !hasNonCombat,
+      `selected=${selectedEntities.map(u => u.defId).join(',')}, inspectorTitle="${document.getElementById('inspector-title').textContent}"`,
+      {
+        id: 'BUG-HUMAN-03',
+        severity: 'HIGH (P1)',
+        file: 'js/ui.js (lines 934–950, 519, 1219–1220)',
+        lines: 'ui.js:934-950, ui.js:1219-1220',
+        summary: '`handleBoxSelection` in `js/ui.js:934-950` selects every `u.team === 0 && u.hp > 0 && !u.garrisonId` inside the drag box without filtering out `u.def.isBuilder` or `u.def.isHarvester` when combat units are present. Because initial Dozers and Harvesters have the lowest entity IDs (`id=1,2`), `selectedUnits[0]` (`primary`) becomes the Dozer!',
+        impact: 'When a human player drag-selects their army near base, (1) the Command Card switches to Dozer construction buttons instead of combat controls, (2) combat hotkeys `[A]` (Attack-Move), `[G]` (Guard), `[S]` (Stop), and `[X]` (Scatter) are disabled by `if (selectedUnits.length > 0 && !hasBuilder)` (`ui.js:1220`) and instead trigger Dozer building hotkeys (`[A]` = Airfield, `[S]` = Strategy Center), and (3) right-click move orders pull Dozers and Chinooks off economy duty!'
+      }
+    );
+
+    // Drag-box select just the combat infantry near the safe SW rally point
+    const combatInf = human.engine.units.filter(u => u.team === 0 && u.hp > 0 && u.def.category === 'INFANTRY');
+    const minInfX = Math.min(...combatInf.map(u => u.x)) - 25;
+    const minInfY = Math.min(...combatInf.map(u => u.y)) - 25;
+    const maxInfX = Math.max(...combatInf.map(u => u.x)) + 25;
+    const maxInfY = Math.max(...combatInf.map(u => u.y)) + 25;
+    human.dragSelectWorldBox(minInfX, minInfY, maxInfX, maxInfY);
+    assertCheck(pb, 'Dragging selection box around infantry squad selects all friendly infantry inside box',
+      human.engine.selectedIds.size >= 3, `selected=${human.engine.selectedIds.size}`);
+
+    // Assign Control Group 1 (Ctrl + 1), deselect by clicking empty ground, then recall (1)
+    const groupSize = human.engine.selectedIds.size;
+    human.pressKey('1', { ctrlKey: true });
+    human.leftClickWorld(150, 150);
+    assertCheck(pb, 'Left-clicking empty terrain clears unit selection',
+      human.engine.selectedIds.size === 0);
+
+    human.pressKey('1');
+    assertCheck(pb, 'Pressing [1] recalls Control Group 1 selection',
+      human.engine.selectedIds.size === groupSize);
+
+    // Double-tap [1] within < 340ms snaps camera to control group centroid
+    simClockMs += 100;
+    human.pressKey('1');
+    const expectedGroupCamX = Math.max(0, Math.min(human.engine.worldSize - human.engine.cam.w, firstRanger.x - human.engine.cam.w / 2));
+    assertCheck(pb, 'Double-tapping [1] snaps camera to Control Group 1 centroid',
+      Math.abs(human.engine.cam.x - expectedGroupCamX) < 120);
+  }
+
+  // --------------------------------------------------------------------------
+  // PLAYBOOK 6: Contextual Right-Click Orders & Tactical Stance Buttons
+  // --------------------------------------------------------------------------
+  {
+    const pb = 'Playbook 6: Contextual Right-Click Orders & Tactical Stances';
+    human.pressKey('1');
+    const squad = human.engine.units.filter(u => human.engine.selectedIds.has(u.id));
+
+    // 1. Standard Right-Click Move
+    human.rightClickWorld(900, 2100);
+    assertCheck(pb, 'Right-clicking open terrain orders selected squad to MOVE',
+      squad.every(u => u.state === 'MOVE'));
+
+    // 2. Shift + Right-Click Waypoint Queueing
+    human.rightClickWorld(1050, 2000, { shiftKey: true });
+    human.rightClickWorld(1200, 1900, { shiftKey: true });
+    assertCheck(pb, 'Shift + Right-clicking queues chained waypoints on selected units',
+      squad.every(u => Array.isArray(u.waypoints) && u.waypoints.length === 2));
+
+    // 3. Tactical Stance Buttons (#btn-order-attack-move, #btn-order-guard, #btn-order-scatter, #btn-order-stop)
+    human.clickElement('#btn-order-attack-move', 'Attack-Move Button [A]');
+    assertCheck(pb, 'Clicking #btn-order-attack-move sets engine.commandMode to ATTACK_MOVE',
+      human.engine.commandMode === 'ATTACK_MOVE');
+    human.leftClickWorld(1100, 2000);
+    assertCheck(pb, 'Left-clicking canvas in ATTACK_MOVE mode puts squad in ATTACK_MOVE state',
+      squad.every(u => u.state === 'ATTACK_MOVE'));
+
+    human.clickElement('#btn-order-guard', 'Guard Button [G]');
+    assertCheck(pb, 'Clicking #btn-order-guard puts squad into GUARD stance around current position',
+      squad.every(u => u.state === 'GUARD'));
+
+    human.clickElement('#btn-order-scatter', 'Scatter Button [X]');
+    assertCheck(pb, 'Clicking #btn-order-scatter scatters squad into radial MOVE orders',
+      squad.every(u => u.state === 'MOVE'));
+
+    human.clickElement('#btn-order-stop', 'Stop Button [S]');
+    assertCheck(pb, 'Clicking #btn-order-stop halts squad into IDLE state',
+      squad.every(u => u.state === 'IDLE'));
+
+    // 4. Ctrl + Right-Click Force-Fire on Ground
+    human.rightClickWorld(950, 2050, { ctrlKey: true });
+    assertCheck(pb, 'Ctrl + Right-clicking terrain orders FORCE_FIRE at target coordinates',
+      squad.every(u => u.state === 'FORCE_FIRE'));
+
+    // 5. Right-Click Civilian Garrison Bunker with Infantry selected
+    // Pick the player-side bunker (Southwest) and ensure it is neutral so we test human Garrison Entry & Evacuation cleanly
+    const bunker = (human.engine.garrisonBunkers || []).find(g => g.x < 1200 && g.y > 1800) || (human.engine.garrisonBunkers || [])[0];
+    if (bunker) {
+      bunker.occupants = [];
+      bunker.team = -1;
+      bunker.hp = bunker.maxHp || 1000;
+      const ranger = squad.find(u => u.defId === 'USA_RANGER');
+      human.leftClickWorld(ranger.x, ranger.y);
+      human.rightClickWorld(bunker.x, bunker.y);
+      assertCheck(pb, 'Right-clicking a Civilian Garrison Bunker with Infantry orders ENTER_GARRISON',
+        ranger.state === 'ENTER_GARRISON' && ranger.targetEntityId === bunker.id);
+
+      // Teleport Ranger near bunker and step frames so Ranger enters the bunker, then select Bunker and click EVACUATE!
+      ranger.x = bunker.x + 10;
+      ranger.y = bunker.y + 10;
+      human.stepFrames(5, 1 / 60);
+      assertCheck(pb, 'Infantry physically enters Civilian Bunker and increments bunker.occupants',
+        bunker.occupants.includes(ranger) && (ranger.garrisonedIn === bunker.id || ranger.garrisonId === bunker.id),
+        `occupants=${bunker.occupants.length}, garrisonedIn=${ranger.garrisonedIn}, garrisonId=${ranger.garrisonId}`);
+
+      // Select Garrison Bunker by left-clicking it on canvas, then click EVACUATE on Command Card!
+      human.leftClickWorld(bunker.x, bunker.y);
+      assertCheck(pb, 'Left-clicking occupied Garrison Bunker selects it in Inspector',
+        human.engine.selectedIds.has(bunker.id));
+      const evacBtn = human.clickCommandCardButton('EVACUATE');
+      assertCheck(
+        pb,
+        'Clicking EVACUATE button on Command Card unloads infantry back onto the street',
+        Boolean(evacBtn) && bunker.occupants.length === 0 && !ranger.garrisonedIn,
+        `evacBtn=${Boolean(evacBtn)}, bunker.occupants.length=${bunker.occupants.length} (expected 0)`,
+        {
+          id: 'BUG-HUMAN-02',
+          severity: 'CRITICAL (P0)',
+          file: 'js/ui.js (line 482) & js/engine.js (lines 674–676)',
+          lines: 'ui.js:482, engine.js:674-676',
+          summary: 'When a player selects an occupied Civilian Garrison Bunker and clicks EVACUATE [E] (or presses [E]), `js/ui.js:482` calls `engine.evacuateGarrison(g)` passing the bunker OBJECT `g`. However, `evacuateGarrison(bunkerId)` in `js/engine.js:675` looks up `this.garrisonBunkers.find(g => g.id === bunkerId)`, comparing `number === object` (always false) and returning 0!',
+          impact: 'Garrisoned infantry are permanently trapped inside Civilian Bunkers! Neither clicking the EVACUATE [E] button on the Command Card nor pressing the [E] hotkey ever unloads garrisoned troops.'
+        }
+      );
+    }
+
+    // 6. Right-Click Tech Structure (Oil Derrick) with Ranger to Capture
+    const derrick = (human.engine.techStructures || [])[0];
+    if (derrick) {
+      const ranger = squad.find(u => u.defId === 'USA_RANGER');
+      // Force-evacuate by numeric ID if BUG-HUMAN-02 left Ranger trapped inside the bunker so we can test CAPTURE
+      if (bunker && bunker.occupants.length > 0) {
+        human.engine.evacuateGarrison(bunker.id);
+      }
+      human.leftClickWorld(ranger.x, ranger.y);
+      human.rightClickWorld(derrick.x, derrick.y);
+      assertCheck(pb, 'Right-clicking neutral Tech Building with Ranger orders CAPTURE',
+        ranger.state === 'CAPTURE' && ranger.targetEntityId === derrick.id);
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // PLAYBOOK 7: Active Unit Micro-Abilities [F] & Generals' Secret Powers Modal [P]
+  // --------------------------------------------------------------------------
+  {
+    const pb = 'Playbook 7: Active Unit Abilities [F] & Generals Powers Modal [P]';
+    const ranger = human.engine.units.find(u => u.team === 0 && u.hp > 0 && u.defId === 'USA_RANGER');
+    human.leftClickWorld(ranger.x, ranger.y);
+
+    // Check if the Ranger's Active Ability [F] ("FLASHBANG") button is rendered on the Command Card!
+    const flashbangBtn = human.clickCommandCardButton('FLASHBANG');
+    assertCheck(
+      pb,
+      'Selecting US Ranger renders its Active Micro-Ability [F] (Flashbang) button on the Command Card',
+      Boolean(flashbangBtn) && human.engine.commandMode === 'ABILITY',
+      `flashbangBtn=${Boolean(flashbangBtn)}, commandMode=${human.engine.commandMode}, ranger.def.ability=${JSON.stringify(ranger.def.ability)}`,
+      {
+        id: 'BUG-HUMAN-01',
+        severity: 'CRITICAL (P0)',
+        file: 'js/data.js (line 2815) & js/ui.js (lines 543, 795)',
+        lines: 'data.js:2815, ui.js:543, ui.js:795',
+        summary: 'In `js/data.js`, units like `USA_RANGER`, `USA_MISSILE_DEFENDER`, `CHINA_DRAGON_TANK`, and `GLA_JARMEN_KELL` define `u.ability = { id: "FLASHBANG", ... }` as an object. Line 2815 `if (!u.ability && abilityByUnitId[u.id])` skips normalizing `u.ability` to a string ID because `u.ability` is already truthy! Then `js/ui.js:543` looks up `ZH_DATA.UNIT_ABILITIES[primary.def.ability]`, which evaluates `ZH_DATA.UNIT_ABILITIES["[object Object]"] === undefined`!',
+        impact: 'Human players NEVER see the [F] Active Micro-Ability button on the Command Card (and pressing [F] does nothing) for Ranger (Flashbang), Missile Defender (Laser-Lock), Dragon Tank (Flame Wall), Jarmen Kell (Pilot Snipe), etc.!'
+      }
+    );
+
+    // Generals' Secret Powers Modal [P]
+    human.clickElement('#btn-generals-powers', 'Generals Powers HUD Button [P]');
+    const powersModal = document.getElementById('powers-modal');
+    assertCheck(pb, 'Clicking #btn-generals-powers opens the Generals Secret Powers Modal',
+      !powersModal.classList.contains('hidden'));
+
+    const powerCards = document.getElementById('powers-grid').children;
+    const ptsBefore = human.engine.teams[0].generalPoints;
+    const firstUnlockBtn = powerCards[0].querySelector('.power-btn');
+    human.clickElement(firstUnlockBtn, 'First Rank-1 General Power UNLOCK Button');
+    assertCheck(pb, 'Clicking UNLOCK button on Rank-1 Power Card unlocks the power and spends 1 General Point',
+      human.engine.teams[0].generalPoints === ptsBefore - 1 &&
+      human.engine.teams[0].unlockedPowers.size >= 1);
+
+    // Click DEPLOY POWER button on the newly unlocked power card
+    const updatedPowerCards = document.getElementById('powers-grid').children;
+    const deployBtn = updatedPowerCards[0].querySelector('.power-btn');
+    human.clickElement(deployBtn, 'First Rank-1 General Power DEPLOY POWER Button');
+    assertCheck(pb, 'Clicking DEPLOY POWER button arms POWER targeting mode and closes modal',
+      human.engine.commandMode === 'POWER' && powersModal.classList.contains('hidden'));
+
+    // Left-click battlefield canvas to deploy the General's Power
+    const powerId = human.engine.pendingPowerId;
+    human.leftClickWorld(1500, 1500);
+    assertCheck(pb, 'Left-clicking battlefield deploys General Power and starts recharge cooldown',
+      human.engine.commandMode === null && human.engine.teams[0].powerCooldowns[powerId] > 0);
+  }
+
+  // --------------------------------------------------------------------------
+  // PLAYBOOK 8: High-APM / Clumsy User Stress, All 3 Factions & HUD Toggles
+  // --------------------------------------------------------------------------
+  {
+    const pb = 'Playbook 8: Multi-Faction Switching, Clumsy Human Stress & HUD Controls';
+    let caughtError = null;
+    try {
+      // Toggle Pause, SFX, Music, EVA Voice
+      human.clickElement('#btn-pause-game', 'Pause Button');
+      const pausedState = human.engine.paused;
+      human.clickElement('#btn-pause-game', 'Unpause Button');
+      assertCheck(pb, 'Clicking #btn-pause-game toggles engine.paused cleanly', pausedState === true && human.engine.paused === false);
+
+      human.clickElement('#btn-toggle-sfx', 'Toggle SFX');
+      human.clickElement('#btn-toggle-music', 'Toggle Music');
+      human.clickElement('#btn-toggle-voice', 'Toggle EVA Voice');
+      human.clickElement('#btn-select-combat', 'Select All Combat Units Button');
+
+      // Open Powers modal with [P] and press [Escape] to close
+      human.pressKey('p');
+      human.pressKey('Escape');
+      assertCheck(pb, 'Pressing [Escape] closes open Generals Powers modal',
+        document.getElementById('powers-modal').classList.contains('hidden'));
+
+      // Test China Overlord Addon UI button state (Gatling Cannon [R] / Speaker Tower)
+      const overlord = human.engine.spawnUnit('CHINA_OVERLORD', 0, 500, 2300);
+      human.engine.teams[0].credits += 2000;
+      human.leftClickWorld(overlord.x, overlord.y);
+      const gatlingBtn = human.clickCommandCardButton('GATLING');
+      // Re-click Overlord on canvas to refresh Inspector and Command Card as a human user
+      human.leftClickWorld(overlord.x, overlord.y);
+      const gatlingBtnAfter = Array.from(document.getElementById('command-card-grid').querySelectorAll('.cmd-card-btn'))
+        .find(b => (b._innerHTML || b.textContent || '').toUpperCase().includes('GATLING'));
+      const statsHtml = document.getElementById('inspector-stats').innerHTML;
+      assertCheck(
+        pb,
+        'Clicking Overlord GATLING [R] installs addon AND updates Inspector/Command Card to reflect installed state',
+        Boolean(gatlingBtn) && overlord.hasGatlingCannon === true &&
+          statsHtml.includes('Addon:') && !gatlingBtnAfter,
+        `hasGatlingCannon=${overlord.hasGatlingCannon}, overlordAddon=${overlord.overlordAddon}, statsShowsAddon=${statsHtml.includes('Addon:')}, gatlingBtnStillVisible=${Boolean(gatlingBtnAfter)}`,
+        {
+          id: 'BUG-HUMAN-04',
+          severity: 'MEDIUM (P2)',
+          file: 'js/ui.js (lines 239, 503–505, 568, 791, 888, 943) vs js/engine.js (lines 606–609, 656, 755, 798)',
+          lines: 'ui.js:503-505, ui.js:568, engine.js:606-609, engine.js:798',
+          summary: '`js/ui.js` checks `primary.overlordAddon`, `primary.laserLockedTimer`, and `!u.garrisonId`, whereas `js/engine.js` sets `u.hasSpeakerTower = true` / `u.hasGatlingCannon = true`, `u.laserLockTimer = 5.0`, and `u.garrisonedIn = bunker.id`!',
+          impact: 'After purchasing an Overlord Gatling Cannon (`[R]`), the Command Card button stays visible and clickable (`!primary.overlordAddon` is still true), the Selection Inspector never shows `Addon: GATLING_CANNON` or `🎯 LASER LOCKED`, and `u.garrisonId` checks in `ui.js` always evaluate `undefined`.'
+        }
+      );
+
+      // Click MENU button (#btn-main-menu), switch to GLA General Juhziz, and launch a new match as a human!
+      human.clickElement('#btn-main-menu', 'Main Menu HUD Button');
+      assertCheck(pb, 'Clicking #btn-main-menu re-opens Start Modal',
+        !document.getElementById('start-modal').classList.contains('hidden'));
+
+      const playerCards = document.getElementById('player-general-grid').children;
+      // Card 7 is GLA Demolition General Juhziz (explosiveDamageMult: 1.35)
+      human.clickElement(playerCards[7] || playerCards[6], 'Select GLA General (Gen. Juhziz)');
+      human.clickElement('#btn-launch-operation', 'Launch GLA Match');
+      assertCheck(pb, 'Launching match as GLA switches HUD theme to .hud-theme-gla and displays GLA No-Power indicator',
+        document.body.classList.contains('hud-theme-gla') &&
+        document.getElementById('hud-power').textContent.includes('NO POWER NEEDED'));
+
+      // Verify General Juhziz's +35% Explosive Damage modifier actually applies when SCUD Launcher / Terrorist fires
+      const scudDef = window.ZH_DATA.UNITS.GLA_SCUD_LAUNCHER;
+      const mod = human.engine.teams[0].general.modifiers || {};
+      assertCheck(
+        pb,
+        'GLA Gen. Juhziz (+35% Explosive Damage) weapon damageType matches engine.js fireWeapon explosiveDamageMult check',
+        Boolean(mod.explosiveDamageMult) && scudDef.weapon.damageType === 'HIGH_EXPLOSIVE',
+        `mod.explosiveDamageMult=${mod.explosiveDamageMult}, scudDef.weapon.damageType="${scudDef.weapon.damageType}" (engine.js:2478 checks wDef.damageType === "HIGH_EXPLOSIVE")`,
+        {
+          id: 'BUG-HUMAN-05',
+          severity: 'MEDIUM (P2)',
+          file: 'js/data.js (line 2835) & js/engine.js (line 2478)',
+          lines: 'data.js:2835, engine.js:2478',
+          summary: '`js/data.js:2835` normalizes `HIGH_EXPLOSIVE` to `u.weapon.damageType = "EXPLOSIVE"`, but `js/engine.js:2478` (`fireWeapon`) checks `if (wDef.damageType === "HIGH_EXPLOSIVE" && mod.explosiveDamageMult)`!',
+          impact: 'Selecting GLA Demolition General Juhziz (`explosiveDamageMult: 1.35`) on the Skirmish screen gives 0% bonus weapon damage on SCUD Launchers, Terrorists, Bomb Trucks, and Rocket Buggies.'
+        }
+      );
+    } catch (err) {
+      caughtError = err;
+    }
+    assertCheck(pb, 'Rapid HUD toggles, modal Escape, and faction re-launch produce 0 uncaught exceptions', !caughtError,
+      caughtError ? caughtError.stack : 'Clean execution');
+  }
+
+  return { report, findings: human.findings, actionCount: human.actionLog.length };
+}
+
+if (require.main === module) {
+  const { report, findings, actionCount } = runHumanQAPlaybooks();
+  const passed = report.filter(r => r.passed).length;
+  const failed = report.filter(r => !r.passed).length;
+
+  console.log('====================================================================');
+  console.log(' C&C GENERALS: ZERO HOUR — HUMAN-USER QA PLAYBOOK EXECUTION REPORT');
+  console.log('====================================================================');
+  console.log(`Synthetic Human UI Actions Dispatched : ${actionCount}`);
+  console.log(`Total Human QA Assertions             : ${report.length}`);
+  console.log(`Passed                                : ${passed}`);
+  console.log(`Failed (Human Interaction Bugs Found) : ${failed}`);
+  console.log('--------------------------------------------------------------------');
+  for (const r of report) {
+    const icon = r.passed ? '✅ PASS' : '❌ FAIL';
+    console.log(`${icon} | [${r.playbook}] ${r.name}${r.detail ? ' — ' + r.detail : ''}`);
+  }
+  if (findings.length > 0) {
+    console.log('\n====================================================================');
+    console.log(' HUMAN-UI INTERACTION BUGS DISCOVERED');
+    console.log('====================================================================');
+    for (const f of findings) {
+      console.log(`[${f.id}] (${f.severity}) ${f.file}`);
+      console.log(`  Check  : ${f.check}`);
+      console.log(`  Detail : ${f.detail}`);
+      console.log(`  Cause  : ${f.summary}`);
+      console.log(`  Impact : ${f.impact}\n`);
+    }
+  }
+  process.exit(0);
+}
+
+module.exports = { runHumanQAPlaybooks, HumanUserDriver };

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Command &amp; Conquer: Generals – Zero Hour (macOS Clean-Room Edition)</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ==================== TOP TACTICAL RESOURCE & GENERAL BAR ==================== -->
+  <header id="top-bar">
+    <div class="top-bar-left">
+      <div class="stat-pill" id="hud-faction-badge">🦅 Gen. Granger</div>
+      <div class="stat-pill" id="hud-credits">$10,000</div>
+      <div class="stat-pill" id="hud-power">⚡ 0 / 0</div>
+      <div class="stat-pill" id="hud-rank">★ Rank 1 (0/450 XP)</div>
+      <div class="stat-pill" id="hud-tunnel-status" style="display:none; color:#fde047;">🕳️ Tunnel Garrison: 0/10</div>
+    </div>
+
+    <div class="top-bar-right">
+      <button class="hud-btn" id="btn-generals-powers" title="Unlock & Deploy Generals Powers (Shortcut: P)">
+        ⚡ Generals Powers [P] (1 Pt)
+      </button>
+      <button class="hud-btn" id="btn-select-builder" title="Select Construction Dozer or GLA Worker (Shortcut: B)">
+        🚜 Dozer / Worker [B]
+      </button>
+      <button class="hud-btn" id="btn-select-combat" title="Select all combat units on the battlefield">
+        ⚔️ All Combat Units
+      </button>
+      <button class="hud-btn" id="btn-quick-save" title="Quick Save Skirmish State (Shortcut: F5)">💾 Save [F5]</button>
+      <button class="hud-btn" id="btn-quick-load" title="Quick Load Skirmish State (Shortcut: F9)">📂 Load [F9]</button>
+      <button class="hud-btn" id="btn-export-save" title="Download .zhsave File">⬇️ .zhsave</button>
+      <button class="hud-btn" id="btn-import-save" title="Import .zhsave File">⬆️ Import</button>
+      <input type="file" id="zhsave-file-input" accept=".zhsave,.json" style="display:none;" />
+      <button class="hud-btn" id="btn-toggle-sfx">🔊 SFX: ON</button>
+      <button class="hud-btn" id="btn-toggle-music" title="Toggle Dynamic Faction Soundtrack [M]">🎵 Music: ON</button>
+      <button class="hud-btn" id="btn-toggle-voice">🎙️ EVA: ON</button>
+      <button class="hud-btn" id="btn-pause-game">⏸ PAUSE</button>
+      <button class="hud-btn" id="btn-main-menu">☰ MENU</button>
+    </div>
+  </header>
+
+  <!-- ==================== BATTLEFIELD VIEWPORT ==================== -->
+  <main id="viewport-wrap">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Live Global Superweapon Countdown Timers -->
+    <div id="superweapon-timers"></div>
+
+    <!-- Center Tactical EVA Alert Banner -->
+    <div id="tactical-alert" class="hidden"></div>
+
+    <!-- Opposing Zero Hour General Live Taunt Transmission -->
+    <div id="general-taunt-box" class="hidden">
+      <div id="taunt-general-name">☣️ Dr. Thrax</div>
+      <div id="taunt-general-text">"Take a deep breath, General!"</div>
+    </div>
+  </main>
+
+  <!-- ==================== BOTTOM ZERO HOUR COMMAND BAR ==================== -->
+  <footer id="command-bar">
+    <!-- Left: Interactive Radar Minimap -->
+    <div id="minimap-panel">
+      <canvas id="minimap-canvas" width="176" height="128"></canvas>
+    </div>
+
+    <!-- Center: Unit / Building Inspector & Stance Orders -->
+    <div id="inspector-panel">
+      <div class="inspector-top">
+        <div>
+          <div id="inspector-title">No Tactical Selection</div>
+          <div id="inspector-subtitle">Left-click or drag a box to select units/structures. Press [B] for Dozer/Worker, [F] for Special Ability, [SPACE] for Alert.</div>
+        </div>
+        <div class="stance-bar">
+          <button class="hud-btn" id="btn-order-attack-move" title="Attack-Move: Engage any enemies along path [A]">🎯 Attack-Move</button>
+          <button class="hud-btn" id="btn-order-guard" title="Guard Area: Patrol 220px leash around point [G]">🛡️ Guard</button>
+          <button class="hud-btn" id="btn-order-stop" title="Stop current order [S]">✋ Stop</button>
+          <button class="hud-btn" id="btn-order-scatter" title="Scatter units to evade artillery/superweapons [X]">💥 Scatter</button>
+        </div>
+      </div>
+
+      <div id="inspector-stats"></div>
+      <div id="inspector-queue"></div>
+    </div>
+
+    <!-- Right: 12-Slot Command Card (Build / Train / Upgrade / Special) -->
+    <div id="command-card-panel">
+      <div id="command-card-grid"></div>
+    </div>
+  </footer>
+
+  <!-- ==================== START / GENERAL SELECTION MODAL ==================== -->
+  <div id="start-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <div class="zh-logo-title">Command &amp; Conquer: Generals – Zero Hour</div>
+          <div class="zh-logo-sub">v2.0 Complete macOS Edition • 9 Sub-Generals, Articulated 2.5D Rigs, Spatial Audio, Multi-Squad AI &amp; Deterministic .zhsave Persistence</div>
+        </div>
+        <div class="mode-tabs">
+          <button class="mode-tab-btn active" data-mode="CHALLENGE">🏆 Generals' Challenge Campaign</button>
+          <button class="mode-tab-btn" data-mode="SKIRMISH">⚔️ Custom Skirmish Mode</button>
+        </div>
+      </div>
+
+      <div class="section-label">1. Select Your Zero Hour Commander (USA / China / GLA)</div>
+      <div id="player-general-grid" class="general-grid"></div>
+
+      <!-- Generals' Challenge Gauntlet Ladder -->
+      <div id="challenge-section">
+        <div class="section-label">2. Generals' Challenge Gauntlet Progression</div>
+        <div id="challenge-ladder-preview"></div>
+      </div>
+
+      <!-- Skirmish Opponent Picker -->
+      <div id="ai-general-picker-wrap" style="display:none;">
+        <div class="section-label">2. Select Opposing AI General</div>
+        <div id="ai-general-grid" class="general-grid"></div>
+      </div>
+
+      <!-- Map, Difficulty & Launch -->
+      <div class="match-settings-row">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <label for="map-selector" style="font-size:12px; font-weight:800; color:#94a3b8;">THEATER OF OPERATIONS:</label>
+          <select id="map-selector" class="map-select-dropdown"></select>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:12px; font-weight:800; color:#94a3b8;">AI DOCTRINE:</span>
+          <button class="diff-btn" data-diff="EASY">Cadet (Easy)</button>
+          <button class="diff-btn active" data-diff="NORMAL">Commander (Normal)</button>
+          <button class="diff-btn" data-diff="HARD">Brutal General (Hard)</button>
+        </div>
+
+        <button class="launch-btn" id="btn-launch-operation">LAUNCH ZERO HOUR ▶</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== GENERALS POWERS TREE MODAL ==================== -->
+  <div id="powers-modal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width: 720px;">
+      <div class="modal-header">
+        <div>
+          <div class="zh-logo-title">⚡ Generals Secret Powers</div>
+          <div id="powers-modal-subtitle" class="zh-logo-sub">Spend Generals Points earned in combat to authorize tactical support powers.</div>
+        </div>
+        <button class="hud-btn" id="btn-close-powers">✕ CLOSE [ESC]</button>
+      </div>
+      <div id="powers-grid" class="powers-list"></div>
+    </div>
+  </div>
+
+  <!-- ==================== VICTORY / DEFEAT MODAL ==================== -->
+  <div id="victory-modal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width: 540px; text-align: center;">
+      <div id="victory-title" class="zh-logo-title" style="font-size: 28px; margin-bottom: 10px;">VICTORY</div>
+      <p id="victory-subtitle" style="color: #cbd5e1; font-size: 14px; margin-bottom: 22px;"></p>
+      <div style="display: flex; justify-content: center; gap: 12px;">
+        <button class="launch-btn" id="btn-next-challenge">CONTINUE ▶</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clean-Room Zero Hour Engine Scripts (Phase 3 SAGE Stack) -->
+  <script src="js/data.js"></script>
+  <script src="js/spatial.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/vfx.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/simulator.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>
