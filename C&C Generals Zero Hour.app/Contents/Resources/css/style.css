@@ -1,9 +1,12 @@
 /* ============================================================================
  * Command & Conquer: Generals – Zero Hour (macOS Clean-Room Edition)
- * css/style.css — Phase 3 Faction-Skinned Tactical Command Bar, Cameo Badges & UI
+ * css/style.css — Phases 1–5 Tactical HUD Overhaul, Faction Themes & Cameo UI
  * ============================================================================ */
 
 :root {
+  --top-bar-h: 36px;
+  --cmd-bar-h: 184px;
+  --ui-scale: 1;
   --bg-dark: #070b14;
   --panel-bg: rgba(15, 23, 42, 0.94);
   --panel-border: #334155;
@@ -13,17 +16,29 @@
   --accent-red: #ef4444;
   --text-main: #f8fafc;
   --text-muted: #94a3b8;
+  --font-display: "SF Pro Display", "Eurostile", "Bank Gothic", "Impact", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Menlo", monospace;
 }
 
-/* Phase 3 SYS-20: Authentic Faction-Skinned HUD Themes */
+/* Phase 3 SYS-20 & Phase 2.7: Authentic Faction-Skinned HUD Themes */
 body.hud-theme-usa {
   --panel-border: #2563eb;
   --accent-cyan: #38bdf8;
+  --faction-glow: rgba(56, 189, 248, 0.22);
 }
 body.hud-theme-usa #command-bar {
-  background: linear-gradient(180deg, #0f1f3d, #071022);
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(56, 189, 248, 0.03) 0px,
+      rgba(56, 189, 248, 0.03) 1px,
+      transparent 1px,
+      transparent 4px
+    ),
+    linear-gradient(180deg, #0f1f3d, #071022);
   border-top: 2px solid #38bdf8;
-  box-shadow: 0 -4px 18px rgba(56, 189, 248, 0.16);
+  box-shadow: 0 -4px 18px rgba(56, 189, 248, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 body.hud-theme-usa #top-bar {
   border-bottom: 2px solid #2563eb;
@@ -32,11 +47,20 @@ body.hud-theme-usa #top-bar {
 body.hud-theme-china {
   --panel-border: #dc2626;
   --accent-cyan: #f87171;
+  --faction-glow: rgba(239, 68, 68, 0.22);
 }
 body.hud-theme-china #command-bar {
-  background: linear-gradient(180deg, #2a1015, #140709);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(248, 113, 113, 0.025) 0px,
+      rgba(248, 113, 113, 0.025) 2px,
+      transparent 2px,
+      transparent 6px
+    ),
+    linear-gradient(180deg, #2a1015, #140709);
   border-top: 2px solid #ef4444;
-  box-shadow: 0 -4px 18px rgba(239, 68, 68, 0.18);
+  box-shadow: 0 -4px 18px rgba(239, 68, 68, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 body.hud-theme-china #top-bar {
   border-bottom: 2px solid #dc2626;
@@ -45,11 +69,20 @@ body.hud-theme-china #top-bar {
 body.hud-theme-gla {
   --panel-border: #ca8a04;
   --accent-cyan: #facc15;
+  --faction-glow: rgba(234, 179, 8, 0.22);
 }
 body.hud-theme-gla #command-bar {
-  background: linear-gradient(180deg, #231f10, #110f07);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(234, 179, 8, 0.03) 0px,
+      rgba(234, 179, 8, 0.03) 4px,
+      transparent 4px,
+      transparent 10px
+    ),
+    linear-gradient(180deg, #231f10, #110f07);
   border-top: 2px solid #eab308;
-  box-shadow: 0 -4px 18px rgba(234, 179, 8, 0.16);
+  box-shadow: 0 -4px 18px rgba(234, 179, 8, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 body.hud-theme-gla #top-bar {
   border-bottom: 2px solid #ca8a04;
@@ -69,7 +102,15 @@ body, html {
   overflow: hidden;
   background: var(--bg-dark);
   color: var(--text-main);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, monospace;
+  font-family: var(--font-ui);
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
 }
 
 .hidden {
@@ -77,58 +118,68 @@ body, html {
 }
 
 /* ============================================================================
- * Top Tactical Resource & General Rank Bar
+ * Top Tactical Resource & General Rank Bar (Slim 36px)
  * ============================================================================ */
 #top-bar {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  height: 44px;
+  height: var(--top-bar-h);
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(9, 14, 26, 0.92));
   border-bottom: 2px solid var(--panel-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
+  padding: 0 12px;
   z-index: 20;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .top-bar-left, .top-bar-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .stat-pill {
   background: rgba(30, 41, 59, 0.85);
   border: 1px solid #475569;
-  padding: 5px 11px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  padding: 3px 9px;
   border-radius: 4px;
   font-weight: 700;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
+  font-variant-numeric: tabular-nums;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 #hud-credits {
   color: #fde047;
-  font-family: monospace;
-  font-size: 14px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+#hud-power, #hud-rank {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .hud-btn {
   background: linear-gradient(180deg, #1e293b, #0f172a);
   color: #e2e8f0;
   border: 1px solid #475569;
-  padding: 5px 11px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  padding: 4px 10px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.12s ease;
 }
 
 .hud-btn:hover {
@@ -150,13 +201,13 @@ body, html {
 }
 
 /* ============================================================================
- * Main Viewport, Superweapon Timers, Alerts & General Taunts
+ * Main Viewport, Superweapon Timers, Alerts, Power Strip, Control Groups
  * ============================================================================ */
 #viewport-wrap {
   position: relative;
   width: 100vw;
-  height: calc(100vh - 192px);
-  margin-top: 44px;
+  height: calc(100vh - var(--top-bar-h) - var(--cmd-bar-h));
+  margin-top: var(--top-bar-h);
 }
 
 #game-canvas {
@@ -168,37 +219,39 @@ body, html {
 
 #superweapon-timers {
   position: fixed;
-  top: 54px;
-  right: 16px;
+  top: calc(var(--top-bar-h) + 8px);
+  right: 14px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   z-index: 18;
 }
 
 .sw-timer-row {
   background: rgba(15, 23, 42, 0.92);
   border: 1px solid #475569;
-  padding: 6px 12px;
+  padding: 5px 10px;
   border-radius: 4px;
-  font-family: monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
   display: flex;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
   color: #f8fafc;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
 #tactical-alert {
   position: fixed;
-  top: 58px;
+  top: calc(var(--top-bar-h) + 10px);
   left: 50%;
   transform: translateX(-50%);
   background: rgba(9, 14, 26, 0.94);
   border: 2px solid var(--accent-cyan);
-  padding: 8px 20px;
+  padding: 6px 18px;
   border-radius: 6px;
+  font-family: var(--font-display);
   font-weight: 800;
   font-size: 13px;
   letter-spacing: 0.6px;
@@ -206,50 +259,269 @@ body, html {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.65);
 }
 
+/* Rolling Tactical Alert Log (Above Minimap) */
+#alert-log {
+  position: fixed;
+  bottom: calc(var(--cmd-bar-h) + 8px);
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 18;
+  max-width: 310px;
+  pointer-events: none;
+}
+
+.alert-log-item {
+  pointer-events: auto;
+  background: rgba(9, 14, 26, 0.88);
+  border-left: 3px solid var(--accent-cyan);
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  border-right: 1px solid rgba(148, 163, 184, 0.25);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #f1f5f9;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  transition: opacity 0.25s ease, transform 0.2s ease;
+}
+
+.alert-log-item:hover {
+  background: rgba(30, 58, 138, 0.85);
+}
+
+/* Right-Edge Unlocked Generals Powers Quick-Cast Strip */
+#power-strip {
+  position: fixed;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 19;
+}
+
+.power-strip-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(180deg, #1e293b, #0f172a);
+  border: 2px solid var(--panel-border);
+  border-radius: 6px;
+  color: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+}
+
+.power-strip-btn:hover {
+  border-color: var(--accent-gold);
+  transform: scale(1.05);
+}
+
+.power-strip-btn.ready {
+  border-color: var(--accent-green);
+}
+
+.power-strip-btn.active-mode {
+  border-color: #fde047;
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.6);
+}
+
+.power-strip-icon {
+  font-size: 18px;
+  line-height: 1;
+  z-index: 2;
+}
+
+.power-strip-cd {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: #fde047;
+  z-index: 2;
+}
+
+.power-strip-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(15, 23, 42, 0.78);
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Control Group Bar (1..9 Pills above Command Bar) */
+#control-group-bar {
+  position: fixed;
+  bottom: calc(var(--cmd-bar-h) + 6px);
+  left: 204px;
+  display: flex;
+  gap: 5px;
+  z-index: 18;
+}
+
+.ctrl-group-pill {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid #475569;
+  color: #e2e8f0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ctrl-group-pill:hover,
+.ctrl-group-pill.active {
+  border-color: var(--accent-gold);
+  color: #fde047;
+  background: rgba(30, 58, 138, 0.65);
+}
+
+/* Rich Floating Cameo Tooltip */
+#hud-tooltip {
+  position: fixed;
+  bottom: calc(var(--cmd-bar-h) + 10px);
+  right: 16px;
+  width: 268px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.97), rgba(7, 11, 20, 0.97));
+  border: 1px solid var(--accent-cyan);
+  border-radius: 6px;
+  padding: 10px 12px;
+  z-index: 60;
+  pointer-events: none;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.75);
+}
+
+.tt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.tt-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  color: #fde047;
+}
+
+.tt-hotkey {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #38bdf8;
+  background: rgba(30, 41, 59, 0.9);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.tt-cost-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: #e2e8f0;
+  margin-bottom: 6px;
+}
+
+.tt-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+.tt-stat-pill {
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid #334155;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #cbd5e1;
+}
+
+.tt-desc {
+  font-size: 11px;
+  color: #cbd5e1;
+  line-height: 1.35;
+}
+
+.tt-prereq {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(239, 68, 68, 0.35);
+  font-size: 11px;
+  font-weight: 700;
+  color: #f87171;
+}
+
 #general-taunt-box {
   position: fixed;
-  top: 104px;
+  top: calc(var(--top-bar-h) + 52px);
   left: 16px;
-  max-width: 420px;
+  max-width: 400px;
   background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95));
   border: 1px solid var(--accent-gold);
   border-left: 5px solid var(--accent-gold);
-  padding: 10px 14px;
+  padding: 9px 13px;
   border-radius: 6px;
   z-index: 19;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
 
 #taunt-general-name {
+  font-family: var(--font-display);
   font-size: 12px;
   font-weight: 800;
   color: #fde047;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   text-transform: uppercase;
 }
 
 #taunt-general-text {
-  font-size: 13px;
+  font-size: 12px;
   color: #f1f5f9;
   font-style: italic;
   line-height: 1.35;
 }
 
 /* ============================================================================
- * Bottom Zero Hour Tactical Command Bar (Minimap | Inspector | Command Card)
+ * Bottom Zero Hour Tactical Command Bar (Square Minimap | Inspector | Cameos)
  * ============================================================================ */
 #command-bar {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 148px;
+  height: var(--cmd-bar-h);
   background: linear-gradient(180deg, #111827, #090d16);
   border-top: 2px solid #475569;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   display: grid;
-  grid-template-columns: 190px 1fr 480px;
-  gap: 12px;
-  padding: 8px 14px;
+  grid-template-columns: 184px 1fr 480px;
+  gap: 10px;
+  padding: 8px 12px;
   z-index: 20;
 }
 
@@ -262,87 +534,198 @@ body, html {
   border: 2px solid var(--panel-border);
   border-radius: 4px;
   overflow: hidden;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.8);
 }
 
 #minimap-canvas {
-  width: 176px;
-  height: 128px;
+  width: 164px;
+  height: 164px;
+  aspect-ratio: 1 / 1;
   cursor: pointer;
+  display: block;
 }
 
 #inspector-panel {
-  background: rgba(15, 23, 42, 0.8);
+  background: rgba(15, 23, 42, 0.82);
   border: 1px solid var(--panel-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   border-radius: 4px;
-  padding: 10px 14px;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  overflow: hidden;
 }
 
 .inspector-top {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
+  gap: 10px;
+}
+
+.inspector-header-text {
+  min-width: 0;
+  flex: 1;
 }
 
 #inspector-title {
+  font-family: var(--font-display);
   font-size: 15px;
   font-weight: 800;
   color: #fde047;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #inspector-subtitle {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
-  line-height: 1.35;
+  line-height: 1.3;
 }
 
 .stance-bar {
   display: flex;
-  gap: 6px;
+  gap: 5px;
   flex-shrink: 0;
+}
+
+/* Multi-Selection Unit Group Summary Chips */
+.selection-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.unit-group-chip {
+  background: rgba(30, 41, 59, 0.92);
+  border: 1px solid #475569;
+  border-radius: 4px;
+  padding: 3px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #f8fafc;
+  cursor: pointer;
+}
+
+.unit-group-chip:hover {
+  border-color: var(--accent-gold);
+  background: #1e3a5f;
+}
+
+.unit-group-hp {
+  width: 28px;
+  height: 3px;
+  background: #1e293b;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.unit-group-hp-fill {
+  height: 100%;
+  background: #22c55e;
 }
 
 #inspector-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  font-size: 12px;
-  font-family: monospace;
+  gap: 6px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   color: #cbd5e1;
 }
 
 #inspector-stats span {
   background: rgba(30, 41, 59, 0.9);
   border: 1px solid #475569;
-  padding: 2px 8px;
-  border-radius: 3px;
-}
-
-#inspector-queue {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.queue-pill {
-  background: #0284c7;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
   padding: 2px 7px;
   border-radius: 3px;
 }
 
-/* 12-Slot Command Card Grid + Phase 3 Cameo Queue Badges & Progress Bars */
+/* Production Queue Strip */
+#inspector-queue {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.queue-pill, .queue-chip {
+  position: relative;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid #38bdf8;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.queue-pill:hover, .queue-chip:hover {
+  border-color: #ef4444;
+  background: rgba(127, 29, 29, 0.65);
+}
+
+.queue-chip-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: #38bdf8;
+  pointer-events: none;
+}
+
+/* ============================================================================
+ * 12-Slot Command Card Grid + Cameo Badges, Cooldowns & Empty Slots
+ * ============================================================================ */
 #command-card-panel {
   background: rgba(15, 23, 42, 0.85);
   border: 1px solid var(--panel-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   border-radius: 4px;
   padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.command-card-tabs {
+  display: flex;
+  gap: 4px;
+  min-height: 0;
+}
+
+.command-card-tabs:empty {
+  display: none;
+}
+
+.cmd-tab-pill {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid #475569;
+  color: #94a3b8;
+}
+
+.cmd-tab-pill.active {
+  color: #fde047;
+  border-color: var(--accent-gold);
 }
 
 #command-card-grid {
@@ -350,7 +733,15 @@ body, html {
   grid-template-columns: repeat(4, 1fr);
   grid-template-rows: repeat(3, 1fr);
   gap: 5px;
+  flex: 1;
   height: 100%;
+}
+
+.cmd-slot-empty {
+  background: rgba(7, 11, 20, 0.55);
+  border: 1px solid rgba(51, 65, 85, 0.45);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.65);
+  border-radius: 4px;
 }
 
 .cmd-card-btn {
@@ -358,13 +749,14 @@ body, html {
   overflow: hidden;
   background: linear-gradient(180deg, #1e293b, #0f172a);
   border: 1px solid #475569;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   border-radius: 4px;
   color: #f8fafc;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 3px;
+  padding: 2px 3px;
   cursor: pointer;
   transition: all 0.12s ease;
 }
@@ -376,8 +768,23 @@ body, html {
 }
 
 .cmd-card-btn.disabled {
-  opacity: 0.42;
+  opacity: 0.48;
   cursor: not-allowed;
+}
+
+.cmd-card-btn.cmd-prereq-locked {
+  filter: saturate(0.25);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cmd-card-btn.cmd-cant-afford .cmd-cost {
+  color: #ef4444;
+}
+
+.cmd-card-btn.cmd-active {
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 10px rgba(234, 179, 8, 0.45);
 }
 
 .cmd-hotkey {
@@ -385,7 +792,7 @@ body, html {
   top: 2px;
   left: 4px;
   font-size: 9px;
-  font-family: monospace;
+  font-family: var(--font-mono);
   color: #94a3b8;
   z-index: 2;
 }
@@ -398,7 +805,8 @@ body, html {
   color: #090d16;
   font-size: 9px;
   font-weight: 900;
-  font-family: monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   padding: 0 4px;
   border-radius: 3px;
   z-index: 2;
@@ -414,23 +822,45 @@ body, html {
   transition: width 0.1s linear;
 }
 
-.cmd-title {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.3px;
-  text-align: center;
+.cmd-cooldown-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(9, 14, 26, 0.72);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.cmd-icon {
+  font-size: 16px;
+  line-height: 1.05;
   z-index: 2;
 }
 
-.cmd-cost {
+.cmd-title {
   font-size: 10px;
-  font-family: monospace;
+  font-weight: 800;
+  letter-spacing: 0.25px;
+  text-align: center;
+  line-height: 1.1;
+  z-index: 2;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmd-cost {
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   color: #fde047;
   z-index: 2;
 }
 
 /* ============================================================================
- * Modals (Start Screen, Generals Powers Tree, Victory/Defeat)
+ * Modals (Start Screen, In-Game Menu, Generals Powers Tree, Victory/Defeat)
  * ============================================================================ */
 .modal-backdrop {
   position: fixed;
@@ -441,19 +871,32 @@ body, html {
   align-items: center;
   justify-content: center;
   z-index: 50;
-  padding: 20px;
+  padding: 16px;
 }
 
 .modal-card {
   background: linear-gradient(180deg, #0f172a, #090d16);
   border: 2px solid #475569;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   width: 100%;
   max-width: 1120px;
   max-height: 92vh;
   overflow-y: auto;
-  padding: 22px 26px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85);
+  padding: 20px 24px;
+}
+
+.start-modal-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 18px 22px;
+}
+
+.start-scroll-body {
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 4px;
 }
 
 .modal-header {
@@ -461,38 +904,39 @@ body, html {
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid #334155;
-  padding-bottom: 14px;
-  margin-bottom: 16px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  gap: 12px;
 }
 
 .zh-logo-title {
-  font-size: 24px;
+  font-family: var(--font-display);
+  font-size: 22px;
   font-weight: 900;
-  letter-spacing: 1px;
+  letter-spacing: 0.9px;
   color: #fde047;
   text-transform: uppercase;
 }
 
 .zh-logo-sub {
-  font-size: 13px;
+  font-size: 12px;
   color: #94a3b8;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 
 .mode-tabs {
   display: flex;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 8px;
 }
 
 .mode-tab-btn, .diff-btn {
   background: #1e293b;
   color: #cbd5e1;
   border: 1px solid #475569;
-  padding: 8px 16px;
+  padding: 7px 14px;
   border-radius: 5px;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -503,94 +947,94 @@ body, html {
 }
 
 .section-label {
-  font-size: 13px;
+  font-family: var(--font-display);
+  font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.7px;
   color: #38bdf8;
-  margin: 12px 0 8px;
+  margin: 10px 0 6px;
 }
 
 .general-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 8px;
 }
 
 .general-card {
   background: rgba(30, 41, 59, 0.65);
   border: 2px solid rgba(148, 163, 184, 0.22);
   border-radius: 6px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.14s ease;
 }
 
 .general-card:hover {
   background: rgba(30, 41, 59, 0.95);
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 
 .general-card.selected {
-  background: rgba(30, 58, 138, 0.35);
-  box-shadow: 0 0 16px rgba(56, 189, 248, 0.25);
+  background: rgba(30, 58, 138, 0.38);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.25);
 }
 
 .gen-card-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 4px 6px;
+  gap: 8px;
+  padding: 3px 5px;
   border-radius: 4px;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .gen-badge {
-  font-size: 24px;
+  font-size: 22px;
 }
 
 .gen-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   color: #f8fafc;
 }
 
 .gen-title {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
 }
 
 .gen-specialty {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   color: #fde047;
-  margin-bottom: 5px;
+  margin-bottom: 4px;
 }
 
 .gen-perks {
   list-style: disc inside;
-  font-size: 11px;
+  font-size: 10.5px;
   color: #cbd5e1;
-  line-height: 1.38;
+  line-height: 1.32;
 }
 
 /* Generals' Challenge Gauntlet Ladder */
 #challenge-ladder-preview {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   background: rgba(15, 23, 42, 0.8);
   border: 1px solid #334155;
-  padding: 10px;
+  padding: 8px;
   border-radius: 6px;
-  margin-top: 6px;
 }
 
 .ladder-step {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
+  padding: 4px 9px;
   border-radius: 4px;
   font-size: 11px;
   font-weight: 700;
@@ -609,24 +1053,90 @@ body, html {
   color: #fde047;
 }
 
+/* Theater Map Preview & Doctrine Grid */
+.theater-config-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.map-preview-card, .doctrine-card {
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.map-preview-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#map-preview-canvas {
+  width: 116px;
+  height: 116px;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  background: #050811;
+  flex-shrink: 0;
+}
+
+.map-preview-details {
+  flex: 1;
+}
+
+.map-preview-meta {
+  font-size: 11px;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+
+.difficulty-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.start-utility-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .match-settings-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-top: 16px;
-  padding-top: 14px;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid #334155;
+}
+
+.start-launch-footer {
+  position: sticky;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.98);
+  z-index: 5;
+}
+
+.start-matchup-summary {
+  font-size: 12px;
+  font-weight: 700;
+  color: #cbd5e1;
 }
 
 .map-select-dropdown {
   background: #1e293b;
   color: #f8fafc;
   border: 1px solid #475569;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: 5px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -634,9 +1144,10 @@ body, html {
   background: linear-gradient(180deg, #eab308, #ca8a04);
   color: #090d16;
   border: none;
-  padding: 12px 28px;
+  padding: 10px 24px;
   border-radius: 6px;
-  font-size: 15px;
+  font-family: var(--font-display);
+  font-size: 14px;
   font-weight: 900;
   letter-spacing: 0.8px;
   cursor: pointer;
@@ -647,31 +1158,115 @@ body, html {
   background: #facc15;
 }
 
-/* Generals Powers Modal */
-.powers-list {
+/* In-Game Menu & Settings Modal */
+.game-menu-card {
+  max-width: 780px;
+}
+
+.game-menu-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 16px;
+}
+
+.menu-section-card {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.menu-btn-stack {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-top: 12px;
+  gap: 8px;
+}
+
+.menu-btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+.menu-btn-row .hud-btn {
+  flex: 1;
+  padding: 8px 10px;
+}
+
+.menu-danger-btn {
+  border-color: #dc2626;
+  color: #fca5a5;
+  padding: 8px 12px;
+}
+
+.settings-sliders, .settings-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.setting-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+/* Generals Powers Modal (3-Column Rank Progression) */
+.powers-rank-headers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.powers-rank-col-header {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 800;
+  color: #fde047;
+  text-align: center;
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid #334155;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.powers-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 6px;
 }
 
 .power-card {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   justify-content: space-between;
-  gap: 16px;
-  background: rgba(30, 41, 59, 0.75);
+  gap: 10px;
+  background: rgba(30, 41, 59, 0.78);
   border: 1px solid #475569;
   border-radius: 6px;
-  padding: 12px 16px;
+  padding: 12px;
 }
 
 .power-card.unlocked {
   border-color: var(--accent-cyan);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
 }
 
 .power-icon {
-  font-size: 30px;
+  font-size: 26px;
 }
 
 .power-info {
@@ -679,31 +1274,33 @@ body, html {
 }
 
 .power-title {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 800;
   color: #f8fafc;
   margin-bottom: 4px;
 }
 
 .rank-badge {
-  font-size: 11px;
+  font-size: 10px;
   background: #334155;
   color: #fde047;
-  padding: 2px 7px;
+  padding: 1px 6px;
   border-radius: 4px;
-  margin-left: 8px;
+  margin-left: 6px;
 }
 
 .power-desc {
-  font-size: 12px;
+  font-size: 11px;
   color: #cbd5e1;
+  line-height: 1.35;
 }
 
 .power-btn {
-  padding: 9px 16px;
+  width: 100%;
+  padding: 8px 12px;
   border-radius: 5px;
   font-weight: 800;
-  font-size: 12px;
+  font-size: 11px;
   border: none;
   cursor: pointer;
 }
@@ -722,4 +1319,75 @@ body, html {
   background: #334155;
   color: #94a3b8;
   cursor: not-allowed;
+}
+
+/* Victory / Defeat Battle Summary Table */
+.gameover-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  text-align: left;
+  margin: 12px 0;
+}
+
+.stat-summary-row {
+  background: rgba(30, 41, 59, 0.78);
+  border: 1px solid #334155;
+  border-radius: 5px;
+  padding: 6px 10px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.stat-summary-label {
+  color: #94a3b8;
+}
+
+.stat-summary-val {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: #fde047;
+}
+
+/* ============================================================================
+ * Responsive Breakpoints & Reduced Motion Support (Phase 5.4)
+ * ============================================================================ */
+@media (max-width: 1360px) {
+  :root {
+    --cmd-bar-h: 164px;
+  }
+  #command-bar {
+    grid-template-columns: 164px 1fr 410px;
+  }
+  #minimap-canvas {
+    width: 146px;
+    height: 146px;
+  }
+}
+
+@media (max-height: 820px) {
+  .general-perks, .gen-perks {
+    display: none;
+  }
+  .general-card {
+    padding: 6px 8px;
+  }
+}
+
+body.reduced-motion *,
+body.reduced-motion *::before,
+body.reduced-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -59,3 +59,4 @@ Encodes the complete *Zero Hour* balance tables:
    ```
 2. **Launcher Script:** Double-click `play-mac.command` or run `./play-mac.command`.
 3. **Browser Mode:** Open `index.html` directly in Safari, Chrome, or Arc.
+4. **Sync App Bundle Resources:** Run `./scripts/sync-app-resources.sh` to copy `index.html`, `css/`, and `js/` into `C&C Generals Zero Hour.app/Contents/Resources/`.

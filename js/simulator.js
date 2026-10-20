@@ -991,34 +991,49 @@ window.ZH_SIMULATOR = (function () {
     ].join(';');
 
     panel.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;border-bottom:1px solid rgba(56,189,248,0.25);padding-bottom:5px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;border-bottom:1px solid rgba(56,189,248,0.25);padding-bottom:5px;gap:6px;">
         <span style="font-weight:700;color:#38bdf8;letter-spacing:0.5px;">🤖 PLAN SIMULATOR &amp; AUDIT</span>
-        <button id="zh-sim-toggle-btn" style="background:#1e293b;color:#94a3b8;border:1px solid #475569;border-radius:4px;padding:2px 8px;cursor:pointer;font-weight:700;font-size:10px;">AUTO-PLAY: OFF</button>
+        <div style="display:flex;gap:4px;align-items:center;">
+          <button id="zh-sim-toggle-btn" style="background:#1e293b;color:#94a3b8;border:1px solid #475569;border-radius:4px;padding:2px 8px;cursor:pointer;font-weight:700;font-size:10px;">AUTO-PLAY: OFF</button>
+          <button id="zh-sim-collapse-btn" title="Collapse/Expand Simulator Panel" style="background:#1e293b;color:#94a3b8;border:1px solid #475569;border-radius:4px;padding:2px 6px;cursor:pointer;font-weight:700;font-size:10px;">▾</button>
+        </div>
       </div>
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
-        <label style="color:#94a3b8;font-size:10px;">PLAN:</label>
-        <select id="zh-sim-plan-select" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:3px;padding:2px 4px;font-size:10px;font-family:monospace;">
-          ${Object.values(PLANS)
-            .map(p => `<option value="${p.id}">${p.name}</option>`)
-            .join('')}
-        </select>
-      </div>
-      <div style="display:flex;gap:4px;align-items:center;margin-bottom:7px;">
-        <span style="color:#94a3b8;font-size:10px;margin-right:2px;">WARP:</span>
-        <button class="zh-sim-speed-btn" data-speed="1" style="flex:1;background:#0284c7;color:#fff;border:none;border-radius:3px;padding:2px 0;cursor:pointer;font-size:10px;font-weight:700;">1x</button>
-        <button class="zh-sim-speed-btn" data-speed="5" style="flex:1;background:#1e293b;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:2px 0;cursor:pointer;font-size:10px;">5x</button>
-        <button class="zh-sim-speed-btn" data-speed="15" style="flex:1;background:#1e293b;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:2px 0;cursor:pointer;font-size:10px;">15x</button>
-        <button class="zh-sim-speed-btn" data-speed="25" style="flex:1;background:#1e293b;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:2px 0;cursor:pointer;font-size:10px;">25x</button>
-      </div>
-      <div id="zh-sim-phase-line" style="color:#fde047;font-weight:700;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">PHASE: STANDBY</div>
-      <div id="zh-sim-action-line" style="color:#cbd5e1;font-size:10px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Action: Manual Control</div>
-      <div id="zh-sim-audit-line" style="background:rgba(15,23,42,0.85);border:1px solid rgba(34,197,94,0.4);border-radius:4px;padding:4px 6px;font-size:10px;color:#4ade80;">
-        ✓ 0 Bugs Detected | Arcs/Units Nominal
+      <div id="zh-sim-body">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+          <label style="color:#94a3b8;font-size:10px;">PLAN:</label>
+          <select id="zh-sim-plan-select" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:3px;padding:2px 4px;font-size:10px;font-family:monospace;">
+            ${Object.values(PLANS)
+              .map(p => `<option value="${p.id}">${p.name}</option>`)
+              .join('')}
+          </select>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;margin-bottom:7px;">
+          <span style="color:#94a3b8;font-size:10px;margin-right:2px;">WARP:</span>
+          <button class="zh-sim-speed-btn" data-speed="1" style="flex:1;background:#0284c7;color:#fff;border:none;border-radius:3px;padding:2px 0;cursor:pointer;font-size:10px;font-weight:700;">1x</button>
+          <button class="zh-sim-speed-btn" data-speed="5" style="flex:1;background:#1e293b;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:2px 0;cursor:pointer;font-size:10px;">5x</button>
+          <button class="zh-sim-speed-btn" data-speed="15" style="flex:1;background:#1e293b;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:2px 0;cursor:pointer;font-size:10px;">15x</button>
+          <button class="zh-sim-speed-btn" data-speed="25" style="flex:1;background:#1e293b;color:#cbd5e1;border:1px solid #334155;border-radius:3px;padding:2px 0;cursor:pointer;font-size:10px;">25x</button>
+        </div>
+        <div id="zh-sim-phase-line" style="color:#fde047;font-weight:700;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">PHASE: STANDBY</div>
+        <div id="zh-sim-action-line" style="color:#cbd5e1;font-size:10px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Action: Manual Control</div>
+        <div id="zh-sim-audit-line" style="background:rgba(15,23,42,0.85);border:1px solid rgba(34,197,94,0.4);border-radius:4px;padding:4px 6px;font-size:10px;color:#4ade80;">
+          ✓ 0 Bugs Detected | Arcs/Units Nominal
+        </div>
       </div>
     `;
 
     document.body.appendChild(panel);
     hudPanelEl = panel;
+
+    const collapseBtn = document.getElementById('zh-sim-collapse-btn');
+    const simBody = document.getElementById('zh-sim-body');
+    if (collapseBtn && simBody) {
+      collapseBtn.addEventListener('click', () => {
+        const collapsed = simBody.style.display === 'none';
+        simBody.style.display = collapsed ? '' : 'none';
+        collapseBtn.textContent = collapsed ? '▾' : '▸';
+      });
+    }
 
     const toggleBtn = document.getElementById('zh-sim-toggle-btn');
     toggleBtn.addEventListener('click', () => {

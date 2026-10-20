@@ -88,7 +88,8 @@ window.ZH_AUDIO = (function () {
   function connectSpatialOutput(c, sourceNode, baseGain, now, stopTime, worldX, worldY, cam) {
     const { pan, gainMult } = computeSpatialParams(worldX, worldY, cam);
     const gain = c.createGain();
-    const peak = Math.max(0.002, baseGain * gainMult);
+    const sfxMult = volumes ? (volumes.master * volumes.sfx) : 1.0;
+    const peak = Math.max(0.0005, baseGain * gainMult * sfxMult);
     gain.gain.setValueAtTime(peak, now);
     gain.gain.exponentialRampToValueAtTime(0.001, stopTime);
 
@@ -357,6 +358,24 @@ window.ZH_AUDIO = (function () {
     } catch (_) {}
   }
 
+  const volumes = {
+    master: 0.8,
+    music: 0.5,
+    sfx: 0.8,
+    voice: 0.9
+  };
+
+  function setVolume(bus, val) {
+    if (volumes[bus] !== undefined) {
+      volumes[bus] = clamp(Number(val) || 0, 0, 1);
+    }
+    return volumes[bus];
+  }
+
+  function getVolume(bus) {
+    return volumes[bus] !== undefined ? volumes[bus] : 1;
+  }
+
   function speak(text, options = {}) {
     if (!voiceEnabled || !('speechSynthesis' in window)) return;
     const now = performance.now();
@@ -372,7 +391,8 @@ window.ZH_AUDIO = (function () {
       const utter = new SpeechSynthesisUtterance(text);
       utter.rate = options.rate || 1.06;
       utter.pitch = options.pitch || 0.96;
-      utter.volume = options.volume || 0.85;
+      const baseVol = options.volume || 0.85;
+      utter.volume = clamp(baseVol * volumes.master * volumes.voice, 0, 1);
       window.speechSynthesis.speak(utter);
     } catch (_) {
       // Ignore synthesis errors
@@ -407,6 +427,8 @@ window.ZH_AUDIO = (function () {
     toggleSFX,
     toggleVoice,
     toggleMusic,
+    setVolume,
+    getVolume,
     isSFXEnabled: () => sfxEnabled,
     isVoiceEnabled: () => voiceEnabled,
     isMusicEnabled: () => musicEnabled

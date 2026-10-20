@@ -18,7 +18,7 @@ node tests/phase4_verify.js
 | **Headless Plan Simulator (`tests/simulator_verify.js`)** | **17 / 17 PASS** | All 6 engine/AI/data bugs (`BUG-01` through `BUG-06`) are **FIXED & VERIFIED**. |
 | **Phase 2 & 3 Suites (`tests/phase2_verify.js`, `tests/phase3_verify.js`)** | **32 / 32 PASS** | `SYS-14`..`SYS-24` (SpatialHashGrid, 7 Locomotors, 8-Way A* NavGrid, 3D Ballistics, HUD, VFX, Spatial Audio, Doorway Clearance) pass. |
 | **Phase 4 Verification (`tests/phase4_verify.js`)** | **29 / 29 PASS** | `SYS-25`..`SYS-28` (Save/Load API, Tactical AI Roles, 81-matchup 9×9 Balance Matrix, macOS v2.0 Shell) pass. |
-| **Human-User QA Playbooks (`tests/human_qa_runner.js`)** | **61 / 61 PASS** | Dispatched **123 synthetic human UI actions** across 9 Playbooks. **All 7 human-interaction bugs (`BUG-HUMAN-01` through `BUG-HUMAN-07`) are FIXED & VERIFIED (`0` open bugs).** |
+| **Human-User QA Playbooks (`tests/human_qa_runner.js`)** | **72 / 72 PASS** | Dispatched synthetic human UI actions across 10 Playbooks (including Phase 1–5 HUD Overhaul). **All 7 human-interaction bugs (`BUG-HUMAN-01` through `BUG-HUMAN-07`) are FIXED & VERIFIED (`0` open bugs).** |
 
 ---
 

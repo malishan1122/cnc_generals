@@ -2932,6 +2932,83 @@ window.ZH_DATA = (function () {
     DAMAGE_MATRIX.FLASHBANG = { INFANTRY: 1.6, VEHICLE: 0.05, AIRCRAFT: 0.0, BUILDING: 0.1 };
   }
 
+  const ICON_MAP = {
+    // Buildings
+    USA_COMMAND_CENTER: '🏛', CHINA_COMMAND_CENTER: '🏛', GLA_COMMAND_CENTER: '🏛',
+    USA_REACTOR: '⚡', CHINA_REACTOR: '⚡',
+    USA_SUPPLY_CENTER: '📦', CHINA_SUPPLY_CENTER: '📦', GLA_SUPPLY_STASH: '📦',
+    USA_BARRACKS: '🎖', CHINA_BARRACKS: '🎖', GLA_BARRACKS: '🎖',
+    USA_WAR_FACTORY: '🏭', CHINA_WAR_FACTORY: '🏭', GLA_ARMS_DEALER: '🏭',
+    USA_AIRFIELD: '🛫', CHINA_AIRFIELD: '🛫',
+    USA_STRATEGY_CENTER: '📡', CHINA_PROPAGANDA_CENTER: '📡', GLA_PALACE: '🏰',
+    USA_SUPPLY_DROP_ZONE: '🪂', CHINA_INTERNET_CENTER: '💻', GLA_BLACK_MARKET: '💰',
+    USA_PARTICLE_CANNON: '🛰', CHINA_NUCLEAR_SILO: '☢', GLA_SCUD_STORM: '🚀',
+    USA_PATRIOT: '🚀', USA_EMP_PATRIOT: '⚡', USA_LASER_TURRET: '🔆', USA_FIREBASE: '🏰',
+    CHINA_GATTLING_CANNON: '🔫', CHINA_BUNKER: '🛡', CHINA_SPEAKER_TOWER: '📢',
+    GLA_STINGER_SITE: '🚀', GLA_TUNNEL_NETWORK: '🕳', GLA_DEMO_TRAP: '💣',
+    // Units
+    USA_DOZER: '🚜', CHINA_DOZER: '🚜', GLA_WORKER: '⛏',
+    USA_CHINOOK: '🚁', CHINA_SUPPLY_TRUCK: '🚚',
+    USA_RANGER: '🪖', CHINA_RED_GUARD: '🪖', GLA_REBEL: '🪖',
+    USA_MISSILE_DEFENDER: '🚀', CHINA_TANK_HUNTER: '🚀', GLA_RPG_TROOPER: '🚀',
+    USA_PATHFINDER: '🎯', GLA_JARMEN_KELL: '🎯',
+    USA_COLONEL_BURTON: '🗡', CHINA_BLACK_LOTUS: '💻',
+    CHINA_MINIGUNNER: '🔫', CHINA_HACKER: '💻',
+    GLA_TERRORIST: '💣', GLA_ANGRY_MOB: '🔥', GLA_TOXIN_REBEL: '☣', GLA_HIJACKER: '🔓', GLA_SABOTEUR: '🕵',
+    USA_HUMVEE: '🚙', GLA_TECHNICAL: '🛻', GLA_COMBAT_CYCLE: '🏍',
+    USA_AMBULANCE: '🚑', GLA_RADAR_VAN: '📡',
+    USA_CRUSADER: '🛡', USA_LASER_CRUSADER: '🔆', USA_PALADIN: '🛡', USA_LASER_TANK: '🔆',
+    CHINA_BATTLEMASTER: '🛡', CHINA_OVERLORD: '🏰', CHINA_EMPEROR_OVERLORD: '👑',
+    GLA_SCORPION: '🦂', GLA_MARAUDER: '🛡',
+    CHINA_GATTLING_TANK: '🔫', GLA_QUAD_CANNON: '🔫', USA_AVENGER: '🔆',
+    CHINA_DRAGON_TANK: '🔥', GLA_TOXIN_TRACTOR: '☣',
+    USA_TOMAHAWK: '🚀', CHINA_INFERNO_CANNON: '🔥', CHINA_NUKE_CANNON: '☢',
+    GLA_ROCKET_BUGGY: '🚀', GLA_SCUD_LAUNCHER: '🚀', GLA_BOMB_TRUCK: '💣',
+    CHINA_TROOP_CRAWLER: '🚚', CHINA_ASSAULT_CRAWLER: '🚚', GLA_BATTLE_BUS: '🚌',
+    USA_COMANCHE: '🚁', USA_COMBAT_CHINOOK: '🚁', CHINA_HELIX: '🚁',
+    USA_RAPTOR: '✈', USA_KING_RAPTOR: '✈', USA_STEALTH_FIGHTER: '🛩',
+    USA_AURORA: '🛫', USA_AURORA_ALPHA: '🛫',
+    CHINA_MIG: '✈', CHINA_NUKE_MIG: '☢',
+    // Abilities
+    FLASHBANG: '💥', LASER_LOCK: '🎯', TIMED_DEMO_CHARGE: '💣', REMOTE_C4_CHARGE: '💣',
+    FLAME_WALL: '🔥', OVERLORD_SPEAKER: '📢', OVERLORD_GATLING: '🔫', OVERLORD_BUNKER: '🛡',
+    HELIX_NAPALM_BOMB: '🔥', PILOT_SNIPE: '🎯', HIJACK_VEHICLE: '🔓',
+    DISGUISE_BOMB_TRUCK: '🎭', DEPLOY_MOBILE_HACK: '💻'
+  };
+
+  function iconFor(def) {
+    if (!def) return '⚙';
+    if (def.icon) return def.icon;
+    if (def.id && ICON_MAP[def.id]) return ICON_MAP[def.id];
+    const id = String(def.id || '');
+    if (id.startsWith('UPG_')) {
+      if (id.includes('ARMOR') || id.includes('SHIELD')) return '🛡';
+      if (id.includes('RODS') || id.includes('POWER')) return '⚡';
+      if (id.includes('NAPALM') || id.includes('FLAME')) return '🔥';
+      if (id.includes('TOXIN') || id.includes('ANTHRAX')) return '☣';
+      if (id.includes('MISSILE') || id.includes('ROCKET') || id.includes('SCUD')) return '🚀';
+      if (id.includes('LASER') || id.includes('DRONE')) return '🔆';
+      if (id.includes('NUKE') || id.includes('URANIUM')) return '☢';
+      return '⬆';
+    }
+    if (def.isSuperweapon) return '☢';
+    if (def.powerProvided > 0) return '⚡';
+    if (def.isSupplyDepot || def.isIncomeBuilding || def.isSupplyTruck) return '📦';
+    if (def.isBuilder) return '🔧';
+    if (def.category === 'DEFENSE' || (def.footprint && def.weapon)) return '🗼';
+    if (def.footprint) return '🏢';
+    if (def.category === 'AIRCRAFT' || def.type === 'AIRCRAFT') return '✈';
+    if (def.category === 'INFANTRY' || def.type === 'INFANTRY') return '🪖';
+    if (def.category === 'VEHICLE' || def.type === 'VEHICLE') return '🛡';
+    return '⚙';
+  }
+
+  Object.values(BUILDINGS).forEach(b => { if (!b.icon) b.icon = iconFor(b); });
+  Object.values(UNITS).forEach(u => { if (!u.icon) u.icon = iconFor(u); });
+  Object.values(UPGRADES).forEach(up => { if (!up.icon) up.icon = iconFor(up); });
+  Object.values(UNIT_ABILITIES).forEach(ab => { if (!ab.icon) ab.icon = iconFor(ab); });
+  Object.values(GENERALS_POWERS).forEach(pw => { if (!pw.icon) pw.icon = pw.rank === 5 ? '☢' : pw.rank === 3 ? '✈' : '🎖'; });
+
   return {
     DAMAGE_MATRIX,
     VETERANCY_LEVELS,
@@ -2945,6 +3022,7 @@ window.ZH_DATA = (function () {
     UPGRADES,
     GENERALS_POWERS,
     MAPS,
-    CHALLENGE_LADDER
+    CHALLENGE_LADDER,
+    iconFor
   };
 })();

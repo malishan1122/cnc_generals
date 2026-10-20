@@ -48,14 +48,42 @@ window.ZH_ENGINE = (function () {
       this.gameOver = false;
       this.winner = null;
 
-      // Camera
+      // Camera & Retina Viewport
       this.cam = {
         x: 120,
         y: WORLD_SIZE - 900,
         w: 1200,
         h: 800,
+        zoom: 1,
         shake: 0
       };
+      this.viewW = 1200;
+      this.viewH = 800;
+      this.pixelRatio = 1;
+      this.hoveredEntityId = null;
+      this.showAllHealthBars = false;
+      this.moveMarkers = [];
+      this.screenLabels = [];
+      this.minimapTerrain = null;
+
+      // Offscreen 40x40 Fog Canvas for Bilinear Smoothing
+      this.fogCanvas = null;
+      this.fogCtx = null;
+      if (typeof document !== 'undefined' && document && typeof document.createElement === 'function') {
+        try {
+          const fc = document.createElement('canvas');
+          fc.width = FOG_GRID;
+          fc.height = FOG_GRID;
+          const fctx = fc.getContext && fc.getContext('2d');
+          if (fctx) {
+            this.fogCanvas = fc;
+            this.fogCtx = fctx;
+          }
+        } catch (err) {
+          this.fogCanvas = null;
+          this.fogCtx = null;
+        }
+      }
 
       // Phase 2 Spatial Hash Grid & A* Navigation Grid
       this.spatialGrid = window.ZH_SPATIAL ? new ZH_SPATIAL.SpatialHashGrid(128) : null;
@@ -131,6 +159,7 @@ window.ZH_ENGINE = (function () {
       this.difficulty = config.difficulty || 'NORMAL';
       this.mapDef = ZH_DATA.MAPS.find(m => m.id === config.mapId) || ZH_DATA.MAPS[0];
       this.mapData = this.mapDef;
+      this.minimapTerrain = null;
 
       this.gameTime = 0;
       this.matchTime = 0;
@@ -158,6 +187,8 @@ window.ZH_ENGINE = (function () {
       this.decals = [];
       this.shockwaves = [];
       this.mushroomClouds = [];
+      this.moveMarkers = [];
+      this.screenLabels = [];
       this.screenFlash = 0;
       this.lastAlertPos = null;
       this.underAttackTimer = 0;
@@ -168,6 +199,7 @@ window.ZH_ENGINE = (function () {
       this.pendingPowerId = null;
       this.pendingSuperweaponBuildingId = null;
       this.pendingAbilityUnitId = null;
+      this.hoveredEntityId = null;
 
       // Initialize Fog
       this.fog.fill(0);
@@ -194,6 +226,11 @@ window.ZH_ENGINE = (function () {
       }
 
       // Position Camera over Player Command Center
+      this.cam.zoom = 1;
+      const vw = this.viewW || this.cam.w || 1200;
+      const vh = this.viewH || this.cam.h || 800;
+      this.cam.w = vw;
+      this.cam.h = vh;
       this.cam.x = clamp(440 - this.cam.w / 2, 0, WORLD_SIZE - this.cam.w);
       this.cam.y = clamp(WORLD_SIZE - 440 - this.cam.h / 2, 0, WORLD_SIZE - this.cam.h);
 
@@ -233,7 +270,19 @@ window.ZH_ENGINE = (function () {
         unlockedPowers: new Set(),
         powerCooldowns: {},
         upgrades: new Set(),
-        tunnelUnits: [] // Shared GLA Tunnel Network Garrison
+        tunnelUnits: [], // Shared GLA Tunnel Network Garrison
+        stats: {
+          unitsBuilt: 0,
+          unitsLost: 0,
+          unitsKilled: 0,
+          buildingsBuilt: 0,
+          buildingsLost: 0,
+          buildingsDestroyed: 0,
+          creditsEarned: 0,
+          creditsSpent: 0,
+          powersUsed: 0,
+          superweaponsFired: 0
+        }
       };
     }
 
@@ -369,8 +418,24 @@ window.ZH_ENGINE = (function () {
     }
 
     // ========================================================================
-    // Dynamic Cost & Stat Helpers (Applying Sub-General & Upgrade Modifiers)
+    // Dynamic Cost, Coordinate & Prereq Helpers
     // ========================================================================
+    worldToScreen(wx, wy) {
+      const z = (this.cam && this.cam.zoom) || 1;
+      return {
+        x: (wx - this.cam.x) * z,
+        y: (wy - this.cam.y) * z
+      };
+    }
+
+    screenToWorld(sx, sy) {
+      const z = (this.cam && this.cam.zoom) || 1;
+      return {
+        x: this.cam.x + sx / z,
+        y: this.cam.y + sy / z
+      };
+    }
+
     getModifiedCost(defId, teamId) {
       const team = this.teams[teamId];
       const mod = team.general.modifiers || {};
@@ -410,6 +475,70 @@ window.ZH_ENGINE = (function () {
         return false;
       }
       return true;
+    }
+
+    getMissingPrereqs(defId, teamId) {
+      const team = this.teams[teamId];
+      if (!team) return [];
+      const def = ZH_DATA.UNITS[defId] || ZH_DATA.BUILDINGS[defId];
+      if (!def) return [];
+      const missing = [];
+      if (def.generalOnly && def.generalOnly !== team.generalId) {
+        const gen = ZH_DATA.GENERALS[def.generalOnly];
+        missing.push(gen ? `${gen.name} Only` : 'Specialist General Only');
+      }
+      if (def.requiresTech && !team.hasTechCenter) {
+        if (!(defId === 'CHINA_NUKE_CANNON' && team.generalId === 'CHINA_TAO')) {
+          const techName = team.factionId === 'USA'
+            ? 'Strategy Center'
+            : team.factionId === 'CHINA'
+            ? 'Propaganda Center'
+            : 'GLA Palace';
+          missing.push(techName);
+        }
+      }
+      return missing;
+    }
+
+    sellBuilding(buildingOrId) {
+      const b = typeof buildingOrId === 'object' ? buildingOrId : this.buildings.find(x => x.id === buildingOrId);
+      if (!b || b.hp <= 0) return false;
+      const idx = this.buildings.indexOf(b);
+      if (idx === -1) return false;
+
+      const team = this.teams[b.team];
+      const baseCost = this.getModifiedCost(b.defId, b.team);
+      const refund = Math.round(baseCost * 0.5);
+
+      if (team) {
+        // Also refund any queued items inside the building
+        if (Array.isArray(b.queue)) {
+          for (const q of b.queue) {
+            if (q.type === 'UNIT') {
+              team.credits += this.getModifiedCost(q.id, b.team);
+            } else if (q.type === 'UPGRADE' && ZH_DATA.UPGRADES[q.id]) {
+              team.credits += ZH_DATA.UPGRADES[q.id].cost;
+            }
+          }
+          b.queue.length = 0;
+        }
+        team.credits += refund;
+        if (team.stats) team.stats.creditsEarned += refund;
+      }
+
+      this.selectedIds.delete(b.id);
+      this.spawnBurst(b.x, b.y, '#fde047', 18);
+      this.spawnFloatingText(b.x, b.y - 20, `SOLD +$${refund}`, '#22c55e');
+      if (b.team === 0 && window.ZH_AUDIO) {
+        ZH_AUDIO.playSFX('cash');
+      }
+
+      b.hp = 0;
+      this.buildings.splice(idx, 1);
+      if (this.navGrid) this.navGrid.rebuild(this);
+      this.recalculatePower(b.team);
+      if (this.onStateChange) this.onStateChange();
+      return refund;
     }
 
     // ========================================================================
@@ -505,6 +634,10 @@ window.ZH_ENGINE = (function () {
       b.constructed = true;
       b.buildProgress = 1.0;
       b.hp = b.maxHp;
+
+      if (this.teams[b.team] && this.teams[b.team].stats && this.gameTime > 0.5) {
+        this.teams[b.team].stats.buildingsBuilt++;
+      }
 
       if (this.navGrid) this.navGrid.rebuild(this);
       this.recalculatePower(b.team);
@@ -647,6 +780,9 @@ window.ZH_ENGINE = (function () {
       };
 
       this.units.push(u);
+      if (team && team.stats && this.gameTime > 0.5) {
+        team.stats.unitsBuilt++;
+      }
 
       // Troop Crawler / Assault Crawler spawns with escort infantry!
       if (def.spawnsInfantryCount && def.spawnsInfantryType && teamId >= 0) {
@@ -1091,6 +1227,7 @@ window.ZH_ENGINE = (function () {
       }
 
       this.teams[teamId].credits -= cost;
+      if (this.teams[teamId].stats) this.teams[teamId].stats.creditsSpent += cost;
       const site = this.spawnBuilding(defId, teamId, x, y, false);
       builder.state = 'BUILD';
       builder.buildTargetId = site.id;
@@ -1151,6 +1288,7 @@ window.ZH_ENGINE = (function () {
           return false;
         }
         team.credits -= cost;
+        if (team.stats) team.stats.creditsSpent += cost;
         building.queue.push({
           type: 'UNIT',
           id: itemId,
@@ -1171,6 +1309,7 @@ window.ZH_ENGINE = (function () {
           return false;
         }
         team.credits -= upgDef.cost;
+        if (team.stats) team.stats.creditsSpent += upgDef.cost;
         building.queue.push({
           type: 'UPGRADE',
           id: itemId,
@@ -1418,6 +1557,7 @@ window.ZH_ENGINE = (function () {
       if ((team.powerCooldowns[powerId] || 0) > 0) return false;
 
       team.powerCooldowns[powerId] = pDef.cooldown;
+      if (team.stats) team.stats.powersUsed++;
       this.addRadarPing(targetX, targetY, team.faction.color);
 
       switch (powerId) {
@@ -1497,6 +1637,7 @@ window.ZH_ENGINE = (function () {
           const stolen = Math.min(2500, Math.max(1200, enemy.credits));
           enemy.credits = Math.max(0, enemy.credits - stolen);
           team.credits += stolen;
+          if (team.stats) team.stats.creditsEarned += stolen;
           this.spawnFloatingText(targetX, targetY, `+$${stolen} CASH HACK!`, '#22c55e');
           this.spawnBurst(targetX, targetY, '#22c55e', 24);
           this.triggerAlert(`Cyber Cash Hack siphoned $${stolen}!`, '#22c55e');
@@ -1549,6 +1690,7 @@ window.ZH_ENGINE = (function () {
 
         case 'GP_GLA_CASH_BOUNTY': {
           team.credits += 1500;
+          if (team.stats) team.stats.creditsEarned += 1500;
           for (let i = 0; i < 4; i++) {
             this.salvageCrates.push({
               id: nextEntityId++,
@@ -1617,6 +1759,7 @@ window.ZH_ENGINE = (function () {
       b.superweaponReady = false;
       b.superweaponTimer = b.superweaponMaxTimer;
       const team = this.teams[b.team];
+      if (team && team.stats) team.stats.superweaponsFired++;
       const mod = team.general.modifiers || {};
 
       this.addRadarPing(targetX, targetY, '#ef4444');
@@ -1739,12 +1882,14 @@ window.ZH_ENGINE = (function () {
           const team = this.teams[b.team];
           if (b.def.passiveIncome && !team.isLowPower) {
             team.credits += b.def.passiveIncome;
+            if (team.stats) team.stats.creditsEarned += b.def.passiveIncome;
             this.spawnFloatingText(b.x, b.y - 20, `+$${b.def.passiveIncome}`, '#22c55e');
           }
         }
         for (const o of this.techStructures) {
           if (o.team >= 0 && o.def && o.def.passiveIncome) {
             this.teams[o.team].credits += o.def.passiveIncome;
+            if (this.teams[o.team].stats) this.teams[o.team].stats.creditsEarned += o.def.passiveIncome;
             this.spawnFloatingText(o.x, o.y - 18, `+$${o.def.passiveIncome} OIL`, '#fde047');
           }
         }
@@ -2081,6 +2226,7 @@ window.ZH_ENGINE = (function () {
                 this.spawnFloatingText(u.x, u.y - 16, `SALVAGE TIER ${u.salvageTier}!`, '#fde047');
               } else {
                 team.credits += 150;
+                if (team.stats) team.stats.creditsEarned += 150;
                 this.spawnFloatingText(u.x, u.y - 16, '+$150 SALVAGE', '#22c55e');
               }
               if (window.ZH_AUDIO) ZH_AUDIO.playSFX('cash');
@@ -2097,6 +2243,7 @@ window.ZH_ENGINE = (function () {
             const mult = (team.general.modifiers && team.general.modifiers.hackerIncomeMult) || 1.0;
             const amt = Math.round(u.def.passiveHackIncome * mult);
             team.credits += amt;
+            if (team.stats) team.stats.creditsEarned += amt;
             this.spawnFloatingText(u.x, u.y - 14, `+$${amt}`, '#22c55e');
           }
         }
@@ -2234,6 +2381,7 @@ window.ZH_ENGINE = (function () {
         } else {
           const delivered = u.supplyCarried || (u.def.carryCap || 300);
           this.teams[u.team].credits += delivered;
+          if (this.teams[u.team].stats) this.teams[u.team].stats.creditsEarned += delivered;
           u.supplyCarried = 0;
           this.spawnFloatingText(depot.x, depot.y - 24, `+$${delivered}`, '#22c55e');
           if (u.team === 0 && window.ZH_AUDIO) ZH_AUDIO.playSFX('cash');
@@ -2349,6 +2497,7 @@ window.ZH_ENGINE = (function () {
             const bonus = (techTarget.def && techTarget.def.captureBonus) || 250;
             if (bonus > 0) {
               this.teams[u.team].credits += bonus;
+              if (this.teams[u.team].stats) this.teams[u.team].stats.creditsEarned += bonus;
             }
             const label = techTarget.name || (techTarget.def && techTarget.def.name) || 'TECH STRUCTURE';
             this.spawnFloatingText(techTarget.x, techTarget.y - 22, `${label.toUpperCase()} CAPTURED!${bonus ? ' +$' + bonus : ''}`, '#fde047');
@@ -2891,6 +3040,9 @@ window.ZH_ENGINE = (function () {
       if (window.ZH_AUDIO) ZH_AUDIO.playSFX('explosion');
 
       const team = this.teams[u.team];
+      if (team && team.stats) team.stats.unitsLost++;
+      const enemy = this.teams[1 - u.team];
+      if (enemy && enemy.stats) enemy.stats.unitsKilled++;
       if (team && team.generalId === 'GLA_JUHZIZ') {
         this.dealAreaDamage(u.x, u.y, 45, 55, 'HIGH_EXPLOSIVE', u.team);
       }
@@ -2915,6 +3067,10 @@ window.ZH_ENGINE = (function () {
       this.cam.shake = Math.max(this.cam.shake, 12);
 
       const teamId = b.team;
+      const team = this.teams[teamId];
+      if (team && team.stats) team.stats.buildingsLost++;
+      const enemy = this.teams[1 - teamId];
+      if (enemy && enemy.stats) enemy.stats.buildingsDestroyed++;
       this.buildings.splice(index, 1);
       if (this.navGrid) this.navGrid.rebuild(this);
       this.recalculatePower(teamId);
@@ -3013,6 +3169,16 @@ window.ZH_ENGINE = (function () {
           this.radarPings.splice(i, 1);
         }
       }
+
+      // Ground Move/Attack Order Rings
+      if (this.moveMarkers) {
+        for (let i = this.moveMarkers.length - 1; i >= 0; i--) {
+          this.moveMarkers[i].t += dt;
+          if (this.moveMarkers[i].t >= 0.45) {
+            this.moveMarkers.splice(i, 1);
+          }
+        }
+      }
     }
 
     updateFogOfWar() {
@@ -3073,6 +3239,24 @@ window.ZH_ENGINE = (function () {
       for (const sg of this.spectreGunships) {
         if (sg.team === 0) {
           revealCircle(sg.cx, sg.cy, 260);
+        }
+      }
+
+      if (this.fogCtx && typeof this.fogCtx.createImageData === 'function') {
+        const img = this.fogCtx.createImageData(FOG_GRID, FOG_GRID);
+        if (img && img.data) {
+          const d = img.data;
+          for (let i = 0; i < this.fog.length; i++) {
+            const st = this.fog[i];
+            const idx = i * 4;
+            d[idx] = 6;
+            d[idx + 1] = 10;
+            d[idx + 2] = 19;
+            d[idx + 3] = st === 2 ? 0 : st === 1 ? 115 : 220;
+          }
+          if (typeof this.fogCtx.putImageData === 'function') {
+            this.fogCtx.putImageData(img, 0, 0);
+          }
         }
       }
     }
@@ -3159,15 +3343,28 @@ window.ZH_ENGINE = (function () {
     // ========================================================================
     // 2.5D Tactical Canvas Renderer & Radar Minimap
     // ========================================================================
+    queueLabel(wx, wy, text, color = '#f8fafc', bg = 'rgba(8,14,24,0.82)', font = 'bold 10px -apple-system, BlinkMacSystemFont, monospace', priority = 1) {
+      if (!this.screenLabels) this.screenLabels = [];
+      const pt = this.worldToScreen(wx, wy);
+      this.screenLabels.push({ sx: pt.x, sy: pt.y, text, color, bg, font, priority });
+    }
+
     render() {
       if (!this.ctx || !this.canvas) return;
       const ctx = this.ctx;
-      const w = this.canvas.width;
-      const h = this.canvas.height;
-      this.cam.w = w;
-      this.cam.h = h;
+      const dpr = this.pixelRatio || 1;
+      const z = this.cam.zoom || 1;
+      const viewW = this.viewW || (this.canvas.width / dpr) || 1280;
+      const viewH = this.viewH || (this.canvas.height / dpr) || 800;
+      this.cam.w = viewW / z;
+      this.cam.h = viewH / z;
+      this.screenLabels = [];
 
+      // Pass 1: World Space (DPR * zoom, translated by cam)
       ctx.save();
+      if (typeof ctx.setTransform === 'function') {
+        ctx.setTransform(dpr * z, 0, 0, dpr * z, 0, 0);
+      }
 
       // Screen Shake
       const sx = this.cam.shake > 0 ? (Math.random() - 0.5) * this.cam.shake : 0;
@@ -3202,6 +3399,9 @@ window.ZH_ENGINE = (function () {
         ZH_VFX.renderSuperweaponSpectacle(ctx, this);
       }
 
+      // 8b. Move/Attack Ground Order Rings
+      this.renderMoveMarkers(ctx);
+
       // 9. Fog of War Shroud
       this.renderFogOfWar(ctx);
 
@@ -3213,16 +3413,110 @@ window.ZH_ENGINE = (function () {
 
       ctx.restore();
 
+      // Pass 2: Screen Space (DPR only, crisp labels & off-screen threat arrows)
+      ctx.save();
+      if (typeof ctx.setTransform === 'function') {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      this.renderScreenOverlays(ctx, viewW, viewH);
+
       // Superweapon Thermal Flash Whiteout Overlay
       if (this.screenFlash > 0) {
-        ctx.save();
         ctx.fillStyle = `rgba(255, 250, 235, ${Math.min(0.65, this.screenFlash)})`;
-        ctx.fillRect(0, 0, w, h);
-        ctx.restore();
+        ctx.fillRect(0, 0, viewW, viewH);
       }
+      ctx.restore();
 
       // Render Radar Minimap
       this.renderMinimap();
+    }
+
+    renderMoveMarkers(ctx) {
+      if (!this.moveMarkers || this.moveMarkers.length === 0) return;
+      for (const m of this.moveMarkers) {
+        const p = clamp(m.t / 0.45, 0, 1);
+        const r = 24 * (1 - p * 0.72);
+        const alpha = (1 - p) * 0.85;
+        ctx.save();
+        ctx.strokeStyle = m.kind === 'attack' ? `rgba(239, 68, 68, ${alpha})` : `rgba(34, 197, 94, ${alpha})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, r * 0.45, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    renderScreenOverlays(ctx, viewW, viewH) {
+      if (this.screenLabels && this.screenLabels.length > 0) {
+        const sorted = this.screenLabels.slice().sort((a, b) => (b.priority - a.priority) || (a.sy - b.sy));
+        const placedBoxes = [];
+        for (const lbl of sorted) {
+          if (lbl.sx < -80 || lbl.sx > viewW + 80 || lbl.sy < -30 || lbl.sy > viewH + 30) continue;
+          ctx.font = lbl.font;
+          const m = ctx.measureText ? ctx.measureText(lbl.text) : { width: lbl.text.length * 6 };
+          const tw = (m && m.width ? m.width : lbl.text.length * 6) + 8;
+          const th = 14;
+          let bx = lbl.sx - tw / 2;
+          let by = lbl.sy - th / 2;
+          let attempts = 0;
+          while (attempts < 2) {
+            const hit = placedBoxes.find(b =>
+              bx < b.x + b.w && bx + tw > b.x && by < b.y + b.h && by + th > b.y
+            );
+            if (!hit) break;
+            by = hit.y - th - 2;
+            attempts++;
+          }
+          if (attempts >= 2) {
+            const stillHit = placedBoxes.some(b =>
+              bx < b.x + b.w && bx + tw > b.x && by < b.y + b.h && by + th > b.y
+            );
+            if (stillHit) continue;
+          }
+          placedBoxes.push({ x: bx, y: by, w: tw, h: th });
+          if (lbl.bg) {
+            ctx.fillStyle = lbl.bg;
+            ctx.fillRect(bx, by, tw, th);
+          }
+          ctx.fillStyle = lbl.color;
+          ctx.textAlign = 'center';
+          ctx.fillText(lbl.text, bx + tw / 2, by + th - 3.5);
+        }
+      }
+
+      // Off-screen threat arrows when under attack
+      if (this.underAttackTimer > 0 && this.lastAlertPos) {
+        const pt = this.worldToScreen(this.lastAlertPos.x, this.lastAlertPos.y);
+        const hudTop = 36;
+        const hudBottom = viewH - 188;
+        if (pt.x < 16 || pt.x > viewW - 16 || pt.y < hudTop + 16 || pt.y > hudBottom - 16) {
+          const cx = viewW / 2;
+          const cy = (hudTop + hudBottom) / 2;
+          const ang = Math.atan2(pt.y - cy, pt.x - cx);
+          const ax = clamp(pt.x, 28, viewW - 28);
+          const ay = clamp(pt.y, hudTop + 24, hudBottom - 24);
+          const pulse = 0.55 + 0.45 * Math.sin(this.gameTime * 10);
+          ctx.save();
+          ctx.translate(ax, ay);
+          ctx.rotate(ang);
+          ctx.fillStyle = `rgba(239, 68, 68, ${pulse})`;
+          ctx.strokeStyle = '#fef2f2';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(12, 0);
+          ctx.lineTo(-8, -8);
+          ctx.lineTo(-4, 0);
+          ctx.lineTo(-8, 8);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
     }
 
     renderTerrain(ctx) {
@@ -3404,16 +3698,32 @@ window.ZH_ENGINE = (function () {
         const dark = team.faction.darkColor;
         const s = b.def.size;
         const half = s / 2;
+        const isSel = this.selectedIds.has(b.id);
+        const isHov = this.hoveredEntityId === b.id;
 
         ctx.save();
 
-        // Selection Ring & Animated Factory Rally Line + Flag Marker (SYS-20)
-        if (this.selectedIds.has(b.id)) {
-          ctx.strokeStyle = '#22c55e';
-          ctx.lineWidth = 2.5;
-          ctx.strokeRect(b.x - half - 5, b.y - half - 5, s + 10, s + 10);
+        // Selection Corner Brackets & Animated Factory Rally Line + Flag Marker (SYS-20)
+        if (isSel || isHov) {
+          ctx.strokeStyle = isSel ? '#22c55e' : 'rgba(34, 197, 94, 0.5)';
+          ctx.lineWidth = isSel ? 2.5 : 1.5;
+          const bx0 = b.x - half - 5;
+          const by0 = b.y - half - 5;
+          const bw = s + 10;
+          const bh = s + 10;
+          const arm = Math.min(14, bw * 0.25);
+          ctx.beginPath();
+          // Top-Left
+          ctx.moveTo(bx0, by0 + arm); ctx.lineTo(bx0, by0); ctx.lineTo(bx0 + arm, by0);
+          // Top-Right
+          ctx.moveTo(bx0 + bw - arm, by0); ctx.lineTo(bx0 + bw, by0); ctx.lineTo(bx0 + bw, by0 + arm);
+          // Bottom-Right
+          ctx.moveTo(bx0 + bw, by0 + bh - arm); ctx.lineTo(bx0 + bw, by0 + bh); ctx.lineTo(bx0 + bw - arm, by0 + bh);
+          // Bottom-Left
+          ctx.moveTo(bx0 + arm, by0 + bh); ctx.lineTo(bx0, by0 + bh); ctx.lineTo(bx0, by0 + bh - arm);
+          ctx.stroke();
 
-          if (b.def.trains && b.def.trains.length > 0) {
+          if (isSel && b.def.trains && b.def.trains.length > 0) {
             ctx.save();
             ctx.setLineDash([8, 6]);
             ctx.lineDashOffset = -(this.gameTime * 28);
@@ -3430,8 +3740,7 @@ window.ZH_ENGINE = (function () {
             ctx.beginPath();
             ctx.arc(b.rallyX, b.rallyY, 5, 0, Math.PI * 2);
             ctx.fill();
-            ctx.font = 'bold 11px monospace';
-            ctx.fillText('🚩 RALLY', b.rallyX + 24, b.rallyY + 4);
+            this.queueLabel(b.rallyX + 28, b.rallyY, '🚩 RALLY', '#fde047', 'rgba(8,14,24,0.85)', 'bold 10px -apple-system, monospace', 3);
             ctx.restore();
           }
         }
@@ -3481,22 +3790,13 @@ window.ZH_ENGINE = (function () {
             ctx.lineWidth = 1.5;
             ctx.strokeRect(b.x - half + 3, b.y - half + 3, (s - 6) * b.buildProgress, s - 6);
           }
-          ctx.fillStyle = '#fde047';
-          ctx.font = 'bold 11px monospace';
-          ctx.textAlign = 'center';
-          ctx.fillText(`BUILDING ${Math.round(b.buildProgress * 100)}%`, b.x, b.y + 4);
+          this.queueLabel(b.x, b.y, `BUILDING ${Math.round(b.buildProgress * 100)}%`, '#fde047', 'rgba(8,14,24,0.85)', 'bold 10px -apple-system, monospace', 2);
         } else {
-          ctx.fillStyle = '#f8fafc';
-          ctx.font = 'bold 11px monospace';
-          ctx.textAlign = 'center';
-          ctx.fillText(b.def.shortName, b.x, b.y + 4);
+          this.queueLabel(b.x, b.y, b.def.shortName, '#f8fafc', 'rgba(8,14,24,0.78)', 'bold 10px -apple-system, monospace', isSel ? 3 : 1);
         }
 
         if (b.disabledTimer > 0 || b.empTimer > 0) {
-          ctx.fillStyle = '#38bdf8';
-          ctx.font = 'bold 10px monospace';
-          ctx.textAlign = 'center';
-          ctx.fillText('⚡ EMP DISABLED', b.x, b.y - 12);
+          this.queueLabel(b.x, b.y - 14, '⚡ EMP DISABLED', '#38bdf8', 'rgba(8,14,24,0.9)', 'bold 10px -apple-system, monospace', 4);
         }
 
         // Control Group Badge [#N]
@@ -3507,8 +3807,11 @@ window.ZH_ENGINE = (function () {
           ctx.fillText(`[#${b.controlGroup}]`, b.x - half + 4, b.y - half - 14);
         }
 
-        // HP Bar
-        this.drawHealthBar(ctx, b.x, b.y - half - 10, s, b.hp, b.maxHp);
+        // Smart HP Bar
+        const showHp = this.showAllHealthBars || b.hp < b.maxHp || isSel || isHov;
+        if (showHp) {
+          this.drawHealthBar(ctx, b.x, b.y - half - 10, s, b.hp, b.maxHp, true);
+        }
 
         // Production Queue Progress Bar
         if (b.queue.length > 0) {
@@ -3533,6 +3836,8 @@ window.ZH_ENGINE = (function () {
         const team = u.team >= 0 ? this.teams[u.team] : null;
         const col = u.unmanned ? '#94a3b8' : (team ? team.faction.color : '#94a3b8');
         const r = u.radius;
+        const isSel = this.selectedIds.has(u.id);
+        const isHov = this.hoveredEntityId === u.id;
 
         ctx.save();
         if (u.stealthed) {
@@ -3557,15 +3862,19 @@ window.ZH_ENGINE = (function () {
           ctx.stroke();
         }
 
-        // Selection Circle, Guard Leash Ring & Chained Waypoint Path (SYS-19)
-        if (this.selectedIds.has(u.id)) {
-          ctx.strokeStyle = '#22c55e';
-          ctx.lineWidth = 2;
+        // Ground Ellipse Selection & Hover Ring, Guard Leash Ring & Chained Waypoint Path (SYS-19)
+        if (isSel || isHov) {
+          ctx.strokeStyle = isSel ? '#22c55e' : 'rgba(34, 197, 94, 0.45)';
+          ctx.lineWidth = isSel ? 2 : 1.25;
           ctx.beginPath();
-          ctx.arc(u.x, u.y, r + 4, 0, Math.PI * 2);
+          if (typeof ctx.ellipse === 'function') {
+            ctx.ellipse(u.x, u.y + 3, r + 4, (r + 4) * 0.65, 0, 0, Math.PI * 2);
+          } else {
+            ctx.arc(u.x, u.y, r + 4, 0, Math.PI * 2);
+          }
           ctx.stroke();
 
-          if (u.state === 'GUARD') {
+          if (isSel && u.state === 'GUARD') {
             ctx.save();
             ctx.setLineDash([4, 4]);
             ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
@@ -3575,7 +3884,7 @@ window.ZH_ENGINE = (function () {
             ctx.restore();
           }
 
-          if (u.waypoints && u.waypoints.length > 0) {
+          if (isSel && u.waypoints && u.waypoints.length > 0) {
             ctx.save();
             ctx.setLineDash([4, 4]);
             ctx.strokeStyle = '#38bdf8';
@@ -3618,8 +3927,11 @@ window.ZH_ENGINE = (function () {
 
         ctx.restore();
 
-        // Health Bar, Veterancy Chevrons, Control Group, Salvage & Unmanned Badges
-        this.drawHealthBar(ctx, u.x, u.y - r - 9, r * 2.1, u.hp, u.maxHp);
+        // Smart Health Bar, Veterancy Chevrons, Control Group, Salvage & Unmanned Badges
+        const showHp = this.showAllHealthBars || u.hp < u.maxHp || isSel || isHov;
+        if (showHp) {
+          this.drawHealthBar(ctx, u.x, u.y - r - 9, r * 2.1, u.hp, u.maxHp, false);
+        }
 
         if (u.controlGroup !== null && u.controlGroup !== undefined) {
           ctx.fillStyle = '#38bdf8';
@@ -3629,15 +3941,9 @@ window.ZH_ENGINE = (function () {
         }
 
         if (u.unmanned) {
-          ctx.fillStyle = '#fde047';
-          ctx.font = 'bold 9px monospace';
-          ctx.textAlign = 'center';
-          ctx.fillText('[UNMANNED]', u.x, u.y - r - 13);
+          this.queueLabel(u.x, u.y - r - 14, '[UNMANNED]', '#fde047', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 3);
         } else if (u.disabledTimer > 0 || u.empTimer > 0) {
-          ctx.fillStyle = '#38bdf8';
-          ctx.font = 'bold 9px monospace';
-          ctx.textAlign = 'center';
-          ctx.fillText('⚡ EMP', u.x, u.y - r - 13);
+          this.queueLabel(u.x, u.y - r - 14, '⚡ EMP', '#38bdf8', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 3);
         } else if (u.state === 'GUARD') {
           ctx.fillStyle = '#38bdf8';
           ctx.font = 'bold 8px monospace';
@@ -3757,6 +4063,16 @@ window.ZH_ENGINE = (function () {
     }
 
     renderFogOfWar(ctx) {
+      if (this.fogCanvas && this.fogCtx && typeof this.fogCtx.createImageData === 'function') {
+        const probe = this.fogCtx.createImageData(1, 1);
+        if (probe && probe.data && typeof ctx.drawImage === 'function') {
+          ctx.save();
+          ctx.imageSmoothingEnabled = true;
+          ctx.drawImage(this.fogCanvas, 0, 0, WORLD_SIZE, WORLD_SIZE);
+          ctx.restore();
+          return;
+        }
+      }
       const gx0 = Math.max(0, Math.floor(this.cam.x / FOG_CELL));
       const gx1 = Math.min(FOG_GRID - 1, Math.ceil((this.cam.x + this.cam.w) / FOG_CELL));
       const gy0 = Math.max(0, Math.floor(this.cam.y / FOG_CELL));
@@ -3780,21 +4096,46 @@ window.ZH_ENGINE = (function () {
         const def = ZH_DATA.BUILDINGS[this.pendingBuildId];
         if (def) {
           const s = def.size;
+          const valid = this.canPlaceBuildingAt(this.pendingBuildId, 0, mx, my);
           ctx.save();
-          ctx.strokeStyle = '#22c55e';
-          ctx.fillStyle = 'rgba(34, 197, 94, 0.24)';
+          ctx.strokeStyle = valid ? '#22c55e' : '#ef4444';
+          ctx.fillStyle = valid ? 'rgba(34, 197, 94, 0.24)' : 'rgba(239, 68, 68, 0.28)';
           ctx.lineWidth = 2;
           ctx.fillRect(mx - s / 2, my - s / 2, s, s);
           ctx.strokeRect(mx - s / 2, my - s / 2, s, s);
+
+          const rangeR = def.range || def.auraRadius || 0;
+          if (rangeR > 0) {
+            ctx.setLineDash([6, 4]);
+            ctx.strokeStyle = valid ? 'rgba(56, 189, 248, 0.65)' : 'rgba(239, 68, 68, 0.55)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(mx, my, rangeR, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+
+          const pwr = def.power || 0;
+          const pwrStr = pwr > 0 ? `+${pwr}⚡` : pwr < 0 ? `${pwr}⚡` : '';
+          const statusTxt = valid
+            ? `${def.shortName}${pwrStr ? ' (' + pwrStr + ')' : ''}`
+            : `BLOCKED ${pwrStr ? '(' + pwrStr + ')' : ''}`;
+          this.queueLabel(mx, my - s / 2 - 12, statusTxt, valid ? '#4ade80' : '#f87171', 'rgba(8,14,24,0.9)', 'bold 10px -apple-system, monospace', 5);
           ctx.restore();
         }
       } else if (this.commandMode === 'POWER' || this.commandMode === 'SUPERWEAPON' || this.commandMode === 'ABILITY') {
+        let radius = this.commandMode === 'ABILITY' ? 95 : 150;
+        if (this.commandMode === 'POWER' && this.pendingPowerId) {
+          const pList = (this.teams[0] && ZH_DATA.GENERALS_POWERS[this.teams[0].factionId]) || [];
+          const pDef = pList.find(p => p.id === this.pendingPowerId);
+          if (pDef && pDef.radius) radius = pDef.radius;
+        }
         ctx.save();
         ctx.strokeStyle = this.commandMode === 'ABILITY' ? '#fde047' : '#ef4444';
         ctx.fillStyle = this.commandMode === 'ABILITY' ? 'rgba(253, 224, 71, 0.16)' : 'rgba(239, 68, 68, 0.18)';
         ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.arc(mx, my, this.commandMode === 'ABILITY' ? 95 : 150, 0, Math.PI * 2);
+        ctx.arc(mx, my, radius, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
         ctx.restore();
@@ -3812,26 +4153,42 @@ window.ZH_ENGINE = (function () {
       }
     }
 
-    drawHealthBar(ctx, cx, y, width, hp, maxHp) {
+    drawHealthBar(ctx, cx, y, width, hp, maxHp, isBuilding = false) {
       const ratio = clamp(hp / maxHp, 0, 1);
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-      ctx.fillRect(cx - width / 2, y, width, 4.5);
+      const bh = 3;
+      const x0 = cx - width / 2;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.82)';
+      ctx.fillRect(x0 - 0.5, y - 0.5, width + 1, bh + 1);
       ctx.fillStyle = ratio > 0.5 ? '#22c55e' : ratio > 0.25 ? '#eab308' : '#ef4444';
-      ctx.fillRect(cx - width / 2, y, width * ratio, 4.5);
+      ctx.fillRect(x0, y, width * ratio, bh);
+      if (isBuilding && maxHp >= 1000) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+        const ticks = Math.min(8, Math.floor(maxHp / 500));
+        for (let i = 1; i < ticks; i++) {
+          ctx.fillRect(x0 + (width * i) / ticks, y, 1, bh);
+        }
+      }
     }
 
     renderMinimap() {
       if (!this.minimapCtx || !this.minimapCanvas) return;
       const mctx = this.minimapCtx;
-      const mw = this.minimapCanvas.width;
-      const mh = this.minimapCanvas.height;
-      const scale = mw / WORLD_SIZE;
+      const mw = this.minimapCanvas.width || 164;
+      const mh = this.minimapCanvas.height || 164;
+      const sx = mw / WORLD_SIZE;
+      const sy = mh / WORLD_SIZE;
 
-      mctx.fillStyle = '#090e17';
-      mctx.fillRect(0, 0, mw, mh);
+      if (this.minimapTerrain && typeof mctx.drawImage === 'function') {
+        mctx.drawImage(this.minimapTerrain, 0, 0, mw, mh);
+      } else {
+        mctx.fillStyle = '#090e17';
+        mctx.fillRect(0, 0, mw, mh);
+      }
 
       const playerTeam = this.teams[0];
       if (playerTeam && !playerTeam.hasRadar) {
+        mctx.fillStyle = 'rgba(9, 14, 23, 0.92)';
+        mctx.fillRect(0, 0, mw, mh);
         mctx.fillStyle = '#ef4444';
         mctx.font = 'bold 12px monospace';
         mctx.textAlign = 'center';
@@ -3846,24 +4203,24 @@ window.ZH_ENGINE = (function () {
       for (const d of this.supplyDocks) {
         if (d.amount <= 0) continue;
         mctx.fillStyle = '#fde047';
-        mctx.fillRect(d.x * scale - 3, d.y * scale - 3, 6, 6);
+        mctx.fillRect(d.x * sx - 3, d.y * sy - 3, 6, 6);
       }
 
       // Tech Structures & Garrison Bunkers
       for (const t of this.techStructures) {
         mctx.fillStyle = t.team >= 0 ? this.teams[t.team].faction.color : '#cbd5e1';
-        mctx.fillRect(t.x * scale - 2.5, t.y * scale - 2.5, 5, 5);
+        mctx.fillRect(t.x * sx - 2.5, t.y * sy - 2.5, 5, 5);
       }
       for (const g of this.garrisonBunkers) {
         mctx.fillStyle = g.team >= 0 ? this.teams[g.team].faction.color : '#94a3b8';
-        mctx.fillRect(g.x * scale - 3, g.y * scale - 3, 6, 6);
+        mctx.fillRect(g.x * sx - 3, g.y * sy - 3, 6, 6);
       }
 
       // Buildings
       for (const b of this.buildings) {
         if (b.team !== 0 && !b.def.isSuperweapon && !this.isPositionVisible(b.x, b.y)) continue;
         mctx.fillStyle = this.teams[b.team].faction.color;
-        mctx.fillRect(b.x * scale - 3.5, b.y * scale - 3.5, 7, 7);
+        mctx.fillRect(b.x * sx - 3.5, b.y * sy - 3.5, 7, 7);
       }
 
       // Units
@@ -3871,7 +4228,19 @@ window.ZH_ENGINE = (function () {
         if (u.garrisonedIn || u.garrisonId) continue;
         if (u.team < 0 || (u.team !== 0 && !this.isPositionVisible(u.x, u.y))) continue;
         mctx.fillStyle = this.teams[u.team].faction.accent;
-        mctx.fillRect(u.x * scale - 1.5, u.y * scale - 1.5, 3, 3);
+        mctx.fillRect(u.x * sx - 1.5, u.y * sy - 1.5, 3, 3);
+      }
+
+      // Fog of War Shading on Minimap
+      const cw = mw / FOG_GRID;
+      const ch = mh / FOG_GRID;
+      for (let gy = 0; gy < FOG_GRID; gy++) {
+        for (let gx = 0; gx < FOG_GRID; gx++) {
+          const st = this.fog[gy * FOG_GRID + gx];
+          if (st === 2) continue;
+          mctx.fillStyle = st === 0 ? 'rgba(6, 10, 19, 0.78)' : 'rgba(6, 10, 19, 0.36)';
+          mctx.fillRect(gx * cw, gy * ch, cw + 0.5, ch + 0.5);
+        }
       }
 
       // Radar Pings
@@ -3879,7 +4248,7 @@ window.ZH_ENGINE = (function () {
         mctx.strokeStyle = rp.color;
         mctx.lineWidth = 1.5;
         mctx.beginPath();
-        mctx.arc(rp.x * scale, rp.y * scale, (4.2 - rp.timer) * 6, 0, Math.PI * 2);
+        mctx.arc(rp.x * sx, rp.y * sy, (4.2 - rp.timer) * 6, 0, Math.PI * 2);
         mctx.stroke();
       }
 
@@ -3887,10 +4256,10 @@ window.ZH_ENGINE = (function () {
       mctx.strokeStyle = '#f8fafc';
       mctx.lineWidth = 1.2;
       mctx.strokeRect(
-        this.cam.x * scale,
-        this.cam.y * scale,
-        this.cam.w * scale,
-        this.cam.h * scale
+        this.cam.x * sx,
+        this.cam.y * sy,
+        this.cam.w * sx,
+        this.cam.h * sy
       );
     }
 
@@ -4016,7 +4385,8 @@ window.ZH_ENGINE = (function () {
           unlockedPowers: Array.from(t.unlockedPowers || []),
           powerCooldowns: { ...(t.powerCooldowns || {}) },
           upgrades: Array.from(t.upgrades || []),
-          tunnelUnits: (t.tunnelUnits || []).map(u => this.serializeUnit(u))
+          tunnelUnits: (t.tunnelUnits || []).map(u => this.serializeUnit(u)),
+          stats: t.stats ? { ...t.stats } : undefined
         })),
         buildings: this.buildings.map(b => ({
           id: b.id,
@@ -4145,7 +4515,19 @@ window.ZH_ENGINE = (function () {
           upgrades,
           researchedUpgrades: upgrades,
           tunnelUnits,
-          tunnelPool: tunnelUnits
+          tunnelPool: tunnelUnits,
+          stats: t.stats ? { ...t.stats } : {
+            unitsBuilt: 0,
+            unitsLost: 0,
+            unitsKilled: 0,
+            buildingsBuilt: 0,
+            buildingsLost: 0,
+            buildingsDestroyed: 0,
+            creditsEarned: t.credits || 0,
+            creditsSpent: 0,
+            powersUsed: 0,
+            superweaponsFired: 0
+          }
         };
       });
 
@@ -4245,13 +4627,20 @@ window.ZH_ENGINE = (function () {
           );
         }
       }
+      for (const b of this.buildings) {
+        if (b.controlGroup != null && b.hp > 0) {
+          const k = String(b.controlGroup);
+          if (!this.controlGroups[k]) this.controlGroups[k] = [];
+          if (!this.controlGroups[k].includes(b.id)) this.controlGroups[k].push(b.id);
+        }
+      }
 
       // Restore Fog of War
       if (Array.isArray(snapshot.fog) && snapshot.fog.length === this.fog.length) {
         this.fog.set(snapshot.fog);
-      } else {
-        this.updateFogOfWar();
       }
+      this.updateFogOfWar();
+      this.minimapTerrain = null;
 
       // Restore AI State
       if (snapshot.aiState && window.ZH_AI && typeof ZH_AI.deserializeState === 'function') {

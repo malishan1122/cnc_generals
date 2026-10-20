@@ -99,6 +99,47 @@ class ElementMock {
     return child;
   }
 
+  removeChild(child) {
+    const idx = this.children.indexOf(child);
+    if (idx !== -1) {
+      this.children.splice(idx, 1);
+      child.parentElement = null;
+    }
+    return child;
+  }
+
+  remove() {
+    if (this.parentElement) {
+      this.parentElement.removeChild(this);
+    }
+  }
+
+  replaceChildren(...nodes) {
+    this.children = [];
+    nodes.forEach(n => this.appendChild(n));
+  }
+
+  setAttribute(name, val) {
+    this.attributes[name] = String(val);
+    if (name.startsWith('data-')) {
+      const camel = name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+      this.dataset[camel] = String(val);
+    }
+  }
+
+  getAttribute(name) {
+    return this.attributes[name] !== undefined ? this.attributes[name] : null;
+  }
+
+  contains(node) {
+    let cur = node;
+    while (cur) {
+      if (cur === this) return true;
+      cur = cur.parentElement;
+    }
+    return false;
+  }
+
   addEventListener(type, fn) {
     if (!this.listeners[type]) this.listeners[type] = [];
     this.listeners[type].push(fn);
@@ -253,6 +294,8 @@ function buildDOMEnvironment() {
   register('BUTTON', 'btn-toggle-voice', ['hud-btn'], {}, topBar);
   register('BUTTON', 'btn-pause-game', ['hud-btn'], {}, topBar);
   register('BUTTON', 'btn-main-menu', ['hud-btn'], {}, topBar);
+  register('BUTTON', 'btn-game-menu', ['hud-btn'], {}, topBar);
+  register('DIV', 'hud-match-clock', ['stat-pill'], {}, topBar);
 
   // Viewport
   const viewport = register('MAIN', 'viewport-wrap', [], { width: 1280, height: 720 });
@@ -260,6 +303,10 @@ function buildDOMEnvironment() {
   gameCanvas._rect = { left: 0, top: 0, width: 1280, height: 720 };
   register('DIV', 'superweapon-timers', [], {}, viewport);
   register('DIV', 'tactical-alert', ['hidden'], {}, viewport);
+  register('DIV', 'alert-log', [], {}, viewport);
+  register('DIV', 'power-strip', [], {}, viewport);
+  register('DIV', 'control-group-bar', [], {}, viewport);
+  register('DIV', 'hud-tooltip', ['hidden'], {}, viewport);
   const tauntBox = register('DIV', 'general-taunt-box', ['hidden'], {}, viewport);
   register('DIV', 'taunt-general-name', [], {}, tauntBox);
   register('DIV', 'taunt-general-text', [], {}, tauntBox);
@@ -267,21 +314,28 @@ function buildDOMEnvironment() {
   // Command Bar
   const cmdBar = register('FOOTER', 'command-bar');
   const minimapPanel = register('DIV', 'minimap-panel', [], {}, cmdBar);
-  const minimapCanvas = register('CANVAS', 'minimap-canvas', [], { width: 176, height: 128 }, minimapPanel);
-  minimapCanvas._rect = { left: 0, top: 0, width: 176, height: 128 };
+  const minimapCanvas = register('CANVAS', 'minimap-canvas', [], { width: 164, height: 164 }, minimapPanel);
+  minimapCanvas._rect = { left: 0, top: 0, width: 164, height: 164 };
 
   const inspectorPanel = register('DIV', 'inspector-panel', [], {}, cmdBar);
   register('DIV', 'inspector-title', [], {}, inspectorPanel);
   register('DIV', 'inspector-subtitle', [], {}, inspectorPanel);
-  register('BUTTON', 'btn-order-attack-move', ['hud-btn'], {}, inspectorPanel);
-  register('BUTTON', 'btn-order-guard', ['hud-btn'], {}, inspectorPanel);
-  register('BUTTON', 'btn-order-stop', ['hud-btn'], {}, inspectorPanel);
-  register('BUTTON', 'btn-order-scatter', ['hud-btn'], {}, inspectorPanel);
+  const stanceBar = register('DIV', 'stance-bar', ['hidden'], {}, inspectorPanel);
+  register('BUTTON', 'btn-order-attack-move', ['hud-btn'], {}, stanceBar);
+  register('BUTTON', 'btn-order-guard', ['hud-btn'], {}, stanceBar);
+  register('BUTTON', 'btn-order-stop', ['hud-btn'], {}, stanceBar);
+  register('BUTTON', 'btn-order-scatter', ['hud-btn'], {}, stanceBar);
   register('DIV', 'inspector-stats', [], {}, inspectorPanel);
+  register('DIV', 'selection-summary', ['hidden'], {}, inspectorPanel);
   register('DIV', 'inspector-queue', [], {}, inspectorPanel);
 
   const cmdCardPanel = register('DIV', 'command-card-panel', [], {}, cmdBar);
   register('DIV', 'command-card-grid', [], {}, cmdCardPanel);
+
+  // Game Menu Modal
+  const gameMenuModal = register('DIV', 'game-menu-modal', ['modal-backdrop', 'hidden']);
+  register('BUTTON', 'btn-close-game-menu', ['hud-btn'], {}, gameMenuModal);
+  register('BUTTON', 'btn-speed', ['hud-btn'], {}, gameMenuModal);
 
   // Start Modal
   const startModal = register('DIV', 'start-modal', ['modal-backdrop']);
@@ -1129,6 +1183,113 @@ function runHumanQAPlaybooks() {
       caughtError = err;
     }
     assertCheck(pb, 'Phase 4 Save/Load & Building Control Group playbook executes with 0 exceptions', !caughtError,
+      caughtError ? caughtError.stack : 'Clean execution');
+  }
+
+  // =========================================================================
+  // PLAYBOOK 10: HUD Overhaul (12-Slot Grid, Sell Building, Multi-Select Summary,
+  //              Game Menu & Speed Toggle, Power Strip, Control Group Bar & Zoom)
+  // =========================================================================
+  {
+    const pb = 'Playbook 10: HUD Overhaul (12-Slot Grid, Sell, Multi-Select, Menu & Zoom)';
+    let caughtError = null;
+    try {
+      // 1. Game Menu Modal (#btn-game-menu, #btn-speed, Escape priority)
+      const gameMenuModal = document.getElementById('game-menu-modal');
+      human.clickElement('#btn-game-menu', 'Open Game Menu Modal (#btn-game-menu)');
+      assertCheck(pb, 'Clicking #btn-game-menu opens #game-menu-modal',
+        !gameMenuModal.classList.contains('hidden'));
+
+      const speedBefore = human.engine.gameSpeed || 1.0;
+      human.clickElement('#btn-speed', 'Cycle Game Speed (#btn-speed)');
+      assertCheck(pb, 'Clicking #btn-speed cycles engine.gameSpeed to 1.5x',
+        Math.abs((human.engine.gameSpeed || 1) - 1.5) < 0.05 && speedBefore === 1.0);
+      // Cycle back to 1.0x
+      human.clickElement('#btn-speed', 'Cycle Game Speed 2.0x');
+      human.clickElement('#btn-speed', 'Cycle Game Speed back to 1.0x');
+
+      human.pressKey('Escape', {}, 'Press Escape to close Game Menu Modal');
+      assertCheck(pb, 'Pressing [Escape] while #game-menu-modal is open closes the modal',
+        gameMenuModal.classList.contains('hidden'));
+
+      // 2. Fixed 12-Slot Command Card & Building SELL [Z]
+      const extraBuilding = human.engine.spawnBuilding('GLA_SUPPLY_STASH', 0, 620, 2180, true);
+      const creditsBeforeSell = human.engine.teams[0].credits;
+      human.leftClickWorld(extraBuilding.x, extraBuilding.y, {}, 'Select GLA Supply Stash');
+      const cmdGrid = document.getElementById('command-card-grid');
+      const totalSlots = cmdGrid.children.length;
+      const hasEmptySlots = cmdGrid.children.some(c => c.classList && c.classList.contains('cmd-slot-empty'));
+      assertCheck(pb, 'Command Card maintains fixed 12-slot layout with .cmd-slot-empty placeholders',
+        totalSlots === 12 && hasEmptySlots, `totalSlots=${totalSlots}`);
+
+      const sellBtn = human.clickCommandCardButton('SELL');
+      assertCheck(pb, 'Clicking SELL [Z] on constructed building deconstructs it and refunds 50% credits',
+        Boolean(sellBtn) && extraBuilding.hp <= 0 && human.engine.teams[0].credits > creditsBeforeSell,
+        `creditsBefore=${creditsBeforeSell}, creditsAfter=${human.engine.teams[0].credits}`);
+
+      // 3. Multi-Selection Group Summary (#selection-summary) type filtering
+      const r1 = human.engine.spawnUnit('GLA_REBEL', 0, 700, 2200);
+      const r2 = human.engine.spawnUnit('GLA_REBEL', 0, 720, 2200);
+      const scorp = human.engine.spawnUnit('GLA_SCORPION', 0, 740, 2200);
+      human.dragSelectWorldBox(680, 2180, 760, 2220);
+      const summaryEl = document.getElementById('selection-summary');
+      const groupChips = summaryEl.querySelectorAll('.unit-group-chip');
+      assertCheck(pb, 'Multi-selecting mixed unit types populates #selection-summary with grouped unit-type chips',
+        !summaryEl.classList.contains('hidden') && groupChips.length >= 2,
+        `chips=${groupChips.length}`);
+
+      const scorpChip = groupChips.find(c => c.dataset && c.dataset.defId === 'GLA_SCORPION') || groupChips[0];
+      if (scorpChip) {
+        human.clickElement(scorpChip, 'Click unit-group-chip in #selection-summary to isolate unit type');
+        assertCheck(pb, 'Clicking a .unit-group-chip in #selection-summary isolates selection to that unit type',
+          human.engine.selectedIds.size >= 1 && human.engine.selectedIds.has(scorp.id) && !human.engine.selectedIds.has(r1.id));
+      }
+
+      // 4. Control Group Bar (#control-group-bar) pill click & Quick-Cast Power Strip (#power-strip)
+      human.pressKey('3', { ctrlKey: true }, 'Bind Scorpion to Control Group 3');
+      const ctrlBar = document.getElementById('control-group-bar');
+      const grp3Pill = ctrlBar.children.find(c => c.dataset && c.dataset.group === '3');
+      human.leftClickWorld(200, 200, {}, 'Deselect');
+      if (grp3Pill) {
+        human.clickElement(grp3Pill, 'Click Control Group 3 pill in #control-group-bar');
+      }
+      assertCheck(pb, 'Clicking Control Group pill in #control-group-bar recalls bound group',
+        Boolean(grp3Pill) && human.engine.selectedIds.has(scorp.id));
+
+      // Unlock a GLA General Power and verify #power-strip renders quick-cast button
+      human.engine.teams[0].generalPoints = Math.max(1, human.engine.teams[0].generalPoints);
+      const glaPowers = window.ZH_DATA.GENERALS_POWERS.GLA || [];
+      if (glaPowers[0]) {
+        human.engine.unlockGeneralsPower(0, glaPowers[0].id);
+        window.ZH_UI.updateHudLive();
+        const powerStrip = document.getElementById('power-strip');
+        const stripBtn = powerStrip.children[0];
+        if (stripBtn) {
+          human.clickElement(stripBtn, 'Click Quick-Cast Power Strip button');
+        }
+        assertCheck(pb, 'Unlocking a General Power populates #power-strip and clicking it arms POWER mode',
+          Boolean(stripBtn) && human.engine.commandMode === 'POWER');
+        human.pressKey('Escape', {}, 'Cancel POWER targeting mode');
+      }
+
+      // 5. Wheel Zoom & [Home] Key Camera Reset
+      const canvas = document.getElementById('game-canvas');
+      canvas.dispatchEvent({
+        type: 'wheel',
+        deltaY: -120,
+        clientX: 640,
+        clientY: 360,
+        preventDefault() {}
+      });
+      const zoomedIn = human.engine.cam.zoom;
+      human.pressKey('Home', {}, 'Press [Home] to reset zoom to 1.0 and center on Command Center');
+      assertCheck(pb, 'Mouse wheel zooms camera (cam.zoom > 1.0) and [Home] resets cam.zoom to 1.0',
+        zoomedIn > 1.0 && human.engine.cam.zoom === 1.0,
+        `zoomedIn=${zoomedIn}, afterHome=${human.engine.cam.zoom}`);
+    } catch (err) {
+      caughtError = err;
+    }
+    assertCheck(pb, 'Playbook 10 HUD Overhaul checks execute with 0 exceptions', !caughtError,
       caughtError ? caughtError.stack : 'Clean execution');
   }
 
