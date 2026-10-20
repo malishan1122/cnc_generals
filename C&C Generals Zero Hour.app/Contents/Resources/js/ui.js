@@ -370,7 +370,15 @@
   }
 
   function quickLoad(slotName = 'quicksave') {
-    if (!engine) return false;
+    if (!engine) {
+      const canvas = document.getElementById('game-canvas');
+      const minimap = document.getElementById('minimap-canvas');
+      engine = new ZH_ENGINE.GameEngine(canvas, minimap);
+      engine.onAlert = showTacticalAlert;
+      engine.onTaunt = showGeneralTaunt;
+      engine.onStateChange = refreshCommandBar;
+      engine.onGameOver = handleGameOver;
+    }
     const ok = engine.loadFromSlot(slotName);
     if (ok) {
       applyLoadedHudTheme();
@@ -1291,6 +1299,11 @@
   function setupKeyboardInput() {
     window.addEventListener('keydown', e => {
       keys[e.key.toLowerCase()] = true;
+      if (e.key === 'F9') {
+        e.preventDefault();
+        quickLoad();
+        return;
+      }
       if (!engine || !engine.running) return;
 
       // Escape cancels placement/targeting

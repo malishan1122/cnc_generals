@@ -1071,6 +1071,67 @@ function runHumanQAPlaybooks() {
       caughtError ? caughtError.stack : 'Clean execution');
   }
 
+  // =========================================================================
+  // PLAYBOOK 9: Phase 4 Save/Load ([F5]/[F9]) from Menu & Building Control Groups
+  // =========================================================================
+  {
+    const pb = 'Playbook 9: Phase 4 Save/Load ([F5]/[F9]) & Building Control Groups';
+    let caughtError = null;
+    try {
+      const cc = human.engine.buildings.find(b => b.team === 0 && b.hp > 0);
+      human.leftClickWorld(cc.x, cc.y, {}, 'Select Command Center');
+      human.pressKey('2', { ctrlKey: true }, 'Bind Command Center to Control Group 2 [Ctrl+2]');
+      assertCheck(pb, 'Command Center bound to Control Group 2 [Ctrl+2]',
+        Array.isArray(human.engine.controlGroups['2']) && human.engine.controlGroups['2'].includes(cc.id));
+
+      // Press F5 Quick Save
+      human.pressKey('F5', {}, 'Quick Save [F5]');
+      // Open Main Menu (which sets engine.running = false) and press F9 Quick Load
+      human.clickElement('#btn-main-menu', 'Open Main Menu (#btn-main-menu)');
+      assertCheck(pb, 'Opening Main Menu pauses engine.running', human.engine.running === false);
+
+      human.pressKey('F9', {}, 'Press [F9] Quick Load while on Main Menu / Start Modal');
+      assertCheck(
+        pb,
+        'Pressing [F9] Quick Load from Main Menu / Start Screen restores match and hides Start Modal (BUG-HUMAN-06)',
+        human.engine.running === true && document.getElementById('start-modal').classList.contains('hidden'),
+        `engine.running=${human.engine.running}, startModalHidden=${document.getElementById('start-modal').classList.contains('hidden')}`,
+        {
+          id: 'BUG-HUMAN-06',
+          severity: 'MEDIUM (P2)',
+          file: 'js/ui.js',
+          lines: 'ui.js:1299',
+          summary: 'F9 Quick Load blocked when engine.running is false',
+          impact: 'Cannot press F9 on Start/Menu/Victory screen.'
+        }
+      );
+
+      // Verify Building Control Group 2 survived Quick Save / Quick Load
+      human.leftClickWorld(cc.x + 250, cc.y + 250, {}, 'Click empty ground to deselect');
+      human.pressKey('2', {}, 'Recall Building Control Group 2 [2] after Quick Load');
+      assertCheck(
+        pb,
+        'Building Control Group 2 [Ctrl+2] persists across Quick Save [F5] / Quick Load [F9] (BUG-HUMAN-07)',
+        Array.isArray(human.engine.controlGroups['2']) &&
+          human.engine.controlGroups['2'].includes(cc.id) &&
+          human.engine.selectedIds.has(cc.id),
+        `controlGroups[2]=${JSON.stringify(human.engine.controlGroups['2'])}, selectedIdsHasCC=${human.engine.selectedIds.has(cc.id)}`,
+        {
+          id: 'BUG-HUMAN-07',
+          severity: 'MEDIUM (P2)',
+          file: 'js/engine.js',
+          lines: 'engine.js:4242',
+          summary: 'deserializeState filters controlGroups by unitById only, dropping building IDs',
+          impact: 'Production building control groups are wiped on load.'
+        }
+      );
+    } catch (err) {
+      caughtError = err;
+    }
+    assertCheck(pb, 'Phase 4 Save/Load & Building Control Group playbook executes with 0 exceptions', !caughtError,
+      caughtError ? caughtError.stack : 'Clean execution');
+  }
+
   return { report, findings: human.findings, actionCount: human.actionLog.length };
 }
 

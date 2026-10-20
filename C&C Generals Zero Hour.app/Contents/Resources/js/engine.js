@@ -4039,7 +4039,8 @@ window.ZH_ENGINE = (function () {
           empTimer: b.empTimer || 0,
           superweaponTimer: b.superweaponTimer || 0,
           superweaponMaxTimer: b.superweaponMaxTimer || 150,
-          superweaponReady: Boolean(b.superweaponReady)
+          superweaponReady: Boolean(b.superweaponReady),
+          controlGroup: b.controlGroup || null
         })),
         units: this.units.map(u => this.serializeUnit(u)),
         supplyDocks: this.supplyDocks.map(d => ({
@@ -4239,7 +4240,9 @@ window.ZH_ENGINE = (function () {
       this.controlGroups = {};
       if (snapshot.controlGroups) {
         for (const [grp, ids] of Object.entries(snapshot.controlGroups)) {
-          this.controlGroups[grp] = (ids || []).filter(id => unitById.has(id));
+          this.controlGroups[grp] = (ids || []).filter(
+            id => unitById.has(id) || this.buildings.some(b => b.id === id && b.hp > 0)
+          );
         }
       }
 
@@ -4268,9 +4271,12 @@ window.ZH_ENGINE = (function () {
 
     saveToSlot(slotKey = 'zh_quicksave_v2') {
       const snapshot = this.serializeState();
-      if (typeof localStorage !== 'undefined' && localStorage) {
+      const json = JSON.stringify(snapshot);
+      if (!GameEngine._memorySaveSlots) GameEngine._memorySaveSlots = {};
+      GameEngine._memorySaveSlots[slotKey] = json;
+      if (typeof localStorage !== 'undefined' && localStorage && typeof localStorage.setItem === 'function') {
         try {
-          localStorage.setItem(slotKey, JSON.stringify(snapshot));
+          localStorage.setItem(slotKey, json);
         } catch (err) {
           // Ignore quota errors in headless environments
         }
@@ -4280,12 +4286,20 @@ window.ZH_ENGINE = (function () {
     }
 
     loadFromSlot(slotKey = 'zh_quicksave_v2') {
-      if (typeof localStorage !== 'undefined' && localStorage) {
-        const raw = localStorage.getItem(slotKey);
-        if (raw) {
-          const snapshot = JSON.parse(raw);
-          return this.deserializeState(snapshot);
+      let raw = null;
+      if (typeof localStorage !== 'undefined' && localStorage && typeof localStorage.getItem === 'function') {
+        try {
+          raw = localStorage.getItem(slotKey);
+        } catch (err) {
+          raw = null;
         }
+      }
+      if (!raw && GameEngine._memorySaveSlots && GameEngine._memorySaveSlots[slotKey]) {
+        raw = GameEngine._memorySaveSlots[slotKey];
+      }
+      if (raw) {
+        const snapshot = JSON.parse(raw);
+        return this.deserializeState(snapshot);
       }
       return false;
     }
