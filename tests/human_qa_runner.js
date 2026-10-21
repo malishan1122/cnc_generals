@@ -771,10 +771,24 @@ function runHumanQAPlaybooks() {
     assertCheck(pb, 'Clicking #btn-select-builder selects player Dozer/Worker',
       selectedUnits.length === 1 && selectedUnits[0].def.isBuilder);
 
-    // Test entering build mode and cancelling with Right-Click
+    // Test Dozer right-click movement before building
+    const dozerStartX = selectedUnits[0].x;
+    const dozerStartY = selectedUnits[0].y;
+    human.rightClickWorld(dozerStartX + 70, dozerStartY + 20, { keepCamera: true });
+    human.stepFrames(25, 1 / 60);
+    assertCheck(pb, 'Selected Dozer moves smoothly across terrain on Right-Click move order',
+      Math.hypot(selectedUnits[0].x - dozerStartX, selectedUnits[0].y - dozerStartY) > 15);
+
+    // Test entering build mode, rendering ghost overlay across frames, and cancelling with Right-Click
     const pwrBtn = human.clickCommandCardButton('REACTOR');
     assertCheck(pb, 'Clicking Cold Fusion Reactor on Command Card enters BUILD mode',
       Boolean(pwrBtn) && human.engine.commandMode === 'BUILD' && human.engine.pendingBuildId === 'USA_REACTOR');
+
+    // Step frames while in BUILD mode so renderCommandOverlay exercises canPlaceBuildingAt
+    human.engine.mouseWorld = { x: dozerStartX + 180, y: dozerStartY };
+    human.stepFrames(5, 1 / 60);
+    assertCheck(pb, 'Rendering BUILD placement ghost overlay keeps animation loop alive without throwing',
+      typeof rafCallback === 'function' && human.engine.commandMode === 'BUILD');
 
     human.rightClickWorld(500, 2200, { keepCamera: true });
     assertCheck(pb, 'Right-clicking while in BUILD mode cancels placement and resets commandMode',

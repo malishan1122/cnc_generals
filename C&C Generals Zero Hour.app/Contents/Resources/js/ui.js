@@ -116,33 +116,37 @@
     // Main 60Hz Fixed-Timestep Accumulator Loop (Phase 2 SYS-01)
     let lastTime = performance.now();
     function frame(now) {
-      const dt = (now - lastTime) / 1000;
+      requestAnimationFrame(frame);
+      const dt = Math.min(0.25, Math.max(0, (now - lastTime) / 1000));
       lastTime = now;
 
-      handleCameraPan(dt);
-      if (engine && engine.running) {
-        const simMult = (window.ZH_SIMULATOR && ZH_SIMULATOR.getSpeedMultiplier)
-          ? ZH_SIMULATOR.getSpeedMultiplier()
-          : 1;
-        const warpSteps = Math.max(1, Math.min(25, Math.round(simMult)));
-        for (let s = 0; s < warpSteps; s++) {
-          engine.stepFixed(dt);
-          if (window.ZH_SIMULATOR && ZH_SIMULATOR.update) {
-            ZH_SIMULATOR.update(dt * (engine.gameSpeed || 1));
+      try {
+        handleCameraPan(dt);
+        if (engine && engine.running) {
+          const simMult = (window.ZH_SIMULATOR && ZH_SIMULATOR.getSpeedMultiplier)
+            ? ZH_SIMULATOR.getSpeedMultiplier()
+            : 1;
+          const warpSteps = Math.max(1, Math.min(25, Math.round(simMult)));
+          for (let s = 0; s < warpSteps; s++) {
+            engine.stepFixed(dt);
+            if (window.ZH_SIMULATOR && ZH_SIMULATOR.update) {
+              ZH_SIMULATOR.update(dt * (engine.gameSpeed || 1));
+            }
+          }
+          engine.render();
+          renderSelectionBox();
+
+          hudLiveAccum += dt;
+          if (hudLiveAccum >= 0.1) {
+            hudLiveAccum = 0;
+            updateHudLive();
+          } else {
+            updateTopBarAndTimers();
           }
         }
-        engine.render();
-        renderSelectionBox();
-
-        hudLiveAccum += dt;
-        if (hudLiveAccum >= 0.1) {
-          hudLiveAccum = 0;
-          updateHudLive();
-        } else {
-          updateTopBarAndTimers();
-        }
+      } catch (err) {
+        console.error('[ZH Frame Loop Error]', err);
       }
-      requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
   }
@@ -1936,14 +1940,19 @@
         return;
       }
 
-      // Left-Click (Button 0)
-      if (e.button === 0) {
+      // Left-Click (Button 0) — note: macOS Control+Click (e.button === 0 && e.ctrlKey) without commandMode acts as Right-Click unless unit can force-fire
+      if (e.button === 0 && !(e.ctrlKey && !engine.commandMode)) {
         // 1. Handle active Command Mode (BUILD, POWER, SUPERWEAPON, ABILITY, ATTACK_MOVE, GUARD, RALLY)
         if (engine.commandMode === 'BUILD' && engine.pendingBuildId) {
           const placed = engine.startBuildingPlacement(engine.pendingBuildId, 0, wx, wy);
-          if (placed && !e.shiftKey) {
-            engine.commandMode = null;
-            engine.pendingBuildId = null;
+          if (placed) {
+            if (!e.shiftKey) {
+              engine.commandMode = null;
+              engine.pendingBuildId = null;
+              const alertEl = document.getElementById('tactical-alert');
+              if (alertEl) alertEl.classList.add('hidden');
+            }
+            refreshCommandBar();
           }
           return;
         }
@@ -2004,25 +2013,27 @@
         dragCurrentScreen = { x: sx, y: sy };
       }
 
-      // Right-Click (Button 2)
-      if (e.button === 2) {
+      // Right-Click (Button 2 or macOS Control+Click)
+      if (e.button === 2 || (e.button === 0 && e.ctrlKey && !engine.commandMode)) {
         if (engine.commandMode) {
           engine.commandMode = null;
           engine.pendingBuildId = null;
           engine.pendingPowerId = null;
           engine.pendingAbilityId = null;
           engine.pendingSuperweaponBuildingId = null;
+          const alertEl = document.getElementById('tactical-alert');
+          if (alertEl) alertEl.classList.add('hidden');
           refreshCommandBar();
           return;
         }
-        // Phase 3 SYS-19: Ctrl+RightClick Force-Fire on Ground or Entity
-        if (e.ctrlKey || e.metaKey) {
+        // Phase 3 SYS-19: Ctrl+RightClick / Cmd+RightClick Force-Fire on Ground or Entity (only if armed units selected)
+        if ((e.button === 2 && e.ctrlKey) || e.metaKey) {
           const clickedEntity =
             engine.units.find(u => !(u.garrisonedIn || u.garrisonId) && Math.hypot(u.x - wx, u.y - wy) <= u.radius + 14) ||
             engine.buildings.find(b => Math.hypot(b.x - wx, b.y - wy) <= b.radius + 12) ||
             (engine.garrisonBunkers || []).find(g => g.hp > 0 && Math.hypot(g.x - wx, g.y - wy) <= g.radius + 14);
-          engine.orderForceFireSelected(wx, wy, clickedEntity || null);
-          return;
+          const firedCount = engine.orderForceFireSelected(wx, wy, clickedEntity || null);
+          if (firedCount > 0) return;
         }
         issueRightClickOrder(wx, wy, false, e.shiftKey);
       }
@@ -2067,17 +2078,26 @@
   function handleSingleClickSelection(wx, wy, additive) {
     if (!additive) engine.selectedIds.clear();
 
-    // Check friendly units first
-    const clickedUnit = engine.units.find(
-      u => u.team === 0 && !(u.garrisonedIn || u.garrisonId) && Math.hypot(u.x - wx, u.y - wy) <= u.radius + 8
-    );
+    // Check friendly units first (pick closest unit within generous click radius + isometric visual offset)
+    let clickedUnit = null;
+    let bestUnitDist = Infinity;
+    for (const u of engine.units) {
+      if (u.team !== 0 || u.hp <= 0 || u.garrisonedIn || u.garrisonId) continue;
+      const dFoot = Math.hypot(u.x - wx, u.y - wy);
+      const dBody = Math.hypot(u.x - wx, (u.y - 6) - wy);
+      const d = Math.min(dFoot, dBody);
+      if (d <= (u.radius || 14) + 14 && d < bestUnitDist) {
+        bestUnitDist = d;
+        clickedUnit = u;
+      }
+    }
 
     if (clickedUnit) {
       const now = performance.now();
       // Double-click selects all visible units of the same type!
       if (now - lastClickTime < 340 && lastClickedDefId === clickedUnit.defId) {
         for (const u of engine.units) {
-          if (u.team === 0 && !(u.garrisonedIn || u.garrisonId) && u.defId === clickedUnit.defId) {
+          if (u.team === 0 && u.hp > 0 && !(u.garrisonedIn || u.garrisonId) && u.defId === clickedUnit.defId) {
             engine.selectedIds.add(u.id);
           }
         }
@@ -2094,7 +2114,7 @@
 
     // Check friendly Garrison Bunkers (Phase 2 SYS-15)
     const clickedBunker = (engine.garrisonBunkers || []).find(
-      g => g.team === 0 && g.hp > 0 && Math.hypot(g.x - wx, g.y - wy) <= g.radius + 8
+      g => g.team === 0 && g.hp > 0 && Math.hypot(g.x - wx, g.y - wy) <= (g.radius || 42) + 12
     );
     if (clickedBunker) {
       engine.selectedIds.add(clickedBunker.id);
@@ -2103,10 +2123,17 @@
       return;
     }
 
-    // Check friendly buildings
-    const clickedBuilding = engine.buildings.find(
-      b => b.team === 0 && Math.hypot(b.x - wx, b.y - wy) <= b.radius + 6
-    );
+    // Check friendly buildings (pick closest overlapping building)
+    let clickedBuilding = null;
+    let bestBldDist = Infinity;
+    for (const b of engine.buildings) {
+      if (b.team !== 0 || b.hp <= 0) continue;
+      const d = Math.hypot(b.x - wx, b.y - wy);
+      if (d <= (b.radius || 45) + 12 && d < bestBldDist) {
+        bestBldDist = d;
+        clickedBuilding = b;
+      }
+    }
     if (clickedBuilding) {
       engine.selectedIds.add(clickedBuilding.id);
       ZH_AUDIO.playSFX('click');
@@ -2132,7 +2159,9 @@
 
     const boxUnits = [];
     for (const u of engine.units) {
-      if (u.team === 0 && !(u.garrisonedIn || u.garrisonId) && u.x >= x0 && u.x <= x1 && u.y >= y0 && u.y <= y1) {
+      if (u.team !== 0 || u.hp <= 0 || u.garrisonedIn || u.garrisonId) continue;
+      const r = (u.radius || 14) * 0.65;
+      if (u.x + r >= x0 && u.x - r <= x1 && u.y + r >= y0 && u.y - r <= y1) {
         boxUnits.push(u);
       }
     }
@@ -2143,6 +2172,17 @@
     for (const u of filtered) {
       engine.selectedIds.add(u.id);
     }
+
+    // Fallback: if no units were inside the selection box, select a friendly building inside the box
+    if (engine.selectedIds.size === 0) {
+      for (const b of engine.buildings) {
+        if (b.team === 0 && b.hp > 0 && b.x >= x0 && b.x <= x1 && b.y >= y0 && b.y <= y1) {
+          engine.selectedIds.add(b.id);
+          break;
+        }
+      }
+    }
+
     if (engine.selectedIds.size > 0) {
       ZH_AUDIO.playSFX('click');
     }
@@ -2362,12 +2402,14 @@
   function renderSelectionBox() {
     if (!isDraggingBox || !engine) return;
     const ctx = engine.ctx;
+    const dpr = engine.dpr || 1;
     const x = Math.min(dragStartScreen.x, dragCurrentScreen.x);
     const y = Math.min(dragStartScreen.y, dragCurrentScreen.y);
     const w = Math.abs(dragCurrentScreen.x - dragStartScreen.x);
     const h = Math.abs(dragCurrentScreen.y - dragStartScreen.y);
 
     ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.strokeStyle = '#22c55e';
     ctx.fillStyle = 'rgba(34, 197, 94, 0.14)';
     ctx.lineWidth = 1.5;

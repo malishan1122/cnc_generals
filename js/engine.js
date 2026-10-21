@@ -1146,6 +1146,13 @@ window.ZH_ENGINE = (function () {
       return true;
     }
 
+    canPlaceBuildingAt(defId, teamIdOrX, x, y) {
+      if (y === undefined) {
+        return this.canPlaceBuilding(defId, teamIdOrX, x);
+      }
+      return this.canPlaceBuilding(defId, x, y);
+    }
+
     findValidBuildSpot(defId, anchorX, anchorY, preferredSlot = 0) {
       const ringOffsets = [
         { dx: 150, dy: -30 },
@@ -1204,13 +1211,10 @@ window.ZH_ENGINE = (function () {
         return null;
       }
 
-      // Check collision with existing buildings
-      for (const other of this.buildings) {
-        if (other.hp <= 0) continue;
-        if (dist(x, y, other.x, other.y) < (def.size / 2 + other.radius + 16)) {
-          if (teamId === 0) this.triggerAlert('Cannot build there — footprint blocked!', '#ef4444');
-          return null;
-        }
+      // Check collision with map bounds, existing buildings, supply docks, tech structures, and bunkers
+      if (!this.canPlaceBuilding(defId, x, y)) {
+        if (teamId === 0) this.triggerAlert('Cannot build there — footprint blocked!', '#ef4444');
+        return null;
       }
 
       // Find an available Dozer or GLA Worker
@@ -1245,6 +1249,7 @@ window.ZH_ENGINE = (function () {
         ZH_AUDIO.playSFX('click');
         if (builder.def.voiceMove) ZH_AUDIO.speak(builder.def.voiceMove);
       }
+      if (this.onStateChange) this.onStateChange();
       return site;
     }
 
@@ -2332,8 +2337,12 @@ window.ZH_ENGINE = (function () {
           return;
         }
         const d = dist(u.x, u.y, site.x, site.y);
-        if (d > site.radius + u.radius + 22) {
-          this.moveUnitToward(u, site.x, site.y, dt);
+        if (d > site.radius + u.radius + 32) {
+          const ang = angleBetween(site.x, site.y, u.x, u.y);
+          const standDist = site.radius + u.radius + 14;
+          const bx = clamp(site.x + Math.cos(ang) * standDist, 35, WORLD_SIZE - 35);
+          const by = clamp(site.y + Math.sin(ang) * standDist, 35, WORLD_SIZE - 35);
+          this.moveUnitToward(u, bx, by, dt);
         } else {
           const mod = this.teams[u.team].general.modifiers || {};
           let buildTime = site.def.buildTime || 12;
