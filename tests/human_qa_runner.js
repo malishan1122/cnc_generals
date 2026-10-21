@@ -225,18 +225,40 @@ class ElementMock {
   }
 
   getBoundingClientRect() {
-    return { ...this._rect, width: this.width || 1280, height: this.height || 720 };
+    const cssW = parseFloat(this.style && this.style.width) || this._rect.width || this.width || 1280;
+    const cssH = parseFloat(this.style && this.style.height) || this._rect.height || this.height || 720;
+    return {
+      left: this._rect.left || 0,
+      top: this._rect.top || 0,
+      width: cssW,
+      height: cssH
+    };
   }
 
   getContext() {
     const el = this;
     if (!el._ctxProxy) {
       el._nanArcCalls = 0;
+      el._lastSetTransform = [1, 0, 0, 1, 0, 0];
+      el._strokeRectCalls = [];
       el._ctxProxy = new Proxy({}, {
         get: (target, prop) => {
           if (prop === 'measureText') return () => ({ width: 42 });
           if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
             return () => ({ addColorStop() {} });
+          }
+          if (prop === 'setTransform') {
+            return (...args) => {
+              el._lastSetTransform = args;
+            };
+          }
+          if (prop === 'strokeRect') {
+            return (x, y, w, h) => {
+              el._strokeRectCalls.push({
+                x, y, w, h,
+                transform: Array.isArray(el._lastSetTransform) ? [...el._lastSetTransform] : [1, 0, 0, 1, 0, 0]
+              });
+            };
           }
           if (prop === 'arc') {
             return (x, y, r) => {
@@ -316,10 +338,10 @@ function buildDOMEnvironment() {
   register('BUTTON', 'btn-game-menu', ['hud-btn'], {}, topBar);
   register('DIV', 'hud-match-clock', ['stat-pill'], {}, topBar);
 
-  // Viewport
-  const viewport = register('MAIN', 'viewport-wrap', [], { width: 1280, height: 720 });
-  const gameCanvas = register('CANVAS', 'game-canvas', [], { width: 1280, height: 720 }, viewport);
-  gameCanvas._rect = { left: 0, top: 0, width: 1280, height: 720 };
+  // Viewport (matches css/style.css: margin-top: 36px, height: calc(100vh - 36px - 184px) = 500px)
+  const viewport = register('MAIN', 'viewport-wrap', [], { width: 1280, height: 500 });
+  const gameCanvas = register('CANVAS', 'game-canvas', [], { width: 1280, height: 500 }, viewport);
+  gameCanvas._rect = { left: 0, top: 36, width: 1280, height: 500 };
   register('DIV', 'superweapon-timers', [], {}, viewport);
   register('DIV', 'tactical-alert', ['hidden'], {}, viewport);
   register('DIV', 'alert-log', [], {}, viewport);
@@ -537,6 +559,9 @@ class HumanUserDriver {
       type: 'mousemove', button: 0, clientX: p2.clientX, clientY: p2.clientY,
       shiftKey: !!opts.shiftKey
     });
+    if (opts.framesDuringDrag) {
+      this.stepFrames(opts.framesDuringDrag, 1 / 60);
+    }
     window.dispatchEvent({
       type: 'mouseup', button: 0, clientX: p2.clientX, clientY: p2.clientY,
       shiftKey: !!opts.shiftKey
@@ -620,11 +645,14 @@ class HumanUserDriver {
   }
 
   // Advance the actual 60Hz requestAnimationFrame loop in ui.js!
+  // Clears rafCallback before invoking so we strictly detect if frame(now) throws or stops re-scheduling.
   stepFrames(frames = 10, dtSec = 1 / 60) {
     for (let i = 0; i < frames; i++) {
       simClockMs += dtSec * 1000;
       if (rafCallback) {
-        rafCallback(simClockMs);
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(simClockMs);
       } else if (this.engine) {
         this.engine.stepFixed(dtSec);
       }
@@ -946,10 +974,16 @@ function runHumanQAPlaybooks() {
     human.pressKey('1');
     const squad = human.engine.units.filter(u => human.engine.selectedIds.has(u.id));
 
-    // 1. Standard Right-Click Move
+    // 1. Standard Right-Click Move (must verify both state === 'MOVE' AND physical coordinate translation across frames)
+    const startSquadPos = squad.map(u => ({ id: u.id, x: u.x, y: u.y }));
     human.rightClickWorld(900, 2100);
     assertCheck(pb, 'Right-clicking open terrain orders selected squad to MOVE',
       squad.every(u => u.state === 'MOVE'));
+    human.stepFrames(25, 1 / 60);
+    const movedSquadCount = squad.filter((u, idx) => Math.hypot(u.x - startSquadPos[idx].x, u.y - startSquadPos[idx].y) > 12).length;
+    assertCheck(pb, 'Selected combat squad physically translates across terrain after Right-Click move order',
+      movedSquadCount === squad.length && squad.length > 0,
+      `moved=${movedSquadCount}/${squad.length}`);
 
     // 2. Shift + Right-Click Waypoint Queueing
     human.rightClickWorld(1050, 2000, { shiftKey: true });
@@ -1601,6 +1635,98 @@ function runHumanQAPlaybooks() {
     );
 
     simInst.enabled = false;
+  }
+
+  // --------------------------------------------------------------------------
+  // PLAYBOOK 13: Retina (DPR=2) Selection Box Scaling, BUILD-Mode Click Trap & Same-Frame Move Marker
+  // --------------------------------------------------------------------------
+  {
+    const pb = 'Playbook 13: macOS Retina (DPR=2) Selection Box Alignment & BUILD-Mode Unit Selection';
+    global.devicePixelRatio = 2;
+    window.dispatchEvent({ type: 'resize' });
+    startFreshMatch({ playerIdx: 0, aiIdx: 3, diffId: 'NORMAL' });
+
+    const canvas = document.getElementById('game-canvas');
+    const combatUnits = human.engine.units.filter(u => u.team === 0 && !u.dead && !u.def.isBuilder && !u.def.isHarvester);
+    const targetUnit = combatUnits[0];
+
+    // 1. Single-click combat unit on Retina (DPR=2) with top-bar offset (top: 36px)
+    human.leftClickWorld(targetUnit.x, targetUnit.y);
+    assertCheck(
+      pb,
+      'Single left-click on combat unit selects it under macOS Retina (DPR=2) and 36px top-bar offset',
+      human.engine.selectedIds.has(targetUnit.id),
+      `selectedIds=${Array.from(human.engine.selectedIds).join(',')}, targetUnit.id=${targetUnit.id}`
+    );
+
+    // 2. Drag-box selection on Retina (DPR=2): verify renderSelectionBox() uses engine.pixelRatio (2) instead of engine.dpr (undefined -> 1)
+    canvas._strokeRectCalls = [];
+    human.dragSelectWorldBox(
+      targetUnit.x - 60,
+      targetUnit.y - 60,
+      targetUnit.x + 60,
+      targetUnit.y + 60,
+      { framesDuringDrag: 2 }
+    );
+    const lastMarqueeCall = canvas._strokeRectCalls[canvas._strokeRectCalls.length - 1];
+    const marqueeScaleX = lastMarqueeCall ? lastMarqueeCall.transform[0] : 0;
+
+    assertCheck(
+      pb,
+      'renderSelectionBox() scales drag-selection marquee by engine.pixelRatio (2x on Retina) so visual box matches cursor',
+      marqueeScaleX === 2,
+      `devicePixelRatio=2, engine.pixelRatio=${human.engine.pixelRatio}, engine.dpr=${human.engine.dpr}, marqueeTransformScaleX=${marqueeScaleX}`,
+      {
+        id: 'BUG-UI-07',
+        severity: 'HIGH (P1)',
+        file: 'js/ui.js:2405 vs js/ui.js:216 & js/engine.js:3394',
+        summary: 'resizeCanvases() (js/ui.js:216) stores the Retina scale factor on engine.pixelRatio = dpr (e.g. 2 on macOS Retina displays), and engine.render() (js/engine.js:3394) scales the canvas by this.pixelRatio. However, renderSelectionBox() (js/ui.js:2405) reads const dpr = engine.dpr || 1 (where engine.dpr is undefined!) and calls ctx.setTransform(1, 0, 0, 1, 0, 0) on the 2x physical canvas buffer.',
+        impact: 'On every macOS Retina display (devicePixelRatio = 2), the green drag-selection box is drawn at 50% size and 50% coordinates (shifted halfway toward the top-left corner away from the mouse cursor), making drag-selecting units look visually broken and disconnected from the cursor.'
+      }
+    );
+
+    // 3. Same-frame render after right-click move (before updateSpecialEffects runs)
+    canvas._nanArcCalls = 0;
+    human.rightClickWorld(targetUnit.x + 90, targetUnit.y + 30, { keepCamera: true });
+    // If engine.render() runs before stepFixed() (e.g. when paused or dt=0), m.t is still undefined unless initialized in pushMoveMarker!
+    human.engine.render();
+    assertCheck(
+      pb,
+      'pushMoveMarker() initializes t: 0 so same-frame engine.render() never passes NaN radius to ctx.arc()',
+      canvas._nanArcCalls === 0,
+      `nanArcCallsOnImmediateRender=${canvas._nanArcCalls}, marker[last].t=${human.engine.moveMarkers[human.engine.moveMarkers.length - 1]?.t}`,
+      {
+        id: 'BUG-UI-09',
+        severity: 'LOW (P2)',
+        file: 'js/ui.js:2192-2201 vs js/engine.js:3464-3481',
+        summary: 'pushMoveMarker() in js/ui.js:2194-2200 creates { x, y, color, age: 0, maxAge: 0.55 } without t: 0. While updateSpecialEffects(dt) later initializes m.t = (m.t || 0) + dt, any engine.render() call that happens before stepFixed(dt) (such as while paused or on an immediate redraw) computes m.t / 0.45 = NaN and calls ctx.arc(m.x, m.y, NaN, ...).',
+        impact: 'Same-frame or paused-state move marker rendering passes NaN radius to canvas ctx.arc().'
+      }
+    );
+
+    // 4. Left-clicking an existing friendly unit/building while in BUILD mode (after clicking a Command Card building cameo)
+    human.clickElement('#btn-select-builder', 'Select Dozer');
+    human.clickCommandCardButton('REACTOR');
+    const cc = human.engine.buildings.find(b => b.team === 0 && (b.def.isCommandCenter || b.def.isHQ));
+    // Player changes their mind and left-clicks their own Command Center or combat unit directly without right-clicking first
+    human.leftClickWorld(cc.x, cc.y, { keepCamera: true });
+    // Now player tries to left-click a combat unit
+    human.leftClickWorld(targetUnit.x, targetUnit.y, { keepCamera: true });
+    assertCheck(
+      pb,
+      'Left-clicking a friendly structure/unit after an invalid BUILD click does not silently trap the player in BUILD mode or place a scaffold over the unit',
+      human.engine.selectedIds.has(targetUnit.id) && human.engine.commandMode === null,
+      `commandMode=${human.engine.commandMode}, selectedIds=${Array.from(human.engine.selectedIds).join(',')}`,
+      {
+        id: 'BUG-UI-08',
+        severity: 'MEDIUM (P2)',
+        file: 'js/ui.js:1946-1958',
+        summary: 'When engine.commandMode === "BUILD", canvas mousedown (js/ui.js:1946-1958) intercepts all left-clicks and returns early before unit/building selection. If the player clicks an invalid spot (e.g. on an existing building) or clicks directly on a friendly unit intending to select it, commandMode either stays locked in "BUILD" (blocking all unit selection until Right-Click/Escape) or places a building foundation directly on top of the unit.',
+        impact: 'Players who click a building cameo on the Command Card and then left-click a unit or building to switch selection find that units cannot be selected until they explicitly Right-Click or press Escape.'
+      }
+    );
+
+    global.devicePixelRatio = 1;
   }
 
   return { report, findings: human.findings, actionCount: human.actionLog.length };
