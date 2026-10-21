@@ -50,7 +50,10 @@ class ElementMock {
         this.dataset[camel] = String(v);
       }
     }
-    this.style = { display: attrs.style && attrs.style.includes('display:none') ? 'none' : '' };
+    this.style = {
+      display: attrs.style && attrs.style.includes('display:none') ? 'none' : '',
+      setProperty(k, v) { this[k] = String(v); }
+    };
     this.children = [];
     this.parentElement = null;
     this.listeners = {};
@@ -226,20 +229,32 @@ class ElementMock {
   }
 
   getContext() {
-    return new Proxy({}, {
-      get: (target, prop) => {
-        if (prop === 'measureText') return () => ({ width: 42 });
-        if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
-          return () => ({ addColorStop() {} });
+    const el = this;
+    if (!el._ctxProxy) {
+      el._nanArcCalls = 0;
+      el._ctxProxy = new Proxy({}, {
+        get: (target, prop) => {
+          if (prop === 'measureText') return () => ({ width: 42 });
+          if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+            return () => ({ addColorStop() {} });
+          }
+          if (prop === 'arc') {
+            return (x, y, r) => {
+              if (Number.isNaN(x) || Number.isNaN(y) || Number.isNaN(r)) {
+                el._nanArcCalls = (el._nanArcCalls || 0) + 1;
+              }
+            };
+          }
+          if (prop in target) return target[prop];
+          return () => {};
+        },
+        set: (target, prop, val) => {
+          target[prop] = val;
+          return true;
         }
-        if (prop in target) return target[prop];
-        return () => {};
-      },
-      set: (target, prop, val) => {
-        target[prop] = val;
-        return true;
-      }
-    });
+      });
+    }
+    return el._ctxProxy;
   }
 }
 
@@ -251,9 +266,13 @@ function buildDOMEnvironment() {
   rafCallback = null;
   const elementsById = new Map();
   const root = new ElementMock('BODY', 'body');
+  const head = new ElementMock('HEAD', 'head');
+  const docEl = new ElementMock('HTML', 'html');
 
   const doc = {
     body: root,
+    head,
+    documentElement: docEl,
     _elementsById: elementsById,
     _registerById(id, el) { elementsById.set(id, el); },
     createElement(tag) { return new ElementMock(tag); },
@@ -351,6 +370,16 @@ function buildDOMEnvironment() {
   register('BUTTON', '', ['diff-btn', 'active'], { 'data-diff': 'NORMAL' }, startModal);
   register('BUTTON', '', ['diff-btn'], { 'data-diff': 'HARD' }, startModal);
   register('BUTTON', 'btn-launch-operation', ['launch-btn'], {}, startModal);
+  register('BUTTON', 'btn-open-powers-preview', ['hud-btn'], {}, startModal);
+  const btnAutoSim = register('BUTTON', 'btn-auto-sim', ['hud-btn'], { hidden: 'hidden' }, startModal);
+  btnAutoSim.hidden = true;
+
+  // Game Menu Modal (matches index.html lines 155-183)
+  const optHealthBars = register('INPUT', 'opt-health-bars', [], { type: 'checkbox' }, gameMenuModal);
+  optHealthBars.value = 'on';
+  optHealthBars.checked = false;
+  const optUiScale = register('SELECT', 'opt-ui-scale', [], {}, gameMenuModal);
+  optUiScale.value = '100';
 
   // Powers Modal
   const powersModal = register('DIV', 'powers-modal', ['modal-backdrop', 'hidden']);
@@ -362,6 +391,7 @@ function buildDOMEnvironment() {
   const victoryModal = register('DIV', 'victory-modal', ['modal-backdrop', 'hidden']);
   register('DIV', 'victory-title', ['zh-logo-title'], {}, victoryModal);
   register('P', 'victory-subtitle', [], {}, victoryModal);
+  register('DIV', 'victory-stats-wrap', [], {}, victoryModal);
   register('BUTTON', 'btn-next-challenge', ['launch-btn'], {}, victoryModal);
 
   const winListeners = {};
@@ -370,6 +400,15 @@ function buildDOMEnvironment() {
     innerHeight: 720,
     devicePixelRatio: 1,
     document: doc,
+    getComputedStyle() {
+      return {
+        getPropertyValue(prop) {
+          if (prop === '--top-bar-h') return '36px';
+          if (prop === '--cmd-bar-h') return '184px';
+          return '';
+        }
+      };
+    },
     addEventListener(type, fn) {
       if (!winListeners[type]) winListeners[type] = [];
       winListeners[type].push(fn);
@@ -616,6 +655,7 @@ function runHumanQAPlaybooks() {
     'js/audio.js',
     'js/engine.js',
     'js/ai.js',
+    'js/simulator.js',
     'js/ui.js'
   ];
 
@@ -1291,6 +1331,262 @@ function runHumanQAPlaybooks() {
     }
     assertCheck(pb, 'Playbook 10 HUD Overhaul checks execute with 0 exceptions', !caughtError,
       caughtError ? caughtError.stack : 'Clean execution');
+  }
+
+  const startFreshMatch = (opts = {}) => {
+    human.clickElement('#btn-main-menu', 'Open Start Modal (#btn-main-menu)');
+    const skirmishTab = document.querySelector('.mode-tab-btn[data-mode="SKIRMISH"]');
+    if (skirmishTab) human.clickElement(skirmishTab, 'Skirmish Mode Tab');
+    const playerCards = document.getElementById('player-general-grid').children;
+    const aiCards = document.getElementById('ai-general-grid').children;
+    if (playerCards[opts.playerIdx ?? 0]) human.clickElement(playerCards[opts.playerIdx ?? 0], 'Select Player General');
+    if (aiCards[opts.aiIdx ?? 4]) human.clickElement(aiCards[opts.aiIdx ?? 4], 'Select AI General');
+    const diffBtn = document.querySelector(`.diff-btn[data-diff="${opts.diffId || 'NORMAL'}"]`);
+    if (diffBtn) human.clickElement(diffBtn, `Select ${opts.diffId || 'NORMAL'} difficulty`);
+    human.clickElement('#btn-launch-operation', 'Click LAUNCH ZERO HOUR (#btn-launch-operation)');
+  };
+
+  // --------------------------------------------------------------------------
+  // PLAYBOOK 11: Early-Game AI Power Strike, Move Marker NaN Leak & HUD Settings
+  // --------------------------------------------------------------------------
+  {
+    const pb = 'Playbook 11: Early-Game AI Power Grace, Move Marker Decay & HUD Settings';
+    startFreshMatch({ playerIdx: 0, aiIdx: 3, diffId: 'NORMAL' });
+
+    // 1. Check if AI immediately strikes player base at t = 2.6s without Fog-of-War scouting or grace period
+    const initialCombatUnits = human.engine.units.filter(u => u.team === 0 && !u.def.isBuilder && !u.def.isHarvester && !u.dead).length;
+    const cc0 = human.engine.buildings.find(b => b.team === 0 && b.defId.includes('_CC'));
+    const initialCcHp = cc0 ? cc0.hp : 0;
+
+    // Advance 6.0 seconds of match time (360 frames at 60Hz) with zero player actions
+    human.stepFrames(360, 1 / 60);
+    const survivingCombatUnits = human.engine.units.filter(u => u.team === 0 && !u.def.isBuilder && !u.def.isHarvester && !u.dead).length;
+    const ccHpAfter6s = cc0 ? cc0.hp : 0;
+    const aiPowerUsed = Object.keys(human.engine.teams[1].powerCooldowns || {}).length > 0;
+
+    assertCheck(
+      pb,
+      'AI does not map-hack cast Rank-1 offensive Generals Power on unscouted player base within first 6 seconds (wiping starting combat units)',
+      survivingCombatUnits === initialCombatUnits && ccHpAfter6s === initialCcHp,
+      `initialCombat=${initialCombatUnits}, survivingAfter6s=${survivingCombatUnits}, ccHp=${ccHpAfter6s}/${initialCcHp}, aiPowerUsed=${aiPowerUsed}`,
+      {
+        id: 'BUG-AI-01',
+        severity: 'CRITICAL',
+        file: 'js/ai.js:252-263, 663-680 & js/engine.js:267-269',
+        summary: 'Both teams start at rank 1 with generalPoints=1. At t=2.6s (first AI think tick), ZH_AI.updateTeam() unlocks its Rank-1 offensive power (e.g. CHINA_ARTILLERY_BARRAGE / USA_A10_STRIKE) and calls findBestClusterTarget(engine, 0, 260, true) which queries engine.buildings/units directly without checking Fog of War or an early-game grace timer. It immediately bombards the player Command Center at t=2.6s, killing both starting combat units within 5s while explosions/audio play in the background.',
+        impact: 'Player starting infantry are wiped out at t < 5s before the user even pans around; only idle Dozers remain (so clicking "All Combat Units [Q]" selects nothing and units appear non-existent/unresponsive while combat audio plays).'
+      }
+    );
+
+    // 2. Right-click ground move marker lifecycle & NaN arc check
+    const dozer = human.engine.units.find(u => u.team === 0 && u.def.isBuilder && !u.dead);
+    const canvas = document.getElementById('game-canvas');
+    canvas._nanArcCalls = 0;
+    human.leftClickWorld(dozer.x, dozer.y);
+    human.rightClickWorld(dozer.x + 140, dozer.y + 40);
+    const markerCountAfterClick = human.engine.moveMarkers.length;
+    // Step 40 frames (0.67s > 0.55s maxAge) so move marker should expire and be removed
+    human.stepFrames(40, 1 / 60);
+    const markerCountAfterExpiry = human.engine.moveMarkers.length;
+    const firstMarkerT = human.engine.moveMarkers[0] ? human.engine.moveMarkers[0].t : null;
+
+    assertCheck(
+      pb,
+      'Right-click move markers increment age/t cleanly, render without NaN canvas.arc radii, and expire after 0.45-0.55s',
+      markerCountAfterClick >= 1 && markerCountAfterExpiry === 0 && canvas._nanArcCalls === 0,
+      `markersAfterClick=${markerCountAfterClick}, markersAfter0.67s=${markerCountAfterExpiry}, marker[0].t=${firstMarkerT}, nanArcCalls=${canvas._nanArcCalls}`,
+      {
+        id: 'BUG-UI-01',
+        severity: 'HIGH',
+        file: 'js/ui.js:2108-2117 vs js/engine.js:3174-3181, 3434-3450',
+        summary: 'pushMoveMarker() in js/ui.js pushes { x, y, color, age: 0, maxAge: 0.55 }, whereas updateSpecialEffects() and renderMoveMarkers() in js/engine.js read/increment m.t (undefined + dt = NaN) and m.kind. Because m.t >= 0.45 is always false for NaN, moveMarkers are never spliced from engine.moveMarkers and ctx.arc(m.x, m.y, NaN, ...) is called every frame.',
+        impact: 'Right-click move/attack ground confirmation rings never render on the canvas and engine.moveMarkers leaks unboundedly over the match.'
+      }
+    );
+
+    // 3. CSS variable alignment in resizeCanvases()
+    // In index.html/style.css, --top-bar-h is 36px and --cmd-bar-h is 184px (720 - 36 - 184 = 500px).
+    // js/ui.js reads --hud-top-h and --hud-bottom-h (undefined -> falls back to 36 and 176 -> 508px).
+    window.dispatchEvent({ type: 'resize' });
+    assertCheck(
+      pb,
+      'resizeCanvases() reads --top-bar-h (36px) and --cmd-bar-h (184px) matching style.css (expected canvas cssH=500 for 720p window)',
+      human.engine.cam.w === 1280 && human.engine.cam.h === 500,
+      `cam.w=${human.engine.cam.w}, cam.h=${human.engine.cam.h} (expected 500, got ${human.engine.cam.h})`,
+      {
+        id: 'BUG-UI-02',
+        severity: 'MEDIUM',
+        file: 'js/ui.js:182-183 vs css/style.css:7-8',
+        summary: 'resizeCanvases() reads CSS custom properties --hud-top-h and --hud-bottom-h which do not exist in css/style.css (which defines --top-bar-h: 36px and --cmd-bar-h: 184px). It falls back to 176px instead of 184px.',
+        impact: 'Canvas internal coordinate height is 8px taller than the CSS #viewport-wrap container, causing vertical mouse-picking drift and bottom clipping.'
+      }
+    );
+
+    // 4. Game Menu #opt-health-bars checkbox vs select mismatch
+    const hbInput = document.getElementById('opt-health-bars');
+    hbInput.checked = true;
+    hbInput.dispatchEvent({ type: 'change', target: hbInput });
+    assertCheck(
+      pb,
+      'Checking #opt-health-bars checkbox in Game Menu sets engine.showAllHealthBars = true',
+      human.engine.showAllHealthBars === true,
+      `hbInput.type=${hbInput.getAttribute('type')}, hbInput.value=${hbInput.value}, engine.showAllHealthBars=${human.engine.showAllHealthBars}`,
+      {
+        id: 'BUG-UI-03',
+        severity: 'MEDIUM',
+        file: 'index.html:167 vs js/ui.js:303-313',
+        summary: 'index.html declares <input type="checkbox" id="opt-health-bars" />, but js/ui.js treats it as a <select> with values "DAMAGED" / "ALWAYS" (checking e.target.value === "ALWAYS", whereas a checkbox has e.target.value === "on").',
+        impact: 'Toggling "Always Show Health Bars" in the Game Menu has no effect.'
+      }
+    );
+
+    // 5. Game Menu #opt-ui-scale values ('90'/'100'/'115' vs '0.9'/'1'/'1.15')
+    const uiScaleSelect = document.getElementById('opt-ui-scale');
+    uiScaleSelect.value = '115';
+    uiScaleSelect.dispatchEvent({ type: 'change', target: uiScaleSelect });
+    const appliedScale = document.documentElement.style['--ui-scale'];
+    assertCheck(
+      pb,
+      'Changing #opt-ui-scale to 115% applies normalized scale factor (1.15) rather than raw "115"',
+      appliedScale === '1.15' || appliedScale === 1.15,
+      `applied --ui-scale=${appliedScale}`,
+      {
+        id: 'BUG-UI-04',
+        severity: 'LOW',
+        file: 'index.html:176-180 vs js/ui.js:60, 267, 329 & css/style.css:9',
+        summary: 'index.html uses option values "90", "100", "115", whereas js/ui.js initializes settings.uiScale = "1" and writes raw e.target.value ("115") to --ui-scale, and css/style.css never applies var(--ui-scale).',
+        impact: 'HUD Scale dropdown in Game Menu does not scale the UI and mismatches default option values.'
+      }
+    );
+
+    // 6. Start Modal #btn-open-powers-preview button wiring
+    const powersModal = document.getElementById('powers-modal');
+    powersModal.classList.add('hidden');
+    human.clickElement('#btn-open-powers-preview', 'Click Preview Generals Powers on Start Modal');
+    assertCheck(
+      pb,
+      'Clicking #btn-open-powers-preview opens #powers-modal',
+      !powersModal.classList.contains('hidden'),
+      `powersModal.hidden=${powersModal.classList.contains('hidden')}`,
+      {
+        id: 'BUG-UI-05',
+        severity: 'LOW',
+        file: 'index.html:240 & js/ui.js',
+        summary: '#btn-open-powers-preview in index.html has no click event listener in js/ui.js (and #powers-modal has the same z-index: 50 as #start-modal).',
+        impact: 'Clicking "Preview Generals Powers" on the Start Screen does nothing.'
+      }
+    );
+
+    // 7. Victory Modal Credits Collected stat property mismatch (creditsCollected vs creditsEarned)
+    human.engine.teams[0].stats.creditsEarned = 4500;
+    human.engine.matchOver = true;
+    human.engine.winner = 0;
+    human.stepFrames(5, 1 / 60);
+    const statsHtml = document.getElementById('victory-stats-wrap').innerHTML || '';
+    assertCheck(
+      pb,
+      'Victory Modal displays team.stats.creditsEarned in Credits Collected row',
+      statsHtml.includes('$4500') || statsHtml.includes('4,500'),
+      `creditsEarned=4500, renderedVictoryStatsIncludes4500=${statsHtml.includes('4500')}`,
+      {
+        id: 'BUG-UI-06',
+        severity: 'LOW',
+        file: 'js/ui.js:2642 vs js/engine.js:281, 526, 2081, 2116',
+        summary: 'showVictoryModal() in js/ui.js reads s0.creditsCollected and s1.creditsCollected, whereas js/engine.js tracks team.stats.creditsEarned.',
+        impact: 'Victory/Defeat summary table always reports $0 for Credits Collected.'
+      }
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  // PLAYBOOK 12: PlanSimulator Auto-Play (Buildings, Unit Production, Warp & UI)
+  // --------------------------------------------------------------------------
+  {
+    const pb = 'Playbook 12: PlanSimulator Auto-Play (Construction, Unit Training, Warp Speed & Toggle)';
+    startFreshMatch({ playerIdx: 0, aiIdx: 3, diffId: 'NORMAL' });
+
+    // 1. Test #btn-auto-sim (used by macos_main.swift Cmd+T "Toggle AI Auto-Play Simulator")
+    const simInst = window.ZH_SIMULATOR.getActiveSimulator();
+    const simBeforeClick = Boolean(simInst && simInst.enabled);
+    human.clickElement('#btn-auto-sim', 'Click #btn-auto-sim (or press Cmd+T in macOS menu)');
+    const simAfterBtnClick = Boolean(simInst && simInst.enabled);
+
+    assertCheck(
+      pb,
+      'Clicking #btn-auto-sim (invoked by macOS menu Cmd+T) toggles PlanSimulator.enabled',
+      simAfterBtnClick !== simBeforeClick,
+      `before=${simBeforeClick}, after=${simAfterBtnClick}`,
+      {
+        id: 'BUG-SIM-01E',
+        severity: 'HIGH',
+        file: 'index.html:242, js/ui.js:106, 153-163, js/simulator.js:975, macos_main.swift:125',
+        summary: 'macos_main.swift Cmd+T triggers document.getElementById("btn-auto-sim")?.click(), but neither js/ui.js nor js/simulator.js attaches a click listener to #btn-auto-sim. Also configureDevOnlyElements() runs before ZH_SIMULATOR.initHUD(), checks #zh-sim-panel instead of #zh-sim-hud-panel, and does not clear btn.hidden = false.',
+        impact: 'macOS Menu Bar "Toggle AI Auto-Play Simulator (Cmd+T)" and #btn-auto-sim button do nothing when clicked.'
+      }
+    );
+
+    // 2. Test Simulator Warp Speed multiplier (5x) in main loop (js/ui.js:124-126)
+    simInst.enabled = true;
+    simInst.controlTeam0 = true;
+    simInst.controlTeam1 = true;
+    simInst.speedMultiplier = 5;
+    const tBeforeWarpStep = human.engine.matchTime;
+    human.stepFrames(60, 1 / 60); // 1.0 real second at 5x warp should advance ~5.0 game seconds
+    const elapsedSimSec = human.engine.matchTime - tBeforeWarpStep;
+
+    assertCheck(
+      pb,
+      'Simulator speedMultiplier (5x Warp) accelerates engine simulation time in main loop',
+      elapsedSimSec >= 4.0,
+      `expected ~5.0s game time per 1.0s real time at 5x warp, got ${elapsedSimSec.toFixed(2)}s`,
+      {
+        id: 'BUG-SIM-01D',
+        severity: 'HIGH',
+        file: 'js/ui.js:124-126 vs js/simulator.js:956-958, 1052-1062',
+        summary: 'ZH_SIMULATOR sets activeSimulator.speedMultiplier (1x/5x/15x/25x), but js/ui.js loop() calls engine.stepFixed(dt) without multiplying by ZH_SIMULATOR.getSpeedMultiplier() or setting engine.gameSpeed.',
+        impact: 'Clicking 5x, 15x, or 25x Warp buttons in the Simulator HUD panel does not speed up the simulation.'
+      }
+    );
+
+    // 3. Run PlanSimulator for 75 seconds of game time (4,500 frames at 60Hz) and check:
+    //    (a) Dozers finish constructing buildings instead of abandoning foundations every 1.1s
+    //    (b) Production buildings queue and train combat units (b.def.trains vs b.def.produces)
+    human.stepFrames(4500, 1 / 60);
+
+    const team0ConstructedNonHQ = human.engine.buildings.filter(b => b.team === 0 && !b.dead && b.constructed && !b.def.isHQ);
+    const team0UnconstructedFoundations = human.engine.buildings.filter(b => b.team === 0 && !b.dead && !b.constructed);
+    const team0TrainedCombatUnits = human.engine.units.filter(u => u.team === 0 && !u.dead && !u.def.isBuilder && !u.def.isHarvester);
+    const totalUnitsProducedBySim = (human.engine.teams[0].stats.unitsProduced || 0) + (human.engine.teams[1].stats.unitsProduced || 0);
+
+    assertCheck(
+      pb,
+      'PlanSimulator Dozers finish constructing base buildings instead of abandoning unconstructed 5% foundations',
+      team0ConstructedNonHQ.length >= 3 && team0UnconstructedFoundations.length <= 2,
+      `constructedNonHQ=${team0ConstructedNonHQ.length}, unconstructedFoundations=${team0UnconstructedFoundations.length}`,
+      {
+        id: 'BUG-SIM-01B',
+        severity: 'CRITICAL',
+        file: 'js/simulator.js:504-524 & js/engine.js:1214-1235',
+        summary: 'executeStrategicPlan() calls countTeamBuildings(defId, false) (constructedOnly=false), treating 5% unconstructed foundations as satisfied. Every 1.1s it places the next building in the build order and startBuildingPlacement() reassigns builder.buildTargetId to the newest foundation, pulling the Dozer off the previous incomplete building.',
+        impact: 'When Auto-Play Simulator is active, buildings stay stuck as unconstructed scaffolding/foundations and Dozers bounce between unfinished sites.'
+      }
+    );
+
+    assertCheck(
+      pb,
+      'PlanSimulator queues and trains combat units from Barracks/War Factory (totalUnitsProduced > 0)',
+      totalUnitsProducedBySim > 0 && team0TrainedCombatUnits.length > 0,
+      `totalUnitsProducedBySim=${totalUnitsProducedBySim}, team0LiveCombatUnits=${team0TrainedCombatUnits.length}`,
+      {
+        id: 'BUG-SIM-01A',
+        severity: 'CRITICAL',
+        file: 'js/simulator.js:667, 403, 410, 471, 477 vs js/data.js',
+        summary: 'handleUnitProduction() in js/simulator.js:667 filters buildings by b.def.produces (undefined on every building in ZH_DATA.BUILDINGS, which uses b.def.trains). Additionally, simulator.js checks b.def.isCommandCenter (instead of b.def.isHQ) and b.def.isSupplyDrop (instead of b.def.isSupplyDepot).',
+        impact: 'PlanSimulator trains 0 combat units, 0 replacement Dozers, and 0 replacement Harvesters across the entire match, so no army ever spawns or moves.'
+      }
+    );
+
+    simInst.enabled = false;
   }
 
   return { report, findings: human.findings, actionCount: human.actionLog.length };

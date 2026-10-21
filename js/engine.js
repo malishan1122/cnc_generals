@@ -165,6 +165,8 @@ window.ZH_ENGINE = (function () {
       this.matchTime = 0;
       this.accumulator = 0;
       this.gameOver = false;
+      this.matchOver = false;
+      this._gameOverNotified = false;
       this.winner = null;
       this.paused = false;
 
@@ -273,12 +275,14 @@ window.ZH_ENGINE = (function () {
         tunnelUnits: [], // Shared GLA Tunnel Network Garrison
         stats: {
           unitsBuilt: 0,
+          unitsProduced: 0,
           unitsLost: 0,
           unitsKilled: 0,
           buildingsBuilt: 0,
           buildingsLost: 0,
           buildingsDestroyed: 0,
           creditsEarned: 0,
+          creditsCollected: 0,
           creditsSpent: 0,
           powersUsed: 0,
           superweaponsFired: 0
@@ -782,6 +786,7 @@ window.ZH_ENGINE = (function () {
       this.units.push(u);
       if (team && team.stats && this.gameTime > 0.5) {
         team.stats.unitsBuilt++;
+        team.stats.unitsProduced = (team.stats.unitsProduced || 0) + 1;
       }
 
       // Troop Crawler / Assault Crawler spawns with escort infantry!
@@ -1221,7 +1226,9 @@ window.ZH_ENGINE = (function () {
           const bSel = this.selectedIds.has(b.id) ? -10000 : 0;
           const aIdle = a.state === 'IDLE' ? -2500 : 0;
           const bIdle = b.state === 'IDLE' ? -2500 : 0;
-          return (dist(a.x, a.y, x, y) + aSel + aIdle) - (dist(b.x, b.y, x, y) + bSel + bIdle);
+          const aBusy = (a.state === 'BUILD' && this.buildings.some(bld => bld.id === a.buildTargetId && !bld.constructed && bld.hp > 0)) ? 15000 : 0;
+          const bBusy = (b.state === 'BUILD' && this.buildings.some(bld => bld.id === b.buildTargetId && !bld.constructed && bld.hp > 0)) ? 15000 : 0;
+          return (dist(a.x, a.y, x, y) + aSel + aIdle + aBusy) - (dist(b.x, b.y, x, y) + bSel + bIdle + bBusy);
         });
         builder = candidates[0];
       }
@@ -1834,6 +1841,9 @@ window.ZH_ENGINE = (function () {
     // Main Simulation Step (60Hz Fixed-Timestep Accumulator + Direct Tick)
     // ========================================================================
     stepFixed(rawDt) {
+      if ((this.matchOver || this.gameOver) && !this._gameOverNotified) {
+        this.checkVictoryConditions();
+      }
       if (!this.running || this.paused || this.gameOver) return;
       this.accumulator += Math.min(0.1, rawDt) * this.gameSpeed;
       while (this.accumulator + 1e-9 >= FIXED_STEP) {
@@ -1843,6 +1853,9 @@ window.ZH_ENGINE = (function () {
     }
 
     update(rawDt) {
+      if ((this.matchOver || this.gameOver) && !this._gameOverNotified) {
+        this.checkVictoryConditions();
+      }
       if (!this.running || this.paused || this.gameOver) return;
       const dt = Math.min(0.05, rawDt) * this.gameSpeed;
       this.gameTime += dt;
@@ -3173,8 +3186,12 @@ window.ZH_ENGINE = (function () {
       // Ground Move/Attack Order Rings
       if (this.moveMarkers) {
         for (let i = this.moveMarkers.length - 1; i >= 0; i--) {
-          this.moveMarkers[i].t += dt;
-          if (this.moveMarkers[i].t >= 0.45) {
+          const m = this.moveMarkers[i];
+          const prevT = Number.isFinite(m.t) ? m.t : (Number.isFinite(m.age) ? m.age : 0);
+          m.t = prevT + dt;
+          m.age = m.t;
+          const maxLife = Number.isFinite(m.maxAge) ? m.maxAge : 0.45;
+          if (m.t >= maxLife) {
             this.moveMarkers.splice(i, 1);
           }
         }
@@ -3274,6 +3291,15 @@ window.ZH_ENGINE = (function () {
     }
 
     checkVictoryConditions() {
+      if ((this.matchOver || this.gameOver) && !this._gameOverNotified) {
+        this.gameOver = true;
+        this.matchOver = true;
+        this._gameOverNotified = true;
+        const w = this.winner !== null && this.winner !== undefined ? this.winner : 0;
+        this.winner = w;
+        if (this.onGameOver) this.onGameOver(w);
+        return;
+      }
       if (this.gameTime < 5) return;
       const p0Alive = this.buildings.some(b => b.team === 0 && b.hp > 0) ||
                       this.units.some(u => u.team === 0 && u.def.isBuilder && u.hp > 0);
@@ -3282,6 +3308,8 @@ window.ZH_ENGINE = (function () {
 
       if (!p1Alive) {
         this.gameOver = true;
+        this.matchOver = true;
+        this._gameOverNotified = true;
         this.winner = 0;
         if (window.ZH_AUDIO) {
           ZH_AUDIO.playSFX('promote');
@@ -3290,6 +3318,8 @@ window.ZH_ENGINE = (function () {
         if (this.onGameOver) this.onGameOver(0);
       } else if (!p0Alive) {
         this.gameOver = true;
+        this.matchOver = true;
+        this._gameOverNotified = true;
         this.winner = 1;
         if (window.ZH_AUDIO) ZH_AUDIO.speak('You have been defeated.', { priority: true });
         if (this.onGameOver) this.onGameOver(1);

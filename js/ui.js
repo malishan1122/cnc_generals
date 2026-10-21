@@ -57,7 +57,7 @@
     edgeScroll: false,
     healthBars: 'DAMAGED', // 'DAMAGED' | 'ALWAYS' | 'SELECTED'
     reducedMotion: false,
-    uiScale: '1'
+    uiScale: '100'
   };
 
   // Custom inline SVG tactical cursors
@@ -103,15 +103,15 @@
     resizeCanvases();
     window.addEventListener('resize', resizeCanvases);
 
+    if (window.ZH_SIMULATOR && ZH_SIMULATOR.initHUD) {
+      ZH_SIMULATOR.initHUD();
+    }
     configureDevOnlyElements();
     setupStartScreen();
     setupHUDButtons();
     setupSettingsControls();
     setupCanvasInput(canvas, minimap);
     setupKeyboardInput();
-    if (window.ZH_SIMULATOR && ZH_SIMULATOR.initHUD) {
-      ZH_SIMULATOR.initHUD();
-    }
 
     // Main 60Hz Fixed-Timestep Accumulator Loop (Phase 2 SYS-01)
     let lastTime = performance.now();
@@ -121,9 +121,15 @@
 
       handleCameraPan(dt);
       if (engine && engine.running) {
-        engine.stepFixed(dt);
-        if (window.ZH_SIMULATOR && ZH_SIMULATOR.update) {
-          ZH_SIMULATOR.update(dt * (engine.gameSpeed || 1));
+        const simMult = (window.ZH_SIMULATOR && ZH_SIMULATOR.getSpeedMultiplier)
+          ? ZH_SIMULATOR.getSpeedMultiplier()
+          : 1;
+        const warpSteps = Math.max(1, Math.min(25, Math.round(simMult)));
+        for (let s = 0; s < warpSteps; s++) {
+          engine.stepFixed(dt);
+          if (window.ZH_SIMULATOR && ZH_SIMULATOR.update) {
+            ZH_SIMULATOR.update(dt * (engine.gameSpeed || 1));
+          }
         }
         engine.render();
         renderSelectionBox();
@@ -152,17 +158,19 @@
     }
     const autoSimBtn = document.getElementById('btn-auto-sim');
     if (autoSimBtn) {
+      autoSimBtn.hidden = !isDev;
       if (isDev) {
         autoSimBtn.classList.remove('hidden');
       } else {
         autoSimBtn.classList.add('hidden');
       }
     }
-    const simPanel = document.getElementById('zh-sim-panel');
+    const simPanel = document.getElementById('zh-sim-hud-panel') || document.getElementById('zh-sim-panel');
     if (simPanel && !isDev) {
       const body = document.getElementById('zh-sim-body');
       const collapseBtn = document.getElementById('zh-sim-collapse-btn');
-      if (body && !body.classList.contains('hidden')) {
+      if (body) {
+        body.style.display = 'none';
         body.classList.add('hidden');
         if (collapseBtn) collapseBtn.textContent = '▸';
       }
@@ -175,12 +183,12 @@
     if (!canvas) return;
 
     let topH = 36;
-    let bottomH = 176;
+    let bottomH = 184;
     try {
       if (typeof getComputedStyle === 'function' && document.documentElement) {
         const rs = getComputedStyle(document.documentElement);
-        const parsedTop = parseInt(rs.getPropertyValue('--hud-top-h'), 10);
-        const parsedBottom = parseInt(rs.getPropertyValue('--hud-bottom-h'), 10);
+        const parsedTop = parseInt(rs.getPropertyValue('--top-bar-h') || rs.getPropertyValue('--hud-top-h'), 10);
+        const parsedBottom = parseInt(rs.getPropertyValue('--cmd-bar-h') || rs.getPropertyValue('--hud-bottom-h'), 10);
         if (!isNaN(parsedTop) && parsedTop > 0) topH = parsedTop;
         if (!isNaN(parsedBottom) && parsedBottom > 0) bottomH = parsedBottom;
       }
@@ -257,14 +265,16 @@
       ZH_AUDIO.setVolume('voice', (settings.voiceVol ?? 90) / 100);
     }
     if (engine) {
-      engine.showAllHealthBars = settings.healthBars === 'ALWAYS';
+      engine.showAllHealthBars = settings.healthBars === 'ALWAYS' || settings.healthBars === true;
     }
     if (document.body && document.body.classList) {
       document.body.classList.toggle('reduced-motion', Boolean(settings.reducedMotion));
     }
     try {
+      const rawScale = Number(settings.uiScale) || 100;
+      const normalizedScale = rawScale > 10 ? (rawScale / 100) : rawScale;
       if (document.documentElement && document.documentElement.style && document.documentElement.style.setProperty) {
-        document.documentElement.style.setProperty('--ui-scale', String(settings.uiScale || '1'));
+        document.documentElement.style.setProperty('--ui-scale', String(normalizedScale));
       }
     } catch (_) {}
   }
@@ -302,14 +312,26 @@
 
     const hbEl = document.getElementById('opt-health-bars');
     if (hbEl) {
-      hbEl.value = settings.healthBars || 'DAMAGED';
-      hbEl.addEventListener('change', (e) => {
-        settings.healthBars = e.target.value || 'DAMAGED';
-        if (engine) {
-          engine.showAllHealthBars = settings.healthBars === 'ALWAYS';
-        }
-        saveSettings();
-      });
+      const isCheckbox = hbEl.type === 'checkbox' || (hbEl.getAttribute && hbEl.getAttribute('type') === 'checkbox');
+      if (isCheckbox) {
+        hbEl.checked = settings.healthBars === 'ALWAYS' || settings.healthBars === true;
+        hbEl.addEventListener('change', (e) => {
+          settings.healthBars = e.target.checked ? 'ALWAYS' : 'DAMAGED';
+          if (engine) {
+            engine.showAllHealthBars = Boolean(e.target.checked);
+          }
+          saveSettings();
+        });
+      } else {
+        hbEl.value = settings.healthBars || 'DAMAGED';
+        hbEl.addEventListener('change', (e) => {
+          settings.healthBars = e.target.value || 'DAMAGED';
+          if (engine) {
+            engine.showAllHealthBars = settings.healthBars === 'ALWAYS';
+          }
+          saveSettings();
+        });
+      }
     }
 
     const rmEl = document.getElementById('opt-reduced-motion');
@@ -326,9 +348,11 @@
 
     const scaleEl = document.getElementById('opt-ui-scale');
     if (scaleEl) {
-      scaleEl.value = String(settings.uiScale || '1');
+      const numScale = Number(settings.uiScale) || 100;
+      const optVal = numScale <= 10 ? String(Math.round(numScale * 100)) : String(Math.round(numScale));
+      scaleEl.value = optVal;
       scaleEl.addEventListener('change', (e) => {
-        settings.uiScale = e.target.value || '1';
+        settings.uiScale = e.target.value || '100';
         applySettingsToRuntime();
         saveSettings();
       });
@@ -373,6 +397,16 @@
     const fileInput = document.getElementById('zhsave-file-input');
     if (loadSaveMenuBtn && fileInput) {
       loadSaveMenuBtn.addEventListener('click', () => fileInput.click());
+    }
+
+    const previewPowersBtn = document.getElementById('btn-open-powers-preview');
+    if (previewPowersBtn) {
+      previewPowersBtn.addEventListener('click', () => {
+        renderGeneralsPowersModal();
+        const modal = document.getElementById('powers-modal');
+        if (modal) modal.classList.remove('hidden');
+        if (window.ZH_AUDIO) ZH_AUDIO.playSFX('click');
+      });
     }
   }
 
@@ -838,8 +872,16 @@
   }
 
   function renderGeneralsPowersModal() {
-    if (!engine || !engine.teams[0]) return;
-    const team = engine.teams[0];
+    const hasLiveTeam = Boolean(engine && engine.teams && engine.teams[0]);
+    const fallbackGen = ZH_DATA.GENERALS[selectedPlayerGeneralId] || ZH_DATA.GENERALS.USA_GRANGER;
+    const team = hasLiveTeam ? engine.teams[0] : {
+      factionId: fallbackGen.faction,
+      general: fallbackGen,
+      rank: 1,
+      generalPoints: 1,
+      unlockedPowers: new Set(),
+      powerCooldowns: {}
+    };
     const rawPowers = ZH_DATA.GENERALS_POWERS[team.factionId] || [];
     const powers = [...rawPowers].sort((a, b) => (a.rankReq || 1) - (b.rankReq || 1));
     const rankObj = ZH_DATA.GENERAL_RANKS[team.rank - 1] || ZH_DATA.GENERAL_RANKS[0];
@@ -853,7 +895,7 @@
     powers.forEach(p => {
       const unlocked = team.unlockedPowers.has(p.id);
       const cd = Math.ceil(team.powerCooldowns[p.id] || 0);
-      const canUnlock = !unlocked && team.rank >= p.rankReq && team.generalPoints >= p.costPoints;
+      const canUnlock = hasLiveTeam && !unlocked && team.rank >= p.rankReq && team.generalPoints >= p.costPoints;
 
       const card = document.createElement('div');
       card.className = `power-card ${unlocked ? 'unlocked' : ''}`;
@@ -885,7 +927,9 @@
         }
       } else {
         btn.className = `power-btn ${canUnlock ? 'unlockable' : 'locked'}`;
-        btn.textContent = canUnlock ? `UNLOCK (${p.costPoints} PT)` : `REQUIRES RANK ${p.rankReq}`;
+        btn.textContent = !hasLiveTeam
+          ? `RANK ${p.rankReq} (${p.costPoints} PT)`
+          : (canUnlock ? `UNLOCK (${p.costPoints} PT)` : `REQUIRES RANK ${p.rankReq}`);
         btn.disabled = !canUnlock;
         if (canUnlock) {
           btn.addEventListener('click', () => {
@@ -2598,7 +2642,8 @@
     const title = document.getElementById('victory-title');
     const sub = document.getElementById('victory-subtitle');
     const nextBtn = document.getElementById('btn-next-challenge');
-    const statsWrap = document.getElementById('gameover-stats');
+    const statsWrap = document.getElementById('victory-stats-wrap') || document.getElementById('gameover-stats');
+    const legacyStatsWrap = document.getElementById('gameover-stats');
 
     modal.classList.remove('hidden');
     if (winnerTeam === 0) {
@@ -2625,7 +2670,11 @@
       const p1 = engine.teams[1];
       const s0 = p0.stats || {};
       const s1 = p1.stats || {};
-      statsWrap.innerHTML = `
+      const u0 = s0.unitsBuilt ?? s0.unitsProduced ?? 0;
+      const u1 = s1.unitsBuilt ?? s1.unitsProduced ?? 0;
+      const c0 = s0.creditsEarned ?? s0.creditsCollected ?? 0;
+      const c1 = s1.creditsEarned ?? s1.creditsCollected ?? 0;
+      const tableHtml = `
         <table class="gameover-stats-table">
           <thead>
             <tr>
@@ -2635,15 +2684,19 @@
             </tr>
           </thead>
           <tbody>
-            <tr><td>Units Produced</td><td>${s0.unitsProduced || 0}</td><td>${s1.unitsProduced || 0}</td></tr>
+            <tr><td>Units Produced</td><td>${u0}</td><td>${u1}</td></tr>
             <tr><td>Units Lost</td><td>${s0.unitsLost || 0}</td><td>${s1.unitsLost || 0}</td></tr>
             <tr><td>Structures Built</td><td>${s0.buildingsBuilt || 0}</td><td>${s1.buildingsBuilt || 0}</td></tr>
             <tr><td>Structures Destroyed</td><td>${s0.buildingsDestroyed || 0}</td><td>${s1.buildingsDestroyed || 0}</td></tr>
-            <tr><td>Credits Collected</td><td>$${Math.floor(s0.creditsCollected || 0).toLocaleString()}</td><td>$${Math.floor(s1.creditsCollected || 0).toLocaleString()}</td></tr>
+            <tr><td>Credits Collected</td><td>$${Math.floor(c0).toLocaleString()}</td><td>$${Math.floor(c1).toLocaleString()}</td></tr>
             <tr><td>Generals Powers Cast</td><td>${s0.powersUsed || 0}</td><td>${s1.powersUsed || 0}</td></tr>
           </tbody>
         </table>
       `;
+      statsWrap.innerHTML = tableHtml;
+      if (legacyStatsWrap && legacyStatsWrap !== statsWrap) {
+        legacyStatsWrap.innerHTML = tableHtml;
+      }
     }
 
     nextBtn.onclick = () => {

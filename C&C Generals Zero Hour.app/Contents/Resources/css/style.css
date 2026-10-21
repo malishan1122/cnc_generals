@@ -6,6 +6,8 @@
 :root {
   --top-bar-h: 36px;
   --cmd-bar-h: 184px;
+  --hud-top-h: 36px;
+  --hud-bottom-h: 184px;
   --ui-scale: 1;
   --bg-dark: #070b14;
   --panel-bg: rgba(15, 23, 42, 0.94);
@@ -1391,3 +1393,13 @@ body.reduced-motion *::after {
     transition-duration: 0.01ms !important;
   }
 }
+
+#powers-modal {
+  z-index: 60;
+}
+
+#top-bar,
+#command-bar {
+  zoom: var(--ui-scale, 1);
+}
+

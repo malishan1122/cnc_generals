@@ -388,7 +388,7 @@ window.ZH_SIMULATOR = (function () {
     }
 
     countTeamUnits(defId) {
-      return this.engine.units.filter(u => u.team === this.team && u.defId === defId).length;
+      return this.engine.units.filter(u => u.team === this.team && !u.dead && u.hp > 0 && u.defId === defId).length;
     }
 
     tryConstructBuilding(defId) {
@@ -400,14 +400,14 @@ window.ZH_SIMULATOR = (function () {
       if (this.engine.teams[this.team].credits < cost) return false;
 
       const cc =
-        this.engine.buildings.find(b => b.team === this.team && b.def.isCommandCenter) ||
-        this.engine.buildings.find(b => b.team === this.team);
+        this.engine.buildings.find(b => b.team === this.team && !b.dead && b.hp > 0 && (b.def.isHQ || b.def.isCommandCenter)) ||
+        this.engine.buildings.find(b => b.team === this.team && !b.dead && b.hp > 0);
       if (!cc) return false;
 
       // If it's a Supply Center / Supply Stash, try placing near an unharvested Supply Dock first
       let anchorX = cc.x;
       let anchorY = cc.y;
-      if (bDef.isSupplyDrop) {
+      if (bDef.isSupplyDepot || bDef.isSupplyDrop) {
         const dock = this.engine.supplyDocks.find(
           d => d.amount > 1000 && Math.hypot(d.x - cc.x, d.y - cc.y) < 950
         );
@@ -437,9 +437,12 @@ window.ZH_SIMULATOR = (function () {
       const bp = this.getBlueprint();
 
       // 1. Re-assign idle Builders to unfinished or damaged buildings
-      const builders = eng.units.filter(u => u.team === t && u.def.isBuilder && !u.garrisonedIn);
-      const needySite = eng.buildings.find(
-        b => b.team === t && (!b.constructed || b.hp < b.maxHp * 0.85)
+      const builders = eng.units.filter(u => u.team === t && !u.dead && u.hp > 0 && u.def.isBuilder && !u.garrisonedIn);
+      const unconstructedSites = eng.buildings.filter(
+        b => b.team === t && !b.dead && b.hp > 0 && !b.constructed
+      );
+      const needySite = unconstructedSites[0] || eng.buildings.find(
+        b => b.team === t && !b.dead && b.hp > 0 && b.hp < b.maxHp * 0.85
       );
       if (needySite) {
         const assignedBuilder = builders.find(
@@ -456,8 +459,11 @@ window.ZH_SIMULATOR = (function () {
         }
       }
 
+      // Only place a new foundation when no unconstructed foundation is waiting on a Dozer/Worker
+      const canPlaceNewBuilding = unconstructedSites.length === 0;
+
       // 2. Keep idle Harvesters gathering supplies
-      const harvesters = eng.units.filter(u => u.team === t && u.def.isHarvester && !u.garrisonedIn);
+      const harvesters = eng.units.filter(u => u.team === t && !u.dead && u.hp > 0 && u.def.isHarvester && !u.garrisonedIn);
       for (const h of harvesters) {
         if (h.state === 'IDLE') {
           if (h.def.isBuilder && builders.filter(b => b.state === 'BUILD').length === 0 && needySite) {
@@ -467,14 +473,14 @@ window.ZH_SIMULATOR = (function () {
         }
       }
 
-      // 3. Ensure at least 1 Builder and 2 Harvesters exist
-      const cc = eng.buildings.find(b => b.team === t && b.constructed && b.def.isCommandCenter);
-      if (cc && builders.length === 0 && cc.queue.length < 2) {
+      // 3. Ensure at least 1-2 Builders and 2-3 Harvesters exist
+      const cc = eng.buildings.find(b => b.team === t && !b.dead && b.hp > 0 && b.constructed && (b.def.isHQ || b.def.isCommandCenter));
+      if (cc && builders.length < 2 && cc.queue.length < 1 && (builders.length === 0 || teamState.credits >= 1800)) {
         if (eng.queueUnitProduction(cc, bp.builder)) {
           this.lastActionText = `Queued replacement ${bp.builder}`;
         }
       }
-      const supplyDrop = eng.buildings.find(b => b.team === t && b.constructed && b.def.isSupplyDrop);
+      const supplyDrop = eng.buildings.find(b => b.team === t && !b.dead && b.hp > 0 && b.constructed && (b.def.isSupplyDepot || b.def.isSupplyDrop));
       if (supplyDrop && harvesters.length < 3 && supplyDrop.queue.length < 2) {
         if (eng.queueUnitProduction(supplyDrop, bp.harvester)) {
           this.lastActionText = `Queued harvester ${bp.harvester}`;
@@ -483,12 +489,12 @@ window.ZH_SIMULATOR = (function () {
 
       // 4. Power Management (USA / China) + China Reactor Overcharge
       if (bp.power) {
-        if (teamState.powerConsumed >= teamState.powerProduced && this.countTeamBuildings(bp.power, false) < 5) {
-          if (this.tryConstructBuilding(bp.power)) return;
+        if (canPlaceNewBuilding && teamState.powerConsumed >= teamState.powerProduced && this.countTeamBuildings(bp.power, false) < 5) {
+          this.tryConstructBuilding(bp.power);
         }
         // China Reactor Overcharge when low power or high demand
         if (gen.faction === 'CHINA') {
-          const reactors = eng.buildings.filter(b => b.team === t && b.constructed && b.defId === 'CHINA_REACTOR');
+          const reactors = eng.buildings.filter(b => b.team === t && !b.dead && b.hp > 0 && b.constructed && b.defId === 'CHINA_REACTOR');
           for (const r of reactors) {
             if (teamState.isLowPower && !r.overcharged && r.hp > r.maxHp * 0.55) {
               eng.toggleOvercharge(r);
@@ -506,62 +512,47 @@ window.ZH_SIMULATOR = (function () {
       const hasWarFactory = this.countTeamBuildings(bp.warFactory, false) > 0;
       const hasTech = this.countTeamBuildings(bp.tech, false) > 0;
 
-      if (!hasSupply) {
-        this.phase = 'PHASE 1: SUPPLY ECONOMY';
-        if (this.tryConstructBuilding(bp.supply)) return;
-      }
-      if (bp.power && this.countTeamBuildings(bp.power, false) === 0) {
-        this.phase = 'PHASE 1: POWER GRID';
-        if (this.tryConstructBuilding(bp.power)) return;
-      }
-      if (!hasBarracks) {
-        this.phase = 'PHASE 1: INFANTRY BARRACKS';
-        if (this.tryConstructBuilding(bp.barracks)) return;
-      }
-      if (!hasWarFactory) {
-        this.phase = 'PHASE 2: MECHANIZED PRODUCTION';
-        if (this.tryConstructBuilding(bp.warFactory)) return;
-      }
-
-      // Plan-specific expansion
-      if (this.planId === 'RUSH_DOCTRINE') {
-        this.phase = 'PHASE 2: BLITZ RUSH PRODUCTION';
-        if (this.countTeamBuildings(bp.warFactory, false) < 2 && teamState.credits > 2400) {
+      if (canPlaceNewBuilding && unconstructedSites.length === 0) {
+        if (!hasSupply) {
+          this.phase = 'PHASE 1: SUPPLY ECONOMY';
+          this.tryConstructBuilding(bp.supply);
+        } else if (bp.power && this.countTeamBuildings(bp.power, false) === 0) {
+          this.phase = 'PHASE 1: POWER GRID';
+          this.tryConstructBuilding(bp.power);
+        } else if (!hasBarracks) {
+          this.phase = 'PHASE 1: INFANTRY BARRACKS';
+          this.tryConstructBuilding(bp.barracks);
+        } else if (!hasWarFactory) {
+          this.phase = 'PHASE 2: MECHANIZED PRODUCTION';
           this.tryConstructBuilding(bp.warFactory);
-        }
-      } else {
-        // Build Base Defenses
-        const unlockedDefenses = bp.defenses.filter(dId => eng.isEntityUnlocked(dId, t));
-        if (unlockedDefenses.length > 0) {
+        } else if (this.planId === 'RUSH_DOCTRINE') {
+          this.phase = 'PHASE 2: BLITZ RUSH PRODUCTION';
+          if (this.countTeamBuildings(bp.warFactory, false) < 2 && teamState.credits > 2400) {
+            this.tryConstructBuilding(bp.warFactory);
+          }
+        } else {
+          const unlockedDefenses = bp.defenses.filter(dId => eng.isEntityUnlocked(dId, t));
           const totalDefs = unlockedDefenses.reduce((acc, dId) => acc + this.countTeamBuildings(dId, false), 0);
           const targetDefs = this.planId === 'TECH_SUPERWEAPON_DOCTRINE' ? 3 : 2;
-          if (totalDefs < targetDefs && teamState.credits > 1200) {
+
+          if (unlockedDefenses.length > 0 && totalDefs < targetDefs && teamState.credits > 1200) {
             const pickDef = unlockedDefenses[totalDefs % unlockedDefenses.length];
-            if (this.tryConstructBuilding(pickDef)) return;
+            this.tryConstructBuilding(pickDef);
+          } else if (bp.airfield && this.countTeamBuildings(bp.airfield, false) === 0 && teamState.credits > 1400) {
+            this.phase = 'PHASE 2: AIR SUPERIORITY';
+            this.tryConstructBuilding(bp.airfield);
+          } else if (!hasTech && teamState.credits > 1800) {
+            this.phase = 'PHASE 3: TIER-3 TECH ESCALATION';
+            this.tryConstructBuilding(bp.tech);
+          } else if (
+            hasTech &&
+            bp.superweapon &&
+            this.countTeamBuildings(bp.superweapon, false) === 0 &&
+            (this.planId === 'TECH_SUPERWEAPON_DOCTRINE' || teamState.credits > 4200)
+          ) {
+            this.phase = 'PHASE 4: SUPERWEAPON CONSTRUCTION';
+            this.tryConstructBuilding(bp.superweapon);
           }
-        }
-
-        // Build Airfield if available
-        if (bp.airfield && this.countTeamBuildings(bp.airfield, false) === 0 && teamState.credits > 1400) {
-          this.phase = 'PHASE 2: AIR SUPERIORITY';
-          if (this.tryConstructBuilding(bp.airfield)) return;
-        }
-
-        // Build Tier-3 Tech Center
-        if (!hasTech && teamState.credits > 1800) {
-          this.phase = 'PHASE 3: TIER-3 TECH ESCALATION';
-          if (this.tryConstructBuilding(bp.tech)) return;
-        }
-
-        // Build Superweapon in Tech/Superweapon or Balanced late-game
-        if (
-          hasTech &&
-          bp.superweapon &&
-          this.countTeamBuildings(bp.superweapon, false) === 0 &&
-          (this.planId === 'TECH_SUPERWEAPON_DOCTRINE' || teamState.credits > 4200)
-        ) {
-          this.phase = 'PHASE 4: SUPERWEAPON CONSTRUCTION';
-          if (this.tryConstructBuilding(bp.superweapon)) return;
         }
       }
 
@@ -573,6 +564,8 @@ window.ZH_SIMULATOR = (function () {
           const provider = eng.buildings.find(
             b =>
               b.team === t &&
+              !b.dead &&
+              b.hp > 0 &&
               b.constructed &&
               b.queue.length < 3 &&
               !b.queue.some(q => q.id === upgId) &&
@@ -618,9 +611,11 @@ window.ZH_SIMULATOR = (function () {
         }
       }
 
+      if ((eng.matchTime || eng.gameTime || 0) < 75) return;
+
       const enemyTarget =
-        eng.buildings.find(b => b.team !== t) ||
-        eng.units.find(u => u.team !== t && !u.garrisonedIn);
+        eng.buildings.find(b => b.team !== t && !b.dead && b.hp > 0) ||
+        eng.units.find(u => u.team !== t && !u.dead && u.hp > 0 && !u.garrisonedIn);
       if (!enemyTarget) return;
 
       for (const pId of teamState.unlockedPowers) {
@@ -639,12 +634,12 @@ window.ZH_SIMULATOR = (function () {
       const eng = this.engine;
       const t = this.team;
       const enemyTarget =
-        eng.buildings.find(b => b.team !== t && b.def.isCommandCenter) ||
-        eng.buildings.find(b => b.team !== t);
+        eng.buildings.find(b => b.team !== t && !b.dead && b.hp > 0 && (b.def.isHQ || b.def.isCommandCenter)) ||
+        eng.buildings.find(b => b.team !== t && !b.dead && b.hp > 0);
       if (!enemyTarget) return;
 
       const readySilos = eng.buildings.filter(
-        b => b.team === t && b.constructed && b.hp > 0 && b.def.isSuperweapon && b.superweaponReady
+        b => b.team === t && !b.dead && b.constructed && b.hp > 0 && b.def.isSuperweapon && b.superweaponReady
       );
       for (const sw of readySilos) {
         if (eng.fireSuperweapon(sw.id, enemyTarget.x, enemyTarget.y)) {
@@ -663,12 +658,14 @@ window.ZH_SIMULATOR = (function () {
       const unlockedRoster = bp.roster.filter(uId => eng.isEntityUnlocked(uId, t));
       if (unlockedRoster.length === 0) return;
 
-      const prodBuildings = eng.buildings.filter(
-        b => b.team === t && b.constructed && b.def.produces && b.def.produces.length > 0 && b.queue.length < 2
-      );
+      const prodBuildings = eng.buildings.filter(b => {
+        const trainable = (b.def && (b.def.trains || b.def.produces)) || [];
+        return b.team === t && !b.dead && b.hp > 0 && b.constructed && trainable.length > 0 && b.queue.length < 2;
+      });
 
       for (const b of prodBuildings) {
-        const candidates = b.def.produces.filter(
+        const trainable = (b.def && (b.def.trains || b.def.produces)) || [];
+        const candidates = trainable.filter(
           uId => unlockedRoster.includes(uId) && eng.isEntityUnlocked(uId, t)
         );
         if (candidates.length === 0) continue;
@@ -694,7 +691,7 @@ window.ZH_SIMULATOR = (function () {
         }
 
         if (!chosen) {
-          const idx = Math.floor(((eng.gameTime || 0) * 3 + b.id) % candidates.length);
+          const idx = Math.floor(((eng.matchTime || eng.gameTime || 0) * 3 + b.id) % candidates.length);
           chosen = candidates[idx];
         }
 
@@ -752,10 +749,12 @@ window.ZH_SIMULATOR = (function () {
         }
       }
 
-      // 3. Coordinate Combat Assault Waves
+      // 3. Coordinate Combat Assault Waves (keep 2 defenders at base so base is never left empty)
       const combatIdle = eng.units.filter(
         u =>
           u.team === t &&
+          !u.dead &&
+          u.hp > 0 &&
           !u.garrisonedIn &&
           !u.def.isBuilder &&
           !u.def.isHarvester &&
@@ -767,15 +766,16 @@ window.ZH_SIMULATOR = (function () {
       if (combatIdle.length >= waveThreshold) {
         this.phase = 'PHASE 3: COMBINED-ARMS ASSAULT';
         const enemyTarget =
-          eng.buildings.find(b => b.team !== t) ||
-          eng.units.find(u => u.team !== t && !u.garrisonedIn);
+          eng.buildings.find(b => b.team !== t && !b.dead && b.hp > 0) ||
+          eng.units.find(u => u.team !== t && !u.dead && u.hp > 0 && !u.garrisonedIn);
         if (enemyTarget) {
-          for (const u of combatIdle) {
+          const assaultGroup = combatIdle.length > 2 ? combatIdle.slice(2) : combatIdle;
+          for (const u of assaultGroup) {
             u.state = 'ATTACK_MOVE';
             u.targetX = enemyTarget.x + (Math.random() - 0.5) * 90;
             u.targetY = enemyTarget.y + (Math.random() - 0.5) * 90;
           }
-          this.lastActionText = `Launched ${combatIdle.length}-unit assault wave`;
+          this.lastActionText = `Launched ${assaultGroup.length}-unit assault wave`;
         }
       }
     }
@@ -969,9 +969,9 @@ window.ZH_SIMULATOR = (function () {
 
   function initHUD() {
     if (typeof document === 'undefined') return;
-    if (document.getElementById('zh-sim-hud-panel')) return;
+    if (hudPanelEl) return;
 
-    const panel = document.createElement('div');
+    const panel = document.getElementById('zh-sim-hud-panel') || document.createElement('div');
     panel.id = 'zh-sim-hud-panel';
     panel.style.cssText = [
       'position:fixed',
@@ -1022,7 +1022,9 @@ window.ZH_SIMULATOR = (function () {
       </div>
     `;
 
-    document.body.appendChild(panel);
+    if (!panel.parentElement && document.body) {
+      document.body.appendChild(panel);
+    }
     hudPanelEl = panel;
 
     const collapseBtn = document.getElementById('zh-sim-collapse-btn');
@@ -1041,6 +1043,16 @@ window.ZH_SIMULATOR = (function () {
       activeSimulator.enabled = !activeSimulator.enabled;
       syncHUDPanel();
     });
+
+    const topBarAutoSimBtn = document.getElementById('btn-auto-sim');
+    if (topBarAutoSimBtn && !topBarAutoSimBtn.dataset.simBound) {
+      topBarAutoSimBtn.dataset.simBound = '1';
+      topBarAutoSimBtn.addEventListener('click', () => {
+        if (!activeSimulator) return;
+        activeSimulator.enabled = !activeSimulator.enabled;
+        syncHUDPanel();
+      });
+    }
 
     const planSelect = document.getElementById('zh-sim-plan-select');
     planSelect.addEventListener('change', e => {
@@ -1065,6 +1077,7 @@ window.ZH_SIMULATOR = (function () {
   function syncHUDPanel() {
     if (typeof document === 'undefined' || !hudPanelEl || !activeSimulator) return;
     const toggleBtn = document.getElementById('zh-sim-toggle-btn');
+    const topBarAutoSimBtn = document.getElementById('btn-auto-sim');
     const phaseLine = document.getElementById('zh-sim-phase-line');
     const actionLine = document.getElementById('zh-sim-action-line');
     const auditLine = document.getElementById('zh-sim-audit-line');
@@ -1074,6 +1087,10 @@ window.ZH_SIMULATOR = (function () {
       toggleBtn.style.background = '#16a34a';
       toggleBtn.style.color = '#ffffff';
       toggleBtn.style.borderColor = '#4ade80';
+      if (topBarAutoSimBtn) {
+        topBarAutoSimBtn.textContent = 'AUTO SIM: ON';
+        topBarAutoSimBtn.classList.add('active');
+      }
       phaseLine.textContent = activeSimulator.phase;
       actionLine.textContent = `Action: ${activeSimulator.lastActionText}`;
     } else {
@@ -1081,6 +1098,10 @@ window.ZH_SIMULATOR = (function () {
       toggleBtn.style.background = '#1e293b';
       toggleBtn.style.color = '#94a3b8';
       toggleBtn.style.borderColor = '#475569';
+      if (topBarAutoSimBtn) {
+        topBarAutoSimBtn.textContent = 'AUTO SIM: OFF';
+        topBarAutoSimBtn.classList.remove('active');
+      }
       phaseLine.textContent = 'PHASE: MANUAL CONTROL (AUDIT ACTIVE)';
       actionLine.textContent = `Ticks Audited: ${activeSimulator.audit.metrics.ticksAudited}`;
     }

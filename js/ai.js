@@ -537,26 +537,43 @@ window.ZH_AI = (function () {
     }
 
     // 3. Base Construction Progression using General-specific Doctrine
+    const unbuiltFoundation = myBuildings.find(b => !b.constructed && b.hp > 0);
+    if (unbuiltFoundation) {
+      const assignedBuilder = builders.find(u => u.state === 'BUILD' && u.buildTargetId === unbuiltFoundation.id);
+      if (!assignedBuilder) {
+        const freeBuilder = builders.find(u => u.state === 'IDLE') || builders[0];
+        if (freeBuilder) {
+          freeBuilder.state = 'BUILD';
+          freeBuilder.buildTargetId = unbuiltFoundation.id;
+          freeBuilder.targetX = unbuiltFoundation.x;
+          freeBuilder.targetY = unbuiltFoundation.y;
+        }
+      }
+    }
+
+    const hasFreeBuilder = builders.some(u => u.state === 'IDLE') || !unbuiltFoundation;
     const countBuilding = (id) => myBuildings.filter(b => b.defId === id).length;
     const desiredBuildOrder = doctrine.buildOrder || getBuildOrderForFaction(fId);
     const dirSign = teamId === 0 ? -1 : 1;
-    for (let i = 0; i < desiredBuildOrder.length; i++) {
-      const item = desiredBuildOrder[i];
-      const bDef = ZH_DATA.BUILDINGS[item.id];
-      if (!bDef || !engine.isEntityUnlocked(item.id, teamId)) continue;
-      if (countBuilding(item.id) < item.count) {
-        const slot = BASE_OFFSETS[i % BASE_OFFSETS.length];
-        const spot = engine.findValidBuildSpot
-          ? engine.findValidBuildSpot(item.id, cc.x, cc.y, i)
-          : { x: cc.x + slot.dx * dirSign + (Math.random() - 0.5) * 28, y: cc.y + slot.dy * dirSign + (Math.random() - 0.5) * 28 };
-        if (spot && engine.startBuildingPlacement(item.id, teamId, spot.x, spot.y)) {
-          break;
+    if (hasFreeBuilder) {
+      for (let i = 0; i < desiredBuildOrder.length; i++) {
+        const item = desiredBuildOrder[i];
+        const bDef = ZH_DATA.BUILDINGS[item.id];
+        if (!bDef || !engine.isEntityUnlocked(item.id, teamId)) continue;
+        if (countBuilding(item.id) < item.count) {
+          const slot = BASE_OFFSETS[i % BASE_OFFSETS.length];
+          const spot = engine.findValidBuildSpot
+            ? engine.findValidBuildSpot(item.id, cc.x, cc.y, i)
+            : { x: cc.x + slot.dx * dirSign + (Math.random() - 0.5) * 28, y: cc.y + slot.dy * dirSign + (Math.random() - 0.5) * 28 };
+          if (spot && engine.startBuildingPlacement(item.id, teamId, spot.x, spot.y)) {
+            break;
+          }
         }
       }
     }
 
     // Extra reactor if AI is in low power
-    if (aiTeam.isLowPower && fId !== 'GLA') {
+    if (aiTeam.isLowPower && fId !== 'GLA' && hasFreeBuilder) {
       const reactorId = fId === 'USA' ? 'USA_REACTOR' : 'CHINA_REACTOR';
       const spot = engine.findValidBuildSpot
         ? engine.findValidBuildSpot(reactorId, cc.x, cc.y, 0)
@@ -672,10 +689,12 @@ window.ZH_AI = (function () {
 
     const clusterTarget = findBestClusterTarget(engine, enemyTeamId, 260, true);
 
-    for (const pId of aiTeam.unlockedPowers) {
-      if ((aiTeam.powerCooldowns[pId] || 0) <= 0) {
-        engine.castGeneralsPower(teamId, pId, clusterTarget.x, clusterTarget.y);
-        break;
+    if ((engine.matchTime || 0) >= 75) {
+      for (const pId of aiTeam.unlockedPowers) {
+        if ((aiTeam.powerCooldowns[pId] || 0) <= 0) {
+          engine.castGeneralsPower(teamId, pId, clusterTarget.x, clusterTarget.y);
+          break;
+        }
       }
     }
 
