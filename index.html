@@ -15,6 +15,7 @@
       <div class="stat-pill" id="hud-credits">$10,000</div>
       <div class="stat-pill" id="hud-power">⚡ 0 / 0</div>
       <div class="stat-pill" id="hud-rank">★ Rank 1 (0/450 XP)</div>
+      <div class="stat-pill" id="hud-match-clock" title="Elapsed Operation Time">⏱ 00:00</div>
       <div class="stat-pill" id="hud-tunnel-status" style="display:none; color:#fde047;">🕳️ Tunnel Garrison: 0/10</div>
     </div>
 
@@ -22,12 +23,18 @@
       <button class="hud-btn" id="btn-generals-powers" title="Unlock &amp; Deploy Generals Powers (Shortcut: P)">
         ⚡ Generals Powers [P] (1 Pt)
       </button>
-      <button class="hud-btn" id="btn-select-builder" title="Select Construction Dozer or GLA Worker (Shortcut: B)">
+      <button class="hud-btn" id="btn-select-builder" title="Cycle Idle/Active Construction Dozers or GLA Workers (Shortcut: B)">
         🚜 Dozer / Worker [B]
       </button>
       <button class="hud-btn" id="btn-select-combat" title="Select all combat units on the battlefield [Q]">
         ⚔️ All Combat Units
       </button>
+      <button class="hud-btn" id="btn-hud-unit-studio" title="Open Interactive 3D/2.5D Unit Design Studio (Shortcut: U)">
+        🛠️ Unit Studio [U]
+      </button>
+      <a class="hud-btn" id="btn-hud-building-diorama" href="usa-buildings-diorama.html" style="text-decoration:none;" title="Open Interactive Ligne-Claire Military Building Diorama (All 31 USA, China &amp; GLA Structures)">
+        🏰 Building Diorama
+      </a>
       <button class="hud-btn" id="btn-game-menu" title="Open Tactical Game Menu &amp; Settings [ESC]">
         ☰ MENU
       </button>
@@ -58,6 +65,11 @@
 
     <!-- Opposing Zero Hour General Live Taunt Transmission -->
     <div id="general-taunt-box" class="hidden">
+      <div class="taunt-comms-bar">
+        <span class="taunt-signal-dot"></span>
+        <span class="taunt-comms-label">INCOMING ENCRYPTED TRANSMISSION</span>
+        <span class="taunt-waveform" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      </div>
       <div id="taunt-general-name">☣️ Dr. Thrax</div>
       <div id="taunt-general-text">"Take a deep breath, General!"</div>
     </div>
@@ -188,58 +200,152 @@
   <!-- ==================== START / GENERAL SELECTION MODAL ==================== -->
   <div id="start-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-label="Zero Hour Command Setup">
     <div class="modal-card start-modal-card">
-      <div class="modal-header">
-        <div>
-          <div class="zh-logo-title">Command &amp; Conquer: Generals – Zero Hour</div>
-          <div class="zh-logo-sub">v2.0 Complete macOS Edition • 9 Sub-Generals, Articulated 2.5D Rigs, Spatial Audio, Multi-Squad AI &amp; Deterministic .zhsave Persistence</div>
+      <!-- Top Hazard & Telemetry Strip -->
+      <div class="military-top-telemetry">
+        <div class="telemetry-left">
+          <span class="defcon-badge">DEFCON 2</span>
+          <span class="telemetry-code">SYS // SAGE-MAC-2.0 // C4ISR DIRECTIVE 09</span>
+          <span class="telemetry-coords">UPLINK: 38°52'15"N 77°03'21"W // PENTAGON SAT-NET</span>
         </div>
-        <div class="mode-tabs" id="mode-tabs">
-          <button class="mode-tab-btn active" data-mode="CHALLENGE">🏆 Generals' Challenge Campaign</button>
-          <button class="mode-tab-btn" data-mode="SKIRMISH">⚔️ Custom Skirmish Mode</button>
+        <div class="telemetry-right">
+          <span class="telemetry-status-dot"></span>
+          <span class="telemetry-code">v2.0 Complete macOS Edition • 9 Sub-Generals • Deterministic .zhsave</span>
         </div>
       </div>
 
-      <div class="start-scroll-body">
-        <div class="section-label">1. Select Your Zero Hour Commander (USA / China / GLA)</div>
-        <div id="player-general-grid" class="general-grid"></div>
-
-        <!-- Generals' Challenge Gauntlet Ladder -->
-        <div id="challenge-section">
-          <div class="section-label">2. Generals' Challenge Gauntlet Progression</div>
-          <div id="challenge-ladder-preview"></div>
+      <div class="modal-header start-deck-header">
+        <div class="zh-brand-block">
+          <div class="zh-brand-insignia" aria-hidden="true">
+            <svg viewBox="0 0 44 44" width="38" height="38" class="zh-crest-svg">
+              <polygon points="22,2 40,11 40,33 22,42 4,33 4,11" fill="#141812" stroke="#d97706" stroke-width="2"/>
+              <polygon points="22,6 36,13 36,31 22,38 8,31 8,13" fill="none" stroke="#eab308" stroke-width="1" stroke-dasharray="4 2"/>
+              <polygon points="22,9 25.5,17.5 34.5,18 27.5,23.8 29.8,32.5 22,27.6 14.2,32.5 16.5,23.8 9.5,18 18.5,17.5" fill="#eab308"/>
+              <circle cx="22" cy="22" r="3.2" fill="#141812"/>
+            </svg>
+          </div>
+          <div class="zh-title-stack">
+            <div class="zh-kicker-line">GLOBAL SATELLITE COMMAND // OPERATION ZERO HOUR</div>
+            <div class="zh-logo-title">COMMAND &amp; CONQUER: GENERALS <span class="zh-title-accent">// ZERO HOUR</span></div>
+            <div class="zh-logo-sub">TACTICAL WAR ROOM &amp; SUB-COMMANDER DEPLOYMENT TERMINAL</div>
+          </div>
         </div>
-
-        <!-- Skirmish Opponent Picker -->
-        <div id="ai-general-picker-wrap" style="display:none;">
-          <div class="section-label">2. Select Opposing AI General</div>
-          <div id="ai-general-grid" class="general-grid"></div>
+        <div class="mode-tabs" id="mode-tabs">
+          <button class="mode-tab-btn active" data-mode="CHALLENGE">
+            <span class="tab-code">[OP-01]</span> GENERALS' CHALLENGE
+          </button>
+          <button class="mode-tab-btn" data-mode="SKIRMISH">
+            <span class="tab-code">[OP-02]</span> CUSTOM SKIRMISH
+          </button>
+          <button class="mode-tab-btn studio-tab-highlight" id="btn-open-unit-studio-top" type="button">
+            <span class="tab-code">[LAB-3D]</span> UNIT ARMORY STUDIO
+          </button>
+          <a class="mode-tab-btn studio-tab-highlight" id="btn-open-building-diorama-top" href="usa-buildings-diorama.html" style="text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+            <span class="tab-code">[BLD-2.5D]</span> 🏰 BUILDING DIORAMA (31)
+          </a>
         </div>
+      </div>
 
-        <!-- Step 3: Theater Map Preview & AI Doctrine -->
-        <div class="section-label">3. Theater of Operations &amp; AI Doctrine</div>
-        <div class="theater-config-grid">
-          <div id="map-preview-card" class="map-preview-card">
-            <canvas id="map-preview-canvas" width="140" height="140"></canvas>
-            <div class="map-preview-details">
-              <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-                <label for="map-selector" style="font-size:11px; font-weight:800; color:#94a3b8;">THEATER MAP:</label>
-                <select id="map-selector" class="map-select-dropdown"></select>
-              </div>
-              <div id="map-preview-meta" class="map-preview-meta">Select a theater to inspect supply depots, oil derricks, and garrison bunkers.</div>
+      <div class="start-scroll-body command-deck-body">
+        <!-- LEFT COLUMN: Commander Rosters & Challenge Gauntlet Progression -->
+        <div class="deck-col deck-col-rosters">
+          <div class="section-header-bar">
+            <div class="section-label"><span class="sec-idx">01 //</span> SELECT COMMANDING GENERAL</div>
+            <div class="faction-legend-strip">
+              <span class="faction-pill usa">USA STRATCOM</span>
+              <span class="faction-pill china">PLA HIGH CMD</span>
+              <span class="faction-pill gla">GLA NETWORK</span>
+              <button class="deck-mini-btn" id="btn-random-player-gen" type="button" title="Assign Random Commanding General">[RND] ASSIGN</button>
             </div>
           </div>
+          <div id="player-general-grid" class="general-grid"></div>
 
-          <div class="doctrine-card">
-            <div style="font-size:11px; font-weight:800; color:#94a3b8; margin-bottom:6px;">AI DOCTRINE &amp; DIFFICULTY:</div>
-            <div id="difficulty-pills" class="difficulty-pills">
-              <button class="diff-btn" data-diff="EASY">Cadet (Easy)</button>
-              <button class="diff-btn active" data-diff="NORMAL">Commander (Normal)</button>
-              <button class="diff-btn" data-diff="HARD">Brutal General (Hard)</button>
+          <!-- Generals' Challenge Gauntlet Ladder -->
+          <div id="challenge-section" class="deck-subpanel">
+            <div class="section-header-bar">
+              <div class="section-label"><span class="sec-idx">02 //</span> GENERALS' CHALLENGE TARGET MATRIX</div>
+              <span id="challenge-stage-badge" class="deck-status-pill">STAGE 1 / 8 • ACTIVE TARGET</span>
             </div>
-            <div class="start-utility-bar">
-              <button class="hud-btn" id="btn-open-powers-preview" type="button">⚡ Preview Generals Powers</button>
-              <button class="hud-btn" id="btn-import-save-menu" type="button">📂 Load .zhsave Snapshot</button>
-              <button class="hud-btn" id="btn-auto-sim" type="button" hidden>🤖 Auto-Sim</button>
+            <div id="challenge-ladder-preview"></div>
+          </div>
+
+          <!-- Skirmish Opponent Picker -->
+          <div id="ai-general-picker-wrap" class="deck-subpanel" style="display:none;">
+            <div class="section-header-bar">
+              <div class="section-label"><span class="sec-idx">02 //</span> DESIGNATE OPPOSING COMMANDER</div>
+              <button class="deck-mini-btn" id="btn-random-ai-gen" type="button" title="Assign Random Opposing General">[RND] OPPONENT</button>
+            </div>
+            <div id="ai-general-grid" class="general-grid"></div>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN: Live Commander VS Dossier, Visual Theater Cards & AI Doctrine -->
+        <div class="deck-col deck-col-briefing">
+          <!-- Commander VS Dossier Panel -->
+          <div id="commander-vs-dossier" class="commander-vs-dossier">
+            <div class="section-header-bar dossier-top-bar">
+              <div class="section-label"><span class="sec-idx">INTEL //</span> COMBATANT DOSSIER &amp; DOCTRINE SPECS</div>
+              <button class="deck-mini-btn" id="btn-dossier-taunt" type="button" title="Audition opponent General satellite transmission">[COMMS] AUDIO INTERCEPT</button>
+            </div>
+            <div id="dossier-matchup-strip" class="dossier-matchup-strip">
+              <div id="dossier-player-card" class="dossier-combatant-card player-side"></div>
+              <div class="dossier-vs-badge" aria-hidden="true">
+                <span class="vs-crosshair"></span>
+                <span class="vs-text">VS</span>
+              </div>
+              <div id="dossier-ai-card" class="dossier-combatant-card ai-side"></div>
+            </div>
+            <div id="dossier-taunt-banner" class="dossier-taunt-banner"></div>
+          </div>
+
+          <!-- Step 3: Theater Map Preview & AI Doctrine -->
+          <div class="section-header-bar">
+            <div class="section-label"><span class="sec-idx">03 //</span> THEATER RECONNAISSANCE &amp; ROE</div>
+            <span id="theater-telemetry-pill" class="deck-status-pill">7 SUPPLY • 4 TECH • 4 GARRISONS</span>
+          </div>
+
+          <!-- Clickable Visual Theater Map Cards -->
+          <div id="visual-map-cards" class="visual-map-cards"></div>
+
+          <div class="theater-config-grid">
+            <div id="map-preview-card" class="map-preview-card">
+              <div class="radar-frame-wrap">
+                <canvas id="map-preview-canvas" width="148" height="148"></canvas>
+                <div class="radar-corner-overlay" aria-hidden="true"></div>
+              </div>
+              <div class="map-preview-details">
+                <div class="map-selector-row">
+                  <label for="map-selector" class="map-selector-label">SECTOR:</label>
+                  <select id="map-selector" class="map-select-dropdown"></select>
+                </div>
+                <div id="map-preview-meta" class="map-preview-meta">Select a theater sector to inspect tactical topography, oil derricks, and urban bunkers.</div>
+                <div class="map-legend-pills">
+                  <span class="map-legend-item"><i class="legend-dot hq-p"></i>ALLIED HQ</span>
+                  <span class="map-legend-item"><i class="legend-dot hq-ai"></i>HOSTILE HQ</span>
+                  <span class="map-legend-item"><i class="legend-dot supply"></i>7 SUPPLY ($166K)</span>
+                  <span class="map-legend-item"><i class="legend-dot tech"></i>4 TECH / 4 BUNKERS</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="doctrine-card">
+              <div class="doctrine-header-label">OPFOR THREAT LEVEL &amp; ROE:</div>
+              <div id="difficulty-pills" class="difficulty-pills">
+                <button class="diff-btn" data-diff="EASY">CADET [LVL-1]</button>
+                <button class="diff-btn active" data-diff="NORMAL">COMMANDER [LVL-2]</button>
+                <button class="diff-btn" data-diff="HARD">GENERAL [LVL-3]</button>
+              </div>
+              <div id="difficulty-intel-desc" class="difficulty-intel-desc">
+                Commander Doctrine: Balanced multi-squad combined arms, active tech capture &amp; coordinated flank attacks.
+              </div>
+              <div class="start-utility-bar">
+                <button class="hud-btn" id="btn-open-unit-studio" type="button">[3D] UNIT ARMORY</button>
+                <a class="hud-btn" id="btn-open-building-diorama" href="usa-buildings-diorama.html" style="text-decoration:none; text-align:center;">[2.5D] BUILDINGS</a>
+                <button class="hud-btn" id="btn-open-powers-preview" type="button">[PWR] TECH TREE</button>
+                <button class="hud-btn" id="btn-import-save-menu" type="button">[LOAD] .ZHSAVE</button>
+                <button class="hud-btn" id="btn-quick-load-menu" type="button">[F9] QUICKSAVE</button>
+                <button class="hud-btn" id="btn-start-settings" type="button">[CFG] SYS OPTIONS</button>
+                <button class="hud-btn" id="btn-auto-sim" type="button" hidden>[SIM] AUTO-PLAY</button>
+              </div>
             </div>
           </div>
         </div>
@@ -247,8 +353,211 @@
 
       <!-- Sticky Launch Footer -->
       <div class="match-settings-row start-launch-footer">
-        <div id="start-matchup-summary" class="start-matchup-summary">Ready to deploy to Theater of Operations</div>
-        <button class="launch-btn" id="btn-launch-operation">LAUNCH ZERO HOUR ▶</button>
+        <div class="launch-summary-wrap">
+          <span class="launch-ready-beacon" aria-hidden="true"></span>
+          <div class="launch-order-prefix">OP-ORDER //</div>
+          <div id="start-matchup-summary" class="start-matchup-summary">Ready to deploy to Theater of Operations</div>
+        </div>
+        <button class="launch-btn" id="btn-launch-operation">
+          <span class="launch-hazard-strip" aria-hidden="true"></span>
+          <span class="launch-btn-text">DEPLOY TO THEATER ▶</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== INTERACTIVE 3D/2.5D UNIT DESIGN STUDIO MODAL ==================== -->
+  <div id="unit-studio-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-label="3D Unit Design Studio">
+    <div class="modal-card unit-studio-card">
+      <!-- Top Studio Command Header -->
+      <div class="modal-header studio-header-bar">
+        <div class="studio-header-left">
+          <div class="studio-unit-kicker-row">
+            <span class="studio-kicker-badge">3D UNIT DESIGN STUDIO</span>
+            <div class="studio-stepper-btns">
+              <button class="studio-step-btn" id="btn-studio-prev-unit" type="button" title="Previous Unit">◀ Prev</button>
+              <button class="studio-step-btn" id="btn-studio-next-unit" type="button" title="Next Unit">Next ▶</button>
+            </div>
+            <div id="studio-unit-stats-strip" class="studio-unit-stats-strip"></div>
+          </div>
+          <div class="zh-logo-title" id="studio-unit-header-title">USA - M1A9 CRUSADER TANK</div>
+          <div class="zh-logo-sub" id="studio-unit-header-sub">Interactive 3D/2.5D Unit Design Workbench • Live Parametric Geometry, Reference Blueprint &amp; Battlefield Sync</div>
+        </div>
+        <div class="studio-header-actions">
+          <div class="studio-progress-box">
+            <span id="studio-upgrade-progress" class="studio-progress-text">2 / 33 Units Upgraded (HD 3D)</span>
+            <div class="studio-progress-track"><div id="studio-upgrade-bar" class="studio-progress-fill" style="width: 12%;"></div></div>
+          </div>
+          <button class="hud-btn studio-deploy-btn" id="btn-studio-test-battlefield" type="button">⚔️ Test Squad on Battlefield</button>
+          <button class="hud-btn studio-close-btn" id="btn-close-unit-studio" type="button">✕ Close [U]</button>
+        </div>
+      </div>
+
+      <div class="studio-layout-grid">
+        <!-- LEFT COLUMN: Unit-by-Unit Roster & Filter -->
+        <aside class="studio-roster-panel">
+          <div class="studio-panel-header">
+            <div class="studio-panel-title-row">
+              <span class="section-label">1. Unit Armory Roster</span>
+            </div>
+            <div class="studio-faction-tabs">
+              <button class="studio-fac-tab active" type="button" data-studio-faction="ALL">All</button>
+              <button class="studio-fac-tab" type="button" data-studio-faction="BESPOKE">★ 3D</button>
+              <button class="studio-fac-tab" type="button" data-studio-faction="USA">🦅 USA</button>
+              <button class="studio-fac-tab" type="button" data-studio-faction="CHINA">🐉 CHN</button>
+              <button class="studio-fac-tab" type="button" data-studio-faction="GLA">🦂 GLA</button>
+            </div>
+            <div class="studio-search-wrap">
+              <input type="search" id="studio-unit-search" class="studio-search-input" placeholder="🔍 Search unit (Crusader, Paladin...)" />
+            </div>
+          </div>
+          <div id="studio-unit-list" class="studio-unit-list"></div>
+        </aside>
+
+        <!-- CENTER COLUMN: Interactive 3D Showroom Turntable + Reference Blueprint + RTS Preview -->
+        <section class="studio-workbench-panel">
+          <!-- Top Viewport Toolbar -->
+          <div class="studio-toolbar-strip">
+            <div class="studio-view-pills" role="group" aria-label="Viewport Mode">
+              <button type="button" class="studio-mode-pill active" data-view-mode="ISO_3D">📐 3D Showroom</button>
+              <button type="button" class="studio-mode-pill" data-view-mode="ALL_UNITS_SHEET">🗂️ All-Units Sheet</button>
+              <button type="button" class="studio-mode-pill" data-view-mode="REF_COMPARE">🖼️ Ref vs 3D Split</button>
+              <button type="button" class="studio-mode-pill" data-view-mode="SPLIT_COMPARE">⚖️ Old vs New</button>
+              <button type="button" class="studio-mode-pill" data-view-mode="TACTICAL_25D">🗺️ 2.5D Game Cam</button>
+              <button type="button" class="studio-mode-pill" data-view-mode="TOP_ORTHO">⬇️ Top Ortho</button>
+            </div>
+            <!-- Hidden select kept synced for compatibility -->
+            <select id="studio-view-mode" class="map-select-dropdown" style="display:none;">
+              <option value="ISO_3D" selected>3D Isometric Showroom (Ref Angle)</option>
+              <option value="ALL_UNITS_SHEET">All-Units Ligne-Claire Diorama Sheet</option>
+              <option value="REF_COMPARE">Split: Reference Image vs. 3D Model</option>
+              <option value="SPLIT_COMPARE">Split: Legacy Box vs. Bespoke 3D</option>
+              <option value="TACTICAL_25D">Battlefield 2.5D Projection</option>
+              <option value="TOP_ORTHO">Top-Down Orthographic</option>
+            </select>
+
+            <div class="studio-toolbar-right">
+              <label class="studio-tool-item">
+                <span>BG:</span>
+                <select id="studio-backdrop-mode" class="studio-compact-select">
+                  <option value="DIORAMA_CREAM" selected>🎨 Diorama Cream (Sheet)</option>
+                  <option value="UNTITLED_BLUE">🟦 Royal Blue (Ref)</option>
+                  <option value="DESERT">🏜️ Desert Sand</option>
+                  <option value="GRASS">🌲 Temperate</option>
+                  <option value="GRID_DARK">⬛ CAD Grid</option>
+                </select>
+              </label>
+              <label class="studio-tool-item">
+                <span>State:</span>
+                <select id="studio-damage-state" class="studio-compact-select">
+                  <option value="PRISTINE" selected>100% Pristine</option>
+                  <option value="DAMAGED">42% Damaged</option>
+                  <option value="CRITICAL">18% Critical</option>
+                  <option value="UNMANNED">Unmanned</option>
+                </select>
+              </label>
+              <button class="hud-btn studio-fire-btn" id="btn-studio-fire" type="button">🔥 Fire Cannon</button>
+            </div>
+          </div>
+
+          <!-- Main 3D Turntable Stage -->
+          <div class="studio-canvas-wrap">
+            <canvas id="studio-main-canvas" width="720" height="390"></canvas>
+
+            <!-- Quick Angle Snap Pills (Top-Left Overlay) -->
+            <div class="studio-angle-snap-bar">
+              <span class="studio-snap-label">Snap Angle:</span>
+              <button type="button" class="studio-snap-btn active" data-snap-yaw="139" data-snap-turret="0">139° Ref</button>
+              <button type="button" class="studio-snap-btn" data-snap-yaw="45" data-snap-turret="0">45° Front-R</button>
+              <button type="button" class="studio-snap-btn" data-snap-yaw="180" data-snap-turret="0">180° Side</button>
+              <button type="button" class="studio-snap-btn" data-snap-yaw="315" data-snap-turret="25">315° Rear</button>
+            </div>
+
+            <div class="studio-canvas-overlay-hint">
+              🖱️ Drag to orbit 3D hull &amp; pitch • Scroll to zoom • Enable "Mouse Aim" to track &amp; click-fire
+            </div>
+          </div>
+
+          <!-- Turntable Sliders & Animation Toggles -->
+          <div class="studio-turntable-controls">
+            <div class="studio-sliders-group">
+              <label class="studio-slider-pill">
+                <div class="studio-slider-top"><span>Zoom</span><strong id="studio-zoom-val">4.6×</strong></div>
+                <input type="range" id="studio-zoom-slider" min="1.4" max="7.5" step="0.1" value="4.6" />
+              </label>
+              <label class="studio-slider-pill">
+                <div class="studio-slider-top"><span>Hull Yaw</span><strong id="studio-hull-angle-val">139°</strong></div>
+                <input type="range" id="studio-hull-angle" min="0" max="359" step="1" value="139" />
+              </label>
+              <label class="studio-slider-pill">
+                <div class="studio-slider-top"><span>Turret Slew</span><strong id="studio-turret-angle-val">0°</strong></div>
+                <input type="range" id="studio-turret-angle" min="-180" max="180" step="1" value="0" />
+              </label>
+            </div>
+            <div class="studio-toggle-pills">
+              <label class="studio-check-pill"><input type="checkbox" id="studio-chk-autospin" /> <span>🔄 Auto-Orbit</span></label>
+              <label class="studio-check-pill"><input type="checkbox" id="studio-chk-mouseaim" /> <span>🎯 Mouse Aim</span></label>
+              <label class="studio-check-pill"><input type="checkbox" id="studio-chk-drivetracks" checked /> <span>⚙️ Tracks</span></label>
+            </div>
+          </div>
+
+          <!-- Bottom Row: Reference Image Blueprint + Live RTS Scale Squad Preview -->
+          <div class="studio-bottom-comparison-grid">
+            <div class="studio-ref-card">
+              <div class="studio-subcard-header">
+                <span id="studio-ref-caption">Reference: USA - M1A2 CRUSADER (LIGNE-CLAIRE DIORAMA)</span>
+                <div class="studio-ref-btn-group">
+                  <button class="studio-mini-action-btn" id="btn-studio-compare-ref" type="button" title="Compare Reference Side-by-Side on Main Canvas">🔀 Split View</button>
+                  <button class="studio-mini-action-btn" id="btn-studio-upload-ref" type="button">📂 Load Ref</button>
+                  <input type="file" id="studio-ref-file-input" accept="image/*" style="display:none;" />
+                </div>
+              </div>
+              <div class="studio-ref-body">
+                <div class="studio-ref-img-wrap" id="studio-ref-click-preview" title="Click to toggle Side-by-Side Reference Split View">
+                  <img id="studio-ref-img" src="assets/refs/usa_crusader_diorama_ref.png" alt="Unit Reference Blueprint" />
+                </div>
+                <div class="studio-ref-tags" id="studio-ref-tags">
+                  <span>✓ Ligne-Claire #26201b Ink</span>
+                  <span>✓ 6 Road Wheels + Tracks</span>
+                  <span>✓ Pintle .50 Cal MG</span>
+                  <span>✓ Bore Evacuator + Muzzle</span>
+                  <span>✓ Cel-Shaded Desert Armor</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="studio-squad-card">
+              <div class="studio-subcard-header">
+                <span>Live RTS Battlefield Scale Preview</span>
+                <span class="studio-subcard-tag">1.0× • 1.35× • 1.75×</span>
+              </div>
+              <div class="studio-squad-canvas-wrap">
+                <canvas id="studio-squad-canvas" width="360" height="106"></canvas>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- RIGHT COLUMN: Parametric Geometry, Armor Palette & Sub-Component Inspector -->
+        <aside class="studio-inspector-panel">
+          <div class="studio-panel-header">
+            <div class="studio-inspector-top-row">
+              <span class="section-label">3. Parametric CAD Inspector</span>
+              <div class="studio-inspector-actions">
+                <button class="studio-mini-action-btn" id="btn-studio-reset" type="button" title="Reset unit parameters to default">↺ Reset</button>
+                <button class="studio-mini-action-btn" id="btn-studio-export" type="button" title="Copy unit parameter JSON to clipboard">📋 Copy JSON</button>
+              </div>
+            </div>
+            <select id="studio-preset-select" class="studio-preset-dropdown"></select>
+            <div class="studio-inspector-tabs" id="studio-inspector-tabs">
+              <button type="button" class="studio-insp-tab active" data-insp-tab="ALL">All</button>
+              <button type="button" class="studio-insp-tab" data-insp-tab="GEOMETRY">📐 3D Hull</button>
+              <button type="button" class="studio-insp-tab" data-insp-tab="COLORS">🎨 Palette</button>
+              <button type="button" class="studio-insp-tab" data-insp-tab="DETAILS">🔧 Parts</button>
+            </div>
+          </div>
+          <div id="studio-inspector-body" class="studio-inspector-body"></div>
+        </aside>
       </div>
     </div>
   </div>
@@ -290,11 +599,13 @@
   <script src="js/data.js"></script>
   <script src="js/spatial.js"></script>
   <script src="js/nav.js"></script>
+  <script src="js/unit_models.js"></script>
   <script src="js/vfx.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/ai.js"></script>
   <script src="js/simulator.js"></script>
+  <script src="js/unit_studio.js"></script>
   <script src="js/ui.js"></script>
 </body>
 </html>

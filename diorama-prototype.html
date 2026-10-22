@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>C&amp;C Generals: San Francisco Isometric Vector-Cel Diorama Prototype</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #f6f3ee;
+      color: #2b211c;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 18px;
+      background: #fdfbf7;
+      border-bottom: 2px solid #2b211c;
+      z-index: 10;
+    }
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .title {
+      font-weight: 800;
+      font-size: 15px;
+      letter-spacing: -0.01em;
+    }
+    .credits-pill {
+      background: #fef08a;
+      border: 1.5px solid #2b211c;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .status-text {
+      font-size: 13px;
+      color: #6b5a4e;
+      font-weight: 500;
+    }
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    button {
+      background: #ffffff;
+      color: #2b211c;
+      border: 1.8px solid #2b211c;
+      box-shadow: 0 2px 0 #2b211c;
+      border-radius: 8px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.08s ease, background 0.12s ease;
+    }
+    button:hover {
+      background: #fef9c3;
+      transform: translateY(-1px);
+    }
+    button:active {
+      transform: translateY(1px);
+      box-shadow: 0 0 0 #2b211c;
+    }
+    button.primary {
+      background: #38bdf8;
+      color: #0f172a;
+    }
+    #dioramaCanvas {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      display: block;
+    }
+    #dioramaCanvas:active {
+      cursor: grabbing;
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <span class="title">🌉 C&amp;C Generals: SF Urban Isometric Diorama Prototype</span>
+      <span id="hudCredits" class="credits-pill">$14,250</span>
+      <span id="hudSelected" class="status-text">Click any unit/building • Drag to pan • Scroll to zoom</span>
+    </div>
+    <div class="btn-group">
+      <button id="btnSpawnTank">+ Crusader Tank 🎯</button>
+      <button id="btnSpawnSquad">+ Chibi Squad 💬</button>
+      <button id="btnBuild">🔨 Build 3D Scaffold</button>
+      <button id="btnGarrison">🏠 Garrison Rowhouse</button>
+      <button id="btnAirstrike" class="primary">⚡ Particle Cannon</button>
+    </div>
+  </div>
+  <canvas id="dioramaCanvas"></canvas>
+
+  <script>
+    (function () {
+      const canvas = document.getElementById('dioramaCanvas');
+      const ctx = canvas.getContext('2d');
+      const creditsEl = document.getElementById('hudCredits');
+      const selectedEl = document.getElementById('hudSelected');
+
+      const INK = '#2b211c';
+      const TILE_W = 54;
+      const TILE_H = 27;
+      const GRID_N = 16;
+
+      let credits = 14250;
+      let camX = 0;
+      let camY = -20;
+      let zoom = 1.0;
+      let isDragging = false;
+      let dragStartX = 0;
+      let dragStartY = 0;
+      let dragMoved = false;
+      let selectedId = null;
+      let hoveredBuildingId = null;
+      let time = 0;
+
+      function isoToScreen(gx, gy, gz = 0) {
+        const sx = (gx - gy) * (TILE_W * 0.5);
+        const sy = (gx + gy) * (TILE_H * 0.5) - gz;
+        return { x: sx, y: sy };
+      }
+
+      function screenToIso(sx, sy) {
+        const halfW = TILE_W * 0.5;
+        const halfH = TILE_H * 0.5;
+        const gx = (sy / halfH + sx / halfW) * 0.5;
+        const gy = (sy / halfH - sx / halfW) * 0.5;
+        return { gx, gy };
+      }
+
+      function shadeColor(hex, percent) {
+        const num = parseInt(hex.replace('#', ''), 16);
+        const r = Math.min(255, Math.max(0, (num >> 16) + percent));
+        const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00ff) + percent));
+        const b = Math.min(255, Math.max(0, (num & 0x0000ff) + percent));
+        return '#' + (0x1000000 + (r << 16) + (g << 8) + b).toString(16).slice(1);
+      }
+
+      function drawIsoBox(gx, gy, gz, w, d, h, topCol, leftCol, rightCol, strokeW = 1.7) {
+        const p00 = isoToScreen(gx, gy, gz);
+        const p10 = isoToScreen(gx + w, gy, gz);
+        const p11 = isoToScreen(gx + w, gy + d, gz);
+        const p01 = isoToScreen(gx, gy + d, gz);
+
+        const t00 = isoToScreen(gx, gy, gz + h);
+        const t10 = isoToScreen(gx + w, gy, gz + h);
+        const t11 = isoToScreen(gx + w, gy + d, gz + h);
+        const t01 = isoToScreen(gx, gy + d, gz + h);
+
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = strokeW;
+
+        ctx.fillStyle = leftCol;
+        ctx.beginPath();
+        ctx.moveTo(p01.x, p01.y);
+        ctx.lineTo(p11.x, p11.y);
+        ctx.lineTo(t11.x, t11.y);
+        ctx.lineTo(t01.x, t01.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = rightCol;
+        ctx.beginPath();
+        ctx.moveTo(p10.x, p10.y);
+        ctx.lineTo(p11.x, p11.y);
+        ctx.lineTo(t11.x, t11.y);
+        ctx.lineTo(t10.x, t10.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = topCol;
+        ctx.beginPath();
+        ctx.moveTo(t00.x, t00.y);
+        ctx.lineTo(t10.x, t10.y);
+        ctx.lineTo(t11.x, t11.y);
+        ctx.lineTo(t01.x, t01.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      function drawIsoWindows(gx, gy, gz, w, d, h, rows, colsLeft, colsRight, winCol = '#7ec8e3', litEvery = 0) {
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.1;
+
+        if (colsLeft > 0) {
+          for (let r = 0; r < rows; r++) {
+            const z0 = gz + 6 + (r / rows) * (h - 11);
+            const z1 = z0 + Math.max(4, (h - 12) / rows * 0.55);
+            for (let c = 0; c < colsLeft; c++) {
+              const x0 = gx + 0.16 + (c / colsLeft) * (w - 0.24);
+              const x1 = x0 + ((w - 0.24) / colsLeft) * 0.58;
+              const a = isoToScreen(x0, gy + d, z0);
+              const b = isoToScreen(x1, gy + d, z0);
+              const cPt = isoToScreen(x1, gy + d, z1);
+              const dPt = isoToScreen(x0, gy + d, z1);
+              ctx.fillStyle = (litEvery > 0 && ((r + c) % litEvery === 0)) ? '#fef08a' : winCol;
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.lineTo(cPt.x, cPt.y);
+              ctx.lineTo(dPt.x, dPt.y);
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+            }
+          }
+        }
+
+        if (colsRight > 0) {
+          for (let r = 0; r < rows; r++) {
+            const z0 = gz + 6 + (r / rows) * (h - 11);
+            const z1 = z0 + Math.max(4, (h - 12) / rows * 0.55);
+            for (let c = 0; c < colsRight; c++) {
+              const y0 = gy + 0.16 + (c / colsRight) * (d - 0.24);
+              const y1 = y0 + ((d - 0.24) / colsRight) * 0.58;
+              const a = isoToScreen(gx + w, y1, z0);
+              const b = isoToScreen(gx + w, y0, z0);
+              const cPt = isoToScreen(gx + w, y0, z1);
+              const dPt = isoToScreen(gx + w, y1, z1);
+              ctx.fillStyle = (litEvery > 0 && ((r + c) % litEvery === 0)) ? '#fde047' : shadeColor(winCol, -18);
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.lineTo(cPt.x, cPt.y);
+              ctx.lineTo(dPt.x, dPt.y);
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+            }
+          }
+        }
+      }
+
+      function drawVictorianGable(gx, gy, gz, w, d, roofH, roofCol, wallCol) {
+        const fL = isoToScreen(gx, gy + d, gz);
+        const fR = isoToScreen(gx + w, gy + d, gz);
+        const fApex = isoToScreen(gx + w * 0.5, gy + d, gz + roofH);
+        const bApex = isoToScreen(gx + w * 0.5, gy, gz + roofH);
+        const bR = isoToScreen(gx + w, gy, gz);
+
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.6;
+
+        ctx.fillStyle = shadeColor(roofCol, -15);
+        ctx.beginPath();
+        ctx.moveTo(fApex.x, fApex.y);
+        ctx.lineTo(bApex.x, bApex.y);
+        ctx.lineTo(bR.x, bR.y);
+        ctx.lineTo(fR.x, fR.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = wallCol;
+        ctx.beginPath();
+        ctx.moveTo(fL.x, fL.y);
+        ctx.lineTo(fR.x, fR.y);
+        ctx.lineTo(fApex.x, fApex.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      const buildings = [
+        { id: 'vic1', type: 'VICTORIAN', name: 'Victorian Rowhouse #1', gx: 0.6, gy: 5.2, w: 1.35, d: 1.4, h: 34, color: '#d49a6a', roof: '#8c4f3e', garrisoned: 0 },
+        { id: 'vic2', type: 'VICTORIAN', name: 'Victorian Rowhouse #2', gx: 0.6, gy: 6.7, w: 1.35, d: 1.4, h: 36, color: '#7ea3c4', roof: '#4b6884', garrisoned: 2 },
+        { id: 'vic3', type: 'VICTORIAN', name: 'Victorian Rowhouse #3', gx: 0.6, gy: 8.2, w: 1.35, d: 1.4, h: 33, color: '#c85a48', roof: '#7a2f24', garrisoned: 0 },
+        { id: 'vic4', type: 'VICTORIAN', name: 'Victorian Rowhouse #4', gx: 0.6, gy: 9.7, w: 1.35, d: 1.4, h: 35, color: '#e0b25b', roof: '#8f6b29', garrisoned: 0 },
+        { id: 'vic5', type: 'VICTORIAN', name: 'Haight Garrison House', gx: 8.4, gy: 11.4, w: 1.5, d: 1.5, h: 34, color: '#c47ca0', roof: '#753f5a', garrisoned: 3 },
+        { id: 'vic6', type: 'VICTORIAN', name: 'Alamo Garrison House', gx: 6.8, gy: 11.4, w: 1.5, d: 1.5, h: 35, color: '#d99b66', roof: '#7d4e2d', garrisoned: 0 },
+        { id: 'pyramid', type: 'PYRAMID', name: 'Transamerica Strategy Spire', gx: 5.3, gy: 0.8, w: 2.1, d: 2.1, h: 118, color: '#e2e6ec', garrisoned: 0 },
+        { id: 'tower', type: 'SKYSCRAPER', name: 'Bay Command Skyscraper', gx: 9.4, gy: 4.8, w: 2.3, d: 2.3, h: 110, color: '#63a4be', garrisoned: 0 },
+        { id: 'high1', type: 'OFFICE', name: 'Financial Tech Annex', gx: 8.1, gy: 1.2, w: 2.0, d: 1.9, h: 68, color: '#d8cfc2', roof: '#b5aa9a', rows: 5, cols: 3 },
+        { id: 'high2', type: 'OFFICE', name: 'Embarcadero Supply Tower', gx: 10.6, gy: 2.4, w: 2.1, d: 2.0, h: 78, color: '#6b90b2', roof: '#4e6d8a', rows: 6, cols: 4 },
+        { id: 'high3', type: 'OFFICE', name: 'Brick Command Lofts', gx: 8.8, gy: 7.4, w: 1.9, d: 1.8, h: 56, color: '#c97b53', roof: '#8f4f30', rows: 4, cols: 3 },
+        { id: 'high4', type: 'OFFICE', name: 'Marina Barracks Block', gx: 12.2, gy: 5.2, w: 1.9, d: 2.1, h: 62, color: '#dfd3be', roof: '#b8aa93', rows: 5, cols: 3 },
+        { id: 'ferry', type: 'FERRY_DOCK', name: 'Ferry Building Supply Dock ($24,000)', gx: 5.0, gy: 4.9, w: 3.1, d: 1.5, h: 28, color: '#688fb5' },
+        { id: 'warfac', type: 'WAR_FACTORY', name: 'USA Urban War Factory', gx: 10.4, gy: 9.8, w: 2.5, d: 2.1, h: 42, color: '#d9b37c', roof: '#997443', rows: 3, cols: 3 },
+        { id: 'shop1', type: 'SHOP', name: 'Union Square Supply Depot', gx: 8.8, gy: 9.6, w: 1.5, d: 1.8, h: 50, color: '#c86d51', roof: '#87422d', rows: 4, cols: 2 },
+        { id: 'shop2', type: 'SHOP', name: 'Chinatown Outpost', gx: 6.6, gy: 8.2, w: 1.6, d: 1.6, h: 38, color: '#d6a868', roof: '#8f6834', rows: 3, cols: 2 },
+        { id: 'coit', type: 'COIT', name: 'Coit Radar Observation Tower', gx: 4.6, gy: 7.1, w: 1.1, d: 1.1, h: 52, color: '#e6dec8' },
+        { id: 'rotunda', type: 'ROTUNDA', name: 'Palace Rotunda Field Hospital', gx: 4.6, gy: 12.2, w: 2.0, d: 2.0, h: 36, color: '#d8b48a' }
+      ];
+
+      const trees = [
+        { gx: 4.5, gy: 8.8, type: 'ROUND', scale: 1.15 },
+        { gx: 5.4, gy: 8.6, type: 'ROUND', scale: 1.0 },
+        { gx: 6.1, gy: 9.1, type: 'ROUND', scale: 1.1 },
+        { gx: 4.8, gy: 9.6, type: 'ROUND', scale: 1.05 },
+        { gx: 5.7, gy: 9.8, type: 'PINE', scale: 1.05 },
+        { gx: 3.6, gy: 12.0, type: 'ROUND', scale: 0.95 },
+        { gx: 6.7, gy: 13.6, type: 'ROUND', scale: 1.05 },
+        { gx: 7.4, gy: 6.9, type: 'PINE', scale: 1.0 },
+        { gx: 8.2, gy: 6.3, type: 'PINE', scale: 1.0 },
+        { gx: 2.3, gy: 4.6, type: 'PALM', scale: 1.05 },
+        { gx: 11.4, gy: 7.6, type: 'ROUND', scale: 0.95 },
+        { gx: 12.1, gy: 7.6, type: 'ROUND', scale: 0.95 }
+      ];
+
+      let nextUnitId = 1;
+      const units = [
+        { id: nextUnitId++, type: 'TANK', name: 'Crusader MBT', gx: 1.5, gy: 3.2, targetGx: 1.5, targetGy: 0.8, color: '#4b7bec', bubble: '🎯', patrolA: { gx: 1.5, gy: 4.2 }, patrolB: { gx: 1.5, gy: 0.7 } },
+        { id: nextUnitId++, type: 'HUMVEE', name: 'TOW Humvee', gx: 2.1, gy: 1.4, targetGx: 2.1, targetGy: 4.2, color: '#d97706', bubble: null, patrolA: { gx: 2.1, gy: 0.8 }, patrolB: { gx: 2.1, gy: 4.3 } },
+        { id: nextUnitId++, type: 'SUPPLY_TRUCK', name: 'Supply Truck', gx: 7.6, gy: 5.5, targetGx: 10.2, targetGy: 11.8, color: '#eab308', bubble: '💰', patrolA: { gx: 7.4, gy: 4.6 }, patrolB: { gx: 11.5, gy: 12.4 } },
+        { id: nextUnitId++, type: 'CABLE_CAR', name: 'Tactical Transport', gx: 7.4, gy: 10.5, targetGx: 7.4, targetGy: 6.5, color: '#e67e22', bubble: '🛒', patrolA: { gx: 7.4, gy: 11.2 }, patrolB: { gx: 7.4, gy: 6.2 } },
+        { id: nextUnitId++, type: 'DOZER', name: 'USA Construction Dozer', gx: 12.8, gy: 12.6, targetGx: 12.8, targetGy: 10.2, color: '#f59e0b', bubble: '🔨', patrolA: { gx: 13.2, gy: 12.8 }, patrolB: { gx: 13.2, gy: 9.2 } },
+        { id: nextUnitId++, type: 'CHIBI', name: 'Supply Worker', gx: 9.2, gy: 12.6, targetGx: 12.5, targetGy: 12.6, shirt: '#3b82f6', hair: '#3d2314', bubble: '💰', patrolA: { gx: 8.5, gy: 12.6 }, patrolB: { gx: 13.4, gy: 12.6 } },
+        { id: nextUnitId++, type: 'CHIBI', name: 'Ranger Scout', gx: 11.2, gy: 12.9, targetGx: 8.6, targetGy: 12.9, shirt: '#10b981', hair: '#1e293b', bubble: '📍', patrolA: { gx: 13.0, gy: 12.9 }, patrolB: { gx: 8.4, gy: 12.9 } },
+        { id: nextUnitId++, type: 'CHIBI', name: 'Urban Engineer', gx: 8.2, gy: 10.6, targetGx: 8.2, targetGy: 13.4, shirt: '#ef4444', hair: '#27272a', bubble: '💰', patrolA: { gx: 8.2, gy: 9.8 }, patrolB: { gx: 8.2, gy: 13.8 } },
+        { id: nextUnitId++, type: 'CHIBI', name: 'Medic Specialist', gx: 6.3, gy: 11.8, targetGx: 6.3, targetGy: 14.2, shirt: '#8b5cf6', hair: '#451a03', bubble: '🌿', patrolA: { gx: 6.3, gy: 10.8 }, patrolB: { gx: 6.3, gy: 14.4 } },
+        { id: nextUnitId++, type: 'CHIBI', name: 'Quartermaster', gx: 10.1, gy: 12.5, targetGx: 13.2, targetGy: 12.5, shirt: '#f97316', hair: '#1c1917', bubble: '🛒', patrolA: { gx: 9.0, gy: 12.5 }, patrolB: { gx: 13.5, gy: 12.5 } },
+        { id: nextUnitId++, type: 'CHIBI', name: 'Park Ranger', gx: 4.1, gy: 9.4, targetGx: 6.2, targetGy: 9.4, shirt: '#eab308', hair: '#292524', bubble: '💰', patrolA: { gx: 3.8, gy: 9.4 }, patrolB: { gx: 6.4, gy: 9.4 } }
+      ];
+
+      const floatingTexts = [];
+      let activeBeam = null;
+
+      function resizeCanvas() {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.round(rect.width * dpr);
+        canvas.height = Math.round(rect.height * dpr);
+      }
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+
+      function drawTerrainSlab() {
+        const slabDepth = 32;
+        const grassLip = 6;
+        drawIsoBox(0, 0, -slabDepth, GRID_N, GRID_N, slabDepth - grassLip, '#7cb342', '#7c5841', '#614330', 1.8);
+        drawIsoBox(0, 0, -grassLip, GRID_N, GRID_N, grassLip, '#75a942', '#649436', '#4f7828', 1.6);
+
+        const pebbles = [
+          { side: 'L', pos: 2.5, z: -18, r: 7 },
+          { side: 'L', pos: 5.8, z: -22, r: 9 },
+          { side: 'L', pos: 9.4, z: -16, r: 6 },
+          { side: 'L', pos: 13.1, z: -20, r: 8 },
+          { side: 'R', pos: 3.2, z: -19, r: 8 },
+          { side: 'R', pos: 7.5, z: -17, r: 7 },
+          { side: 'R', pos: 11.8, z: -21, r: 9 }
+        ];
+        for (const pb of pebbles) {
+          const pt = pb.side === 'L'
+            ? isoToScreen(pb.pos, GRID_N, pb.z)
+            : isoToScreen(GRID_N, pb.pos, pb.z);
+          ctx.fillStyle = pb.side === 'L' ? '#967056' : '#4d3324';
+          ctx.strokeStyle = INK;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.ellipse(pt.x, pt.y, pb.r, pb.r * 0.55, pb.side === 'L' ? 0.35 : -0.35, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+
+        const w00 = isoToScreen(0.4, 0.4, 0.5);
+        const w10 = isoToScreen(5.2, 0.4, 0.5);
+        const w11 = isoToScreen(5.2, 5.2, 0.5);
+        const w01 = isoToScreen(0.4, 5.2, 0.5);
+        ctx.fillStyle = '#6db3dc';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(w00.x, w00.y);
+        ctx.lineTo(w10.x, w10.y);
+        ctx.lineTo(w11.x, w11.y);
+        ctx.lineTo(w01.x, w01.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        const boatX = 3.5 + Math.sin(time * 1.3) * 0.25;
+        const boatY = 2.9 + Math.cos(time * 1.1) * 0.15;
+        const bPt = isoToScreen(boatX, boatY, 1.5);
+        ctx.fillStyle = '#f8fafc';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.ellipse(bPt.x, bPt.y, 11, 5.5, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#c84b31';
+        ctx.fillRect(bPt.x - 5, bPt.y - 6, 8, 5);
+        ctx.strokeRect(bPt.x - 5, bPt.y - 6, 8, 5);
+
+        const roads = [
+          { gx: 0.9, gy: 0.4, w: 1.7, d: 14.4 },
+          { gx: 2.6, gy: 3.4, w: 11.9, d: 1.4 },
+          { gx: 7.2, gy: 4.8, w: 1.4, d: 10.0 },
+          { gx: 2.6, gy: 12.0, w: 12.2, d: 1.5 }
+        ];
+
+        for (const r of roads) {
+          const p0 = isoToScreen(r.gx - 0.18, r.gy - 0.18, 0.6);
+          const p1 = isoToScreen(r.gx + r.w + 0.18, r.gy - 0.18, 0.6);
+          const p2 = isoToScreen(r.gx + r.w + 0.18, r.gy + r.d + 0.18, 0.6);
+          const p3 = isoToScreen(r.gx - 0.18, r.gy + r.d + 0.18, 0.6);
+          ctx.fillStyle = '#e5dccb';
+          ctx.strokeStyle = INK;
+          ctx.lineWidth = 1.3;
+          ctx.beginPath();
+          ctx.moveTo(p0.x, p0.y);
+          ctx.lineTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.lineTo(p3.x, p3.y);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        }
+
+        for (const r of roads) {
+          const p0 = isoToScreen(r.gx, r.gy, 0.8);
+          const p1 = isoToScreen(r.gx + r.w, r.gy, 0.8);
+          const p2 = isoToScreen(r.gx + r.w, r.gy + r.d, 0.8);
+          const p3 = isoToScreen(r.gx, r.gy + r.d, 0.8);
+          ctx.fillStyle = '#c9b9a6';
+          ctx.beginPath();
+          ctx.moveTo(p0.x, p0.y);
+          ctx.lineTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.lineTo(p3.x, p3.y);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.save();
+          ctx.strokeStyle = '#f8f5f0';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([6, 6]);
+          ctx.beginPath();
+          if (r.w > r.d) {
+            const a = isoToScreen(r.gx + 0.3, r.gy + r.d * 0.5, 1.0);
+            const b = isoToScreen(r.gx + r.w - 0.3, r.gy + r.d * 0.5, 1.0);
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+          } else {
+            const a = isoToScreen(r.gx + r.w * 0.5, r.gy + 0.3, 1.0);
+            const b = isoToScreen(r.gx + r.w * 0.5, r.gy + r.d - 0.3, 1.0);
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+          }
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        const pondPt = isoToScreen(5.6, 14.3, 1.0);
+        ctx.fillStyle = '#5da9d6';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.ellipse(pondPt.x, pondPt.y, 32, 16, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      function drawGoldenGateBridge() {
+        drawIsoBox(0.9, 0.4, 6, 1.7, 4.1, 3.5, '#c9b9a6', '#b8432b', '#8f2e1b', 1.6);
+        const towerGys = [1.4, 3.4];
+        for (const tgy of towerGys) {
+          drawIsoBox(0.82, tgy - 0.12, 0, 0.24, 0.24, 68, '#d95338', '#c84328', '#962d18', 1.5);
+          drawIsoBox(2.48, tgy - 0.12, 0, 0.24, 0.24, 68, '#d95338', '#c84328', '#962d18', 1.5);
+          drawIsoBox(0.85, tgy - 0.08, 32, 1.85, 0.16, 4, '#d95338', '#c84328', '#962d18', 1.3);
+          drawIsoBox(0.85, tgy - 0.08, 50, 1.85, 0.16, 4, '#d95338', '#c84328', '#962d18', 1.3);
+          drawIsoBox(0.85, tgy - 0.08, 64, 1.85, 0.16, 3.5, '#d95338', '#c84328', '#962d18', 1.3);
+        }
+
+        for (const gxSide of [0.94, 2.60]) {
+          ctx.strokeStyle = '#a3321d';
+          ctx.lineWidth = 2.0;
+          ctx.beginPath();
+          const steps = 24;
+          for (let i = 0; i <= steps; i++) {
+            const gy = 0.4 + (i / steps) * 4.1;
+            let cableZ = 10;
+            if (gy < 1.4) {
+              const u = (gy - 0.4) / 1.0;
+              cableZ = 10 + u * u * 58;
+            } else if (gy <= 3.4) {
+              const u = (gy - 2.4) / 1.0;
+              cableZ = 26 + u * u * 42;
+            } else {
+              const u = (4.5 - gy) / 1.1;
+              cableZ = 10 + u * u * 58;
+            }
+            const pt = isoToScreen(gxSide, gy, cableZ);
+            if (i === 0) ctx.moveTo(pt.x, pt.y);
+            else ctx.lineTo(pt.x, pt.y);
+
+            if (i % 2 === 0) {
+              const deckPt = isoToScreen(gxSide, gy, 9.5);
+              ctx.save();
+              ctx.strokeStyle = 'rgba(140, 42, 24, 0.65)';
+              ctx.lineWidth = 1.1;
+              ctx.beginPath();
+              ctx.moveTo(pt.x, pt.y);
+              ctx.lineTo(deckPt.x, deckPt.y);
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
+          ctx.stroke();
+        }
+      }
+
+      function drawBuilding(b) {
+        const isHov = hoveredBuildingId === b.id || selectedId === b.id;
+        const baseZ = 1.0;
+
+        if (b.type === 'SCAFFOLD') {
+          b.progress = Math.min(1, (b.progress || 0) + 0.004);
+          const curH = b.h * b.progress;
+          drawIsoBox(b.gx, b.gy, baseZ, b.w, b.d, Math.max(4, curH), '#e2d5be', '#c9b38c', '#9e8863', 1.6);
+          const p0 = isoToScreen(b.gx, b.gy + b.d, baseZ);
+          const p1 = isoToScreen(b.gx + b.w, b.gy + b.d, baseZ + b.h);
+          ctx.strokeStyle = '#d97706';
+          ctx.lineWidth = 1.6;
+          ctx.strokeRect(p0.x - 14, p1.y, 34, p0.y - p1.y);
+          if (b.progress >= 1) b.type = 'OFFICE';
+          return;
+        }
+
+        if (b.type === 'VICTORIAN') {
+          drawIsoBox(b.gx, b.gy, baseZ, b.w, b.d, b.h, b.roof, b.color, shadeColor(b.color, -24), 1.6);
+          drawIsoWindows(b.gx, b.gy, baseZ, b.w, b.d, b.h, 2, 2, 2, '#bae6fd', b.garrisoned > 0 ? 1 : 0);
+          drawVictorianGable(b.gx, b.gy, baseZ + b.h, b.w, b.d, 13, b.roof, shadeColor(b.color, 12));
+          if (b.garrisoned > 0) {
+            const topPt = isoToScreen(b.gx + b.w * 0.5, b.gy + b.d * 0.5, baseZ + b.h + 18);
+            drawComicBubble(topPt.x, topPt.y, `🛡️x${b.garrisoned}`, '#dcfce7');
+          }
+        } else if (b.type === 'PYRAMID') {
+          const p10 = isoToScreen(b.gx + b.w, b.gy, baseZ);
+          const p11 = isoToScreen(b.gx + b.w, b.gy + b.d, baseZ);
+          const p01 = isoToScreen(b.gx, b.gy + b.d, baseZ);
+          const apex = isoToScreen(b.gx + b.w * 0.5, b.gy + b.d * 0.5, baseZ + b.h);
+
+          ctx.fillStyle = '#d8dee9';
+          ctx.strokeStyle = INK;
+          ctx.lineWidth = 1.7;
+          ctx.beginPath();
+          ctx.moveTo(p01.x, p01.y);
+          ctx.lineTo(p11.x, p11.y);
+          ctx.lineTo(apex.x, apex.y);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#b8c4d4';
+          ctx.beginPath();
+          ctx.moveTo(p10.x, p10.y);
+          ctx.lineTo(p11.x, p11.y);
+          ctx.lineTo(apex.x, apex.y);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          for (let i = 1; i <= 7; i++) {
+            const t = i / 9;
+            const lPt = isoToScreen(b.gx + b.w * 0.5 * t, b.gy + b.d * (1 - 0.5 * t), baseZ + b.h * t);
+            const mPt = isoToScreen(b.gx + b.w * (1 - 0.5 * t), b.gy + b.d * (1 - 0.5 * t), baseZ + b.h * t);
+            const rPt = isoToScreen(b.gx + b.w * (1 - 0.5 * t), b.gy + b.d * 0.5 * t, baseZ + b.h * t);
+            ctx.strokeStyle = '#64748b';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(lPt.x, lPt.y);
+            ctx.lineTo(mPt.x, mPt.y);
+            ctx.lineTo(rPt.x, rPt.y);
+            ctx.stroke();
+          }
+        } else if (b.type === 'SKYSCRAPER') {
+          drawIsoBox(b.gx, b.gy, baseZ, b.w, b.d, 18, '#dbeafe', '#e2e8f0', '#cbd5e1', 1.7);
+          drawIsoBox(b.gx + 0.12, b.gy + 0.12, baseZ + 18, b.w - 0.24, b.d - 0.24, b.h - 26, '#bae6fd', '#5ea4bf', '#468299', 1.7);
+          drawIsoWindows(b.gx + 0.12, b.gy + 0.12, baseZ + 18, b.w - 0.24, b.d - 0.24, b.h - 26, 7, 3, 3, '#a5f3fc', 3);
+          drawIsoBox(b.gx + 0.35, b.gy + 0.35, baseZ + b.h - 8, b.w - 0.7, b.d - 0.7, 10, '#e0f2fe', '#93c5fd', '#60a5fa', 1.5);
+        } else if (b.type === 'FERRY_DOCK') {
+          drawIsoBox(b.gx, b.gy, baseZ, b.w, b.d, b.h, '#9bb8d3', '#6b8fae', '#527391', 1.7);
+          drawIsoWindows(b.gx, b.gy, baseZ, b.w, b.d, b.h, 2, 5, 2, '#e0f2fe', 0);
+          drawIsoBox(b.gx + 1.1, b.gy + 0.3, baseZ + b.h, 0.85, 0.85, 34, '#cbd5e1', '#94a3b8', '#64748b', 1.6);
+          drawIsoBox(b.gx + 0.2, b.gy + 1.55, baseZ, 0.5, 0.5, 8, '#fde047', '#eab308', '#ca8a04', 1.3);
+          drawIsoBox(b.gx + 0.8, b.gy + 1.55, baseZ, 0.5, 0.5, 8, '#fde047', '#eab308', '#ca8a04', 1.3);
+        } else if (b.type === 'COIT') {
+          drawIsoBox(b.gx, b.gy, baseZ, b.w, b.d, b.h, '#f5f0e1', '#dfd7c2', '#bfb69f', 1.6);
+          drawIsoBox(b.gx + 0.2, b.gy + 0.2, baseZ + b.h, b.w - 0.4, b.d - 0.4, 11, '#f8fafc', '#cbd5e1', '#94a3b8', 1.4);
+        } else if (b.type === 'ROTUNDA') {
+          drawIsoBox(b.gx, b.gy, baseZ, b.w, b.d, 22, '#e8cfa8', '#d4b284', '#b08f63', 1.6);
+          const domePt = isoToScreen(b.gx + b.w * 0.5, b.gy + b.d * 0.5, baseZ + 22);
+          ctx.fillStyle = '#dfbe92';
+          ctx.strokeStyle = INK;
+          ctx.lineWidth = 1.7;
+          ctx.beginPath();
+          ctx.arc(domePt.x, domePt.y, 20, Math.PI, 0);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        } else {
+          drawIsoBox(b.gx, b.gy, baseZ, b.w, b.d, b.h, b.roof || shadeColor(b.color, 18), b.color, shadeColor(b.color, -22), 1.7);
+          drawIsoWindows(b.gx, b.gy, baseZ, b.w, b.d, b.h, b.rows || 4, b.cols || 3, b.cols || 2, '#93c5fd', 4);
+          drawIsoBox(b.gx + 0.35, b.gy + 0.35, baseZ + b.h, 0.55, 0.55, 6, '#cbd5e1', '#94a3b8', '#64748b', 1.3);
+        }
+
+        if (isHov) {
+          const cPt = isoToScreen(b.gx + b.w * 0.5, b.gy + b.d * 0.5, baseZ + b.h + 12);
+          ctx.fillStyle = '#fef08a';
+          ctx.strokeStyle = INK;
+          ctx.lineWidth = 1.4;
+          ctx.font = 'bold 12px sans-serif';
+          const tw = ctx.measureText(b.name).width + 14;
+          ctx.fillRect(cPt.x - tw * 0.5, cPt.y - 11, tw, 20);
+          ctx.strokeRect(cPt.x - tw * 0.5, cPt.y - 11, tw, 20);
+          ctx.fillStyle = INK;
+          ctx.textAlign = 'center';
+          ctx.fillText(b.name, cPt.x, cPt.y + 3);
+        }
+      }
+
+      function drawTree(t) {
+        const pt = isoToScreen(t.gx, t.gy, 1.0);
+        const s = (t.scale || 1) * 1.15;
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+
+        ctx.fillStyle = '#6d4c3d';
+        ctx.fillRect(pt.x - 2 * s, pt.y - 9 * s, 4 * s, 9 * s);
+        ctx.strokeRect(pt.x - 2 * s, pt.y - 9 * s, 4 * s, 9 * s);
+
+        if (t.type === 'PINE') {
+          ctx.fillStyle = '#3b823e';
+          ctx.beginPath();
+          ctx.moveTo(pt.x, pt.y - 26 * s);
+          ctx.lineTo(pt.x + 8 * s, pt.y - 8 * s);
+          ctx.lineTo(pt.x - 8 * s, pt.y - 8 * s);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = '#4e8c3a';
+          ctx.beginPath();
+          ctx.arc(pt.x - 4 * s, pt.y - 14 * s, 7 * s, 0, Math.PI * 2);
+          ctx.arc(pt.x + 4 * s, pt.y - 13 * s, 6.5 * s, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#68ab48';
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y - 17 * s, 7.5 * s, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+
+      function drawComicBubble(x, y, iconText, bg = '#ffffff') {
+        const bob = Math.sin(time * 5 + x * 0.1) * 2.5;
+        const by = y + bob;
+        const w = iconText.length > 2 ? 38 : 24;
+        const h = 21;
+        const r = 5;
+
+        ctx.save();
+        ctx.fillStyle = bg;
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.6;
+
+        const x0 = x - w * 0.5;
+        const y0 = by - h - 6;
+
+        ctx.beginPath();
+        ctx.moveTo(x0 + r, y0);
+        ctx.lineTo(x0 + w - r, y0);
+        ctx.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+        ctx.lineTo(x0 + w, y0 + h - r);
+        ctx.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+        ctx.lineTo(x + 4, y0 + h);
+        ctx.lineTo(x, y0 + h + 6);
+        ctx.lineTo(x - 4, y0 + h);
+        ctx.lineTo(x0 + r, y0 + h);
+        ctx.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
+        ctx.lineTo(x0, y0 + r);
+        ctx.quadraticCurveTo(x0, y0, x0 + r, y0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = INK;
+        ctx.fillText(iconText, x, y0 + h * 0.52);
+        ctx.restore();
+      }
+
+      function drawUnit(u) {
+        const isBridge = u.gx >= 0.85 && u.gx <= 2.65 && u.gy >= 0.4 && u.gy <= 4.5;
+        const baseZ = isBridge ? 10.0 : 1.2;
+        const pt = isoToScreen(u.gx, u.gy, baseZ);
+        const isSel = selectedId === u.id;
+
+        if (isSel) {
+          ctx.strokeStyle = '#22c55e';
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          ctx.ellipse(pt.x, pt.y + 1, 14, 7, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        if (u.type === 'CHIBI') {
+          const walkBob = Math.abs(Math.sin(time * 12 + u.id * 1.7)) * 3.0;
+          const stride = Math.sin(time * 12 + u.id * 1.7) * 2.5;
+
+          ctx.fillStyle = 'rgba(43, 33, 28, 0.22)';
+          ctx.beginPath();
+          ctx.ellipse(pt.x, pt.y + 1, 6, 3, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = INK;
+          ctx.fillRect(pt.x - 3.5, pt.y - 3 + stride * 0.4, 2.5, 3.5);
+          ctx.fillRect(pt.x + 1, pt.y - 3 - stride * 0.4, 2.5, 3.5);
+
+          ctx.fillStyle = u.shirt || '#3b82f6';
+          ctx.strokeStyle = INK;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.roundRect(pt.x - 4.5, pt.y - 11 - walkBob, 9, 8.5, 3);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#f6ccb0';
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y - 15.5 - walkBob, 5.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = u.hair || '#2b211c';
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y - 16.8 - walkBob, 5.3, Math.PI, 0);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          if (u.bubble) {
+            drawComicBubble(pt.x, pt.y - 23 - walkBob, u.bubble);
+          }
+        } else {
+          drawIsoBox(u.gx - 0.28, u.gy - 0.28, baseZ, 0.56, 0.56, 8, shadeColor(u.color, 18), u.color, shadeColor(u.color, -22), 1.5);
+          drawIsoBox(u.gx - 0.16, u.gy - 0.16, baseZ + 8, 0.32, 0.32, 5, '#f8fafc', '#bae6fd', '#7dd3fc', 1.3);
+
+          if (u.type === 'TANK') {
+            const topPt = isoToScreen(u.gx, u.gy, baseZ + 11);
+            ctx.strokeStyle = INK;
+            ctx.lineWidth = 3.0;
+            ctx.beginPath();
+            ctx.moveTo(topPt.x, topPt.y);
+            ctx.lineTo(topPt.x + 13, topPt.y - 5);
+            ctx.stroke();
+          }
+
+          if (u.bubble) {
+            const topPt = isoToScreen(u.gx, u.gy, baseZ + 16);
+            drawComicBubble(topPt.x, topPt.y, u.bubble);
+          }
+        }
+      }
+
+      function update(dt) {
+        time += dt;
+
+        for (const u of units) {
+          const dx = u.targetGx - u.gx;
+          const dy = u.targetGy - u.gy;
+          const dist = Math.hypot(dx, dy);
+          const speed = u.type === 'CHIBI' ? 0.85 : 1.55;
+
+          if (dist < 0.15) {
+            if (u.patrolA && u.patrolB) {
+              const toA = Math.hypot(u.gx - u.patrolA.gx, u.gy - u.patrolA.gy);
+              const next = toA < 0.4 ? u.patrolB : u.patrolA;
+              u.targetGx = next.gx;
+              u.targetGy = next.gy;
+              if (u.type === 'SUPPLY_TRUCK' && toA < 0.4) {
+                credits += 450;
+                creditsEl.textContent = '$' + credits.toLocaleString();
+                const pt = isoToScreen(u.gx, u.gy, 20);
+                floatingTexts.push({ x: pt.x, y: pt.y, text: '+$450 SUPPLY', timer: 1.4 });
+              }
+            }
+          } else {
+            u.gx += (dx / dist) * speed * dt;
+            u.gy += (dy / dist) * speed * dt;
+          }
+        }
+
+        for (let i = floatingTexts.length - 1; i >= 0; i--) {
+          floatingTexts[i].timer -= dt;
+          floatingTexts[i].y -= 20 * dt;
+          if (floatingTexts[i].timer <= 0) floatingTexts.splice(i, 1);
+        }
+
+        if (activeBeam) {
+          activeBeam.timer -= dt;
+          activeBeam.gx += 0.7 * dt;
+          if (activeBeam.timer <= 0) activeBeam = null;
+        }
+      }
+
+      function render() {
+        const dpr = window.devicePixelRatio || 1;
+        const w = canvas.width / dpr;
+        const h = canvas.height / dpr;
+
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        ctx.fillStyle = '#f6f3ee';
+        ctx.fillRect(0, 0, w, h);
+
+        ctx.translate(w * 0.5 + camX, h * 0.25 + camY);
+        ctx.scale(zoom, zoom);
+
+        drawTerrainSlab();
+
+        const drawList = [];
+        for (const b of buildings) {
+          drawList.push({ depth: (b.gx + b.w * 0.5) + (b.gy + b.d * 0.5), kind: 'B', item: b });
+        }
+        for (const t of trees) {
+          drawList.push({ depth: t.gx + t.gy, kind: 'T', item: t });
+        }
+        for (const u of units) {
+          drawList.push({ depth: u.gx + u.gy + 0.1, kind: 'U', item: u });
+        }
+        drawList.sort((a, b) => a.depth - b.depth);
+
+        for (const entry of drawList) {
+          if (entry.kind === 'B') drawBuilding(entry.item);
+          else if (entry.kind === 'T') drawTree(entry.item);
+          else if (entry.kind === 'U') drawUnit(entry.item);
+        }
+
+        drawGoldenGateBridge();
+
+        if (activeBeam) {
+          const bPt = isoToScreen(activeBeam.gx, activeBeam.gy, 2);
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+          ctx.fillRect(bPt.x - 18, bPt.y - 400, 36, 400);
+          ctx.fillStyle = '#e0f2fe';
+          ctx.strokeStyle = INK;
+          ctx.lineWidth = 1.6;
+          ctx.fillRect(bPt.x - 7, bPt.y - 400, 14, 400);
+          ctx.strokeRect(bPt.x - 7, bPt.y - 400, 14, 400);
+          ctx.beginPath();
+          ctx.ellipse(bPt.x, bPt.y, 28, 14, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+
+        for (const ft of floatingTexts) {
+          ctx.font = 'bold 13px sans-serif';
+          ctx.fillStyle = '#15803d';
+          ctx.textAlign = 'center';
+          ctx.fillText(ft.text, ft.x, ft.y);
+        }
+
+        ctx.restore();
+      }
+
+      canvas.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        dragMoved = false;
+        dragStartX = e.clientX - camX;
+        dragStartY = e.clientY - camY;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left - (rect.width * 0.5 + camX)) / zoom;
+        const my = (e.clientY - rect.top - (rect.height * 0.25 + camY)) / zoom;
+        const iso = screenToIso(mx, my);
+
+        hoveredBuildingId = null;
+        for (const b of buildings) {
+          if (iso.gx >= b.gx && iso.gx <= b.gx + b.w && iso.gy >= b.gy && iso.gy <= b.gy + b.d) {
+            hoveredBuildingId = b.id;
+            break;
+          }
+        }
+
+        if (isDragging) {
+          const nx = e.clientX - dragStartX;
+          const ny = e.clientY - dragStartY;
+          if (Math.hypot(nx - camX, ny - camY) > 4) dragMoved = true;
+          camX = nx;
+          camY = ny;
+        }
+      });
+
+      window.addEventListener('mouseup', (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        if (dragMoved) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left - (rect.width * 0.5 + camX)) / zoom;
+        const my = (e.clientY - rect.top - (rect.height * 0.25 + camY)) / zoom;
+        const iso = screenToIso(mx, my);
+
+        const hitUnit = units.find(u => Math.hypot(u.gx - iso.gx, u.gy - iso.gy) < 0.85);
+        if (hitUnit) {
+          selectedId = hitUnit.id;
+          selectedEl.textContent = `Selected: ${hitUnit.name} (Click road to move)`;
+          return;
+        }
+
+        const selUnit = units.find(u => u.id === selectedId);
+        if (selUnit && iso.gx >= 0.5 && iso.gx <= 15.2 && iso.gy >= 0.5 && iso.gy <= 15.2) {
+          selUnit.targetGx = iso.gx;
+          selUnit.targetGy = iso.gy;
+          selUnit.patrolA = null;
+          selUnit.patrolB = null;
+          selUnit.bubble = '📍';
+          selectedEl.textContent = `${selUnit.name} moving to (${iso.gx.toFixed(1)}, ${iso.gy.toFixed(1)})`;
+        }
+      });
+
+      canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        zoom = Math.max(0.65, Math.min(1.65, zoom - e.deltaY * 0.001));
+      }, { passive: false });
+
+      document.getElementById('btnSpawnTank').addEventListener('click', () => {
+        const u = {
+          id: nextUnitId++,
+          type: 'TANK',
+          name: 'Crusader MBT',
+          gx: 11.4,
+          gy: 12.4,
+          targetGx: 7.8,
+          targetGy: 6.2,
+          color: '#3b82f6',
+          bubble: '🎯'
+        };
+        units.push(u);
+        selectedId = u.id;
+        selectedEl.textContent = 'Spawned Crusader Tank at War Factory!';
+      });
+
+      document.getElementById('btnSpawnSquad').addEventListener('click', () => {
+        const icons = ['💰', '🛒', '📍', '🎯'];
+        const colors = ['#ef4444', '#3b82f6', '#10b981', '#8b5cf6'];
+        const u = {
+          id: nextUnitId++,
+          type: 'CHIBI',
+          name: 'Chibi Ranger Squad',
+          gx: 8.0 + (Math.random() - 0.5),
+          gy: 12.6,
+          targetGx: 7.8,
+          targetGy: 5.5,
+          shirt: colors[units.length % colors.length],
+          hair: '#2b211c',
+          bubble: icons[units.length % icons.length]
+        };
+        units.push(u);
+        selectedId = u.id;
+        selectedEl.textContent = 'Spawned Chibi Squad with status bubble!';
+      });
+
+      document.getElementById('btnBuild').addEventListener('click', () => {
+        buildings.push({
+          id: 'b_' + Date.now(),
+          type: 'SCAFFOLD',
+          name: 'New Patriot Defense Tower',
+          gx: 3.1,
+          gy: 6.2,
+          w: 1.5,
+          d: 1.5,
+          h: 44,
+          color: '#7ea3c4',
+          roof: '#4b6884',
+          progress: 0.05
+        });
+        selectedEl.textContent = 'Constructing 3D Isometric Building with Scaffolding!';
+      });
+
+      document.getElementById('btnGarrison').addEventListener('click', () => {
+        const vics = buildings.filter(b => b.type === 'VICTORIAN');
+        const target = vics[Math.floor(Math.random() * vics.length)];
+        target.garrisoned = ((target.garrisoned || 0) % 4) + 1;
+        selectedEl.textContent = `Garrisoned ${target.name} (${target.garrisoned}/4 squads inside)!`;
+      });
+
+      document.getElementById('btnAirstrike').addEventListener('click', () => {
+        activeBeam = { gx: 6.5, gy: 7.5, timer: 2.2 };
+        selectedEl.textContent = 'Orbital Particle Cannon Sweep Active!';
+      });
+
+      let last = performance.now();
+      function loop(now) {
+        const dt = Math.min(0.05, (now - last) / 1000);
+        last = now;
+        update(dt);
+        render();
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+    })();
+  </script>
+</body>
+</html>

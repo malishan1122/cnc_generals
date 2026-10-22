@@ -2344,6 +2344,10 @@ window.ZH_ENGINE = (function () {
           const by = clamp(site.y + Math.sin(ang) * standDist, 35, WORLD_SIZE - 35);
           this.moveUnitToward(u, bx, by, dt);
         } else {
+          u.angle = angleBetween(u.x, u.y, site.x, site.y);
+          u.turretAngle = u.angle;
+          u.treadPhase = ((u.treadPhase || 0) + dt * 1.8) % 1;
+          u.recoilOffset = Math.max(u.recoilOffset || 0, 3.2);
           const mod = this.teams[u.team].general.modifiers || {};
           let buildTime = site.def.buildTime || 12;
           if (site.def.isTunnel && mod.tunnelCostMult) buildTime *= 0.7;
@@ -3473,11 +3477,18 @@ window.ZH_ENGINE = (function () {
     renderMoveMarkers(ctx) {
       if (!this.moveMarkers || this.moveMarkers.length === 0) return;
       for (const m of this.moveMarkers) {
-        const p = clamp(m.t / 0.45, 0, 1);
+        const elapsed = Number.isFinite(m.t) ? m.t : (Number.isFinite(m.age) ? m.age : 0);
+        const p = clamp(elapsed / 0.45, 0, 1);
         const r = 24 * (1 - p * 0.72);
         const alpha = (1 - p) * 0.85;
+        const isAttack = m.kind === 'attack' || m.color === '#ef4444';
+        const isTactical = m.kind === 'tactical' || m.color === '#eab308';
         ctx.save();
-        ctx.strokeStyle = m.kind === 'attack' ? `rgba(239, 68, 68, ${alpha})` : `rgba(34, 197, 94, ${alpha})`;
+        ctx.strokeStyle = isAttack
+          ? `rgba(239, 68, 68, ${alpha})`
+          : isTactical
+          ? `rgba(234, 179, 8, ${alpha})`
+          : `rgba(34, 197, 94, ${alpha})`;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(m.x, m.y, r, 0, Math.PI * 2);
@@ -3762,6 +3773,19 @@ window.ZH_ENGINE = (function () {
           ctx.moveTo(bx0 + arm, by0 + bh); ctx.lineTo(bx0, by0 + bh); ctx.lineTo(bx0, by0 + bh - arm);
           ctx.stroke();
 
+          // Defensive Turret / Structure Engagement Range Ring
+          const bRange = b.def.range || (b.def.weapon && b.def.weapon.range) || 0;
+          if (bRange > 0 && b.constructed) {
+            ctx.save();
+            ctx.setLineDash([7, 5]);
+            ctx.strokeStyle = b.team === 0 ? 'rgba(56, 189, 248, 0.52)' : 'rgba(239, 68, 68, 0.52)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, bRange, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+
           if (isSel && b.def.trains && b.def.trains.length > 0) {
             ctx.save();
             ctx.setLineDash([8, 6]);
@@ -3793,29 +3817,37 @@ window.ZH_ENGINE = (function () {
           ctx.stroke();
         }
 
-        // 2.5D Shadow & Base Block
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
-        ctx.fillRect(b.x - half + 6, b.y - half + 8, s, s);
+        // 2.5D Ligne-Claire Isometric Building Sprite + 60 FPS Procedural Sub-Animations
+        const drewLigneClaire = (window.ZH_VFX && ZH_VFX.renderLigneClaireBuilding)
+          ? ZH_VFX.renderLigneClaireBuilding(ctx, b, team, this.gameTime)
+          : false;
 
-        ctx.fillStyle = b.constructed ? '#1e293b' : 'rgba(30, 41, 59, 0.55)';
-        ctx.strokeStyle = col;
-        ctx.lineWidth = 3;
-        ctx.fillRect(b.x - half, b.y - half, s, s);
-        ctx.strokeRect(b.x - half, b.y - half, s, s);
+        if (!drewLigneClaire) {
+          // Fallback 2.5D Shadow & Base Block while sprite loads
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+          ctx.fillRect(b.x - half + 6, b.y - half + 8, s, s);
 
-        // Faction Roof Detail
-        ctx.fillStyle = dark;
-        ctx.fillRect(b.x - half + 8, b.y - half + 8, s - 16, s - 16);
+          ctx.fillStyle = b.constructed ? '#1e293b' : 'rgba(30, 41, 59, 0.55)';
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 3;
+          ctx.fillRect(b.x - half, b.y - half, s, s);
+          ctx.strokeRect(b.x - half, b.y - half, s, s);
 
-        // Turret Barrel for Defenses
-        if (b.def.isDefense && b.constructed) {
-          ctx.save();
-          ctx.translate(b.x, b.y);
-          ctx.rotate(b.turretAngle);
-          ctx.fillStyle = col;
-          ctx.fillRect(0, -4, half + 10, 8);
-          ctx.restore();
+          // Faction Roof Detail
+          ctx.fillStyle = dark;
+          ctx.fillRect(b.x - half + 8, b.y - half + 8, s - 16, s - 16);
+
+          // Turret Barrel for Defenses
+          if (b.def.isDefense && b.constructed) {
+            ctx.save();
+            ctx.translate(b.x, b.y);
+            ctx.rotate(b.turretAngle);
+            ctx.fillStyle = col;
+            ctx.fillRect(0, -4, half + 10, 8);
+            ctx.restore();
+          }
         }
+
 
         // Phase 3 4-Stage Construction Scaffolding (SYS-21)
         if (!b.constructed) {
@@ -3830,7 +3862,7 @@ window.ZH_ENGINE = (function () {
             ctx.strokeRect(b.x - half + 3, b.y - half + 3, (s - 6) * b.buildProgress, s - 6);
           }
           this.queueLabel(b.x, b.y, `BUILDING ${Math.round(b.buildProgress * 100)}%`, '#fde047', 'rgba(8,14,24,0.85)', 'bold 10px -apple-system, monospace', 2);
-        } else {
+        } else if (isSel || isHov || this.showAllHealthBars || b.def.isSuperweapon) {
           this.queueLabel(b.x, b.y, b.def.shortName, '#f8fafc', 'rgba(8,14,24,0.78)', 'bold 10px -apple-system, monospace', isSel ? 3 : 1);
         }
 
@@ -3901,7 +3933,7 @@ window.ZH_ENGINE = (function () {
           ctx.stroke();
         }
 
-        // Ground Ellipse Selection & Hover Ring, Guard Leash Ring & Chained Waypoint Path (SYS-19)
+        // Ground Ellipse Selection & Hover Ring, Weapon Range Ring, Guard Leash Ring & Chained Waypoint Path (SYS-19)
         if (isSel || isHov) {
           ctx.strokeStyle = isSel ? '#22c55e' : 'rgba(34, 197, 94, 0.45)';
           ctx.lineWidth = isSel ? 2 : 1.25;
@@ -3912,6 +3944,43 @@ window.ZH_ENGINE = (function () {
             ctx.arc(u.x, u.y, r + 4, 0, Math.PI * 2);
           }
           ctx.stroke();
+
+          // Weapon Range Ring for hovered combat units, small selections (<=3), or long-range Siege/Sniper units
+          const wRange = (u.def.weapon && u.def.weapon.range) || 0;
+          if (wRange > 0 && (isHov || this.selectedIds.size <= 3 || u.def.category === 'ARTILLERY' || wRange >= 230)) {
+            ctx.save();
+            ctx.setLineDash([6, 6]);
+            ctx.strokeStyle = u.team === 0 ? 'rgba(56, 189, 248, 0.35)' : 'rgba(239, 68, 68, 0.42)';
+            ctx.lineWidth = 1.25;
+            ctx.beginPath();
+            ctx.arc(u.x, u.y, wRange, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // Focus-Fire Target Vector & Lock Brackets
+          if (isSel && u.targetEntityId && (u.state === 'ATTACK' || u.state === 'ATTACK_MOVE')) {
+            const tgt = (this.unitById && this.unitById.get(u.targetEntityId)) ||
+              (this.buildingById && this.buildingById.get(u.targetEntityId));
+            if (tgt && tgt.hp > 0 && (tgt.team === 0 || this.isPositionVisible(tgt.x, tgt.y))) {
+              ctx.save();
+              ctx.setLineDash([4, 5]);
+              ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
+              ctx.lineWidth = 1.2;
+              ctx.beginPath();
+              ctx.moveTo(u.x, u.y);
+              ctx.lineTo(tgt.x, tgt.y);
+              ctx.stroke();
+              ctx.setLineDash([]);
+              const tr = (tgt.radius || (tgt.def && tgt.def.size ? tgt.def.size * 0.5 : 16)) + 5;
+              ctx.strokeStyle = 'rgba(239, 68, 68, 0.8)';
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              ctx.arc(tgt.x, tgt.y, tr, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
 
           if (isSel && u.state === 'GUARD') {
             ctx.save();
@@ -4137,11 +4206,15 @@ window.ZH_ENGINE = (function () {
           const s = def.size;
           const valid = this.canPlaceBuildingAt(this.pendingBuildId, 0, mx, my);
           ctx.save();
-          ctx.strokeStyle = valid ? '#22c55e' : '#ef4444';
-          ctx.fillStyle = valid ? 'rgba(34, 197, 94, 0.24)' : 'rgba(239, 68, 68, 0.28)';
-          ctx.lineWidth = 2;
-          ctx.fillRect(mx - s / 2, my - s / 2, s, s);
-          ctx.strokeRect(mx - s / 2, my - s / 2, s, s);
+          if (window.ZH_VFX && ZH_VFX.renderLigneClaireBuildingGhost) {
+            ZH_VFX.renderLigneClaireBuildingGhost(ctx, this.pendingBuildId, mx, my, s, valid);
+          } else {
+            ctx.strokeStyle = valid ? '#22c55e' : '#ef4444';
+            ctx.fillStyle = valid ? 'rgba(34, 197, 94, 0.24)' : 'rgba(239, 68, 68, 0.28)';
+            ctx.lineWidth = 2;
+            ctx.fillRect(mx - s / 2, my - s / 2, s, s);
+            ctx.strokeRect(mx - s / 2, my - s / 2, s, s);
+          }
 
           const rangeR = def.range || def.auraRadius || 0;
           if (rangeR > 0) {
@@ -4156,10 +4229,17 @@ window.ZH_ENGINE = (function () {
 
           const pwr = def.power || 0;
           const pwrStr = pwr > 0 ? `+${pwr}⚡` : pwr < 0 ? `${pwr}⚡` : '';
+          const team0 = this.teams && this.teams[0];
+          const wouldLowPower = Boolean(
+            team0 && team0.factionId !== 'GLA' && pwr < 0 &&
+            (team0.powerConsumed + Math.abs(pwr)) > team0.powerProduced
+          );
+          const lowPwrWarn = wouldLowPower ? ' ⚠️ LOW POWER' : '';
           const statusTxt = valid
-            ? `${def.shortName}${pwrStr ? ' (' + pwrStr + ')' : ''}`
+            ? `${def.shortName}${pwrStr ? ' (' + pwrStr + ')' : ''}${lowPwrWarn}`
             : `BLOCKED ${pwrStr ? '(' + pwrStr + ')' : ''}`;
-          this.queueLabel(mx, my - s / 2 - 12, statusTxt, valid ? '#4ade80' : '#f87171', 'rgba(8,14,24,0.9)', 'bold 10px -apple-system, monospace', 5);
+          const lblColor = !valid ? '#f87171' : (wouldLowPower ? '#fde047' : '#4ade80');
+          this.queueLabel(mx, my - s / 2 - 12, statusTxt, lblColor, 'rgba(8,14,24,0.9)', 'bold 10px -apple-system, monospace', 5);
           ctx.restore();
         }
       } else if (this.commandMode === 'POWER' || this.commandMode === 'SUPERWEAPON' || this.commandMode === 'ABILITY') {

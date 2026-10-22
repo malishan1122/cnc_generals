@@ -1,0 +1,2356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>USA Military Buildings — Ligne-Claire Animated Isometric Showcase (C&C Generals: Zero Hour)</title>
+  <style>
+    :root {
+      --bg-cream: #f4efe6;
+      --bg-card: #ffffff;
+      --ink: #2b241f;
+      --ink-muted: #655b52;
+      --usa-blue: #2563eb;
+      --usa-cyan: #06b6d4;
+      --usa-amber: #d97706;
+      --usa-emerald: #16a34a;
+      --usa-red: #dc2626;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-cream);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* Header */
+    header {
+      background: var(--bg-card);
+      border-bottom: 3px solid var(--ink);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      box-shadow: 0 4px 0 rgba(43, 36, 31, 0.08);
+      z-index: 20;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-badge {
+      background: #1d4ed8;
+      color: #fff;
+      font-weight: 900;
+      font-size: 12px;
+      padding: 5px 10px;
+      border-radius: 6px;
+      border: 2px solid var(--ink);
+      box-shadow: 2px 2px 0 var(--ink);
+      letter-spacing: 0.6px;
+    }
+    .brand h1 {
+      font-size: 16px;
+      font-weight: 900;
+      letter-spacing: -0.3px;
+    }
+    .brand p {
+      font-size: 12px;
+      color: var(--ink-muted);
+      font-weight: 600;
+    }
+
+    .mode-tabs {
+      display: flex;
+      gap: 8px;
+    }
+    .tab-btn {
+      background: #f3eee4;
+      color: var(--ink);
+      border: 2.5px solid var(--ink);
+      border-radius: 8px;
+      padding: 7px 13px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 2px 2px 0 var(--ink);
+      transition: transform 0.1s, background 0.15s;
+    }
+    .tab-btn:hover {
+      background: #e7dfd1;
+    }
+    .tab-btn.active {
+      background: #2563eb;
+      color: #ffffff;
+      transform: translate(1px, 1px);
+      box-shadow: 1px 1px 0 var(--ink);
+    }
+
+    /* Main Workspace */
+    .workspace {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 280px 1fr 330px;
+      min-height: 0;
+    }
+
+    /* Left Roster Sidebar */
+    .roster-panel {
+      background: var(--bg-card);
+      border-right: 3px solid var(--ink);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .panel-header {
+      padding: 12px 14px;
+      border-bottom: 2px solid #e5dec9;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-header h2 {
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: var(--ink-muted);
+    }
+    .roster-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .building-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 11px;
+      border-radius: 9px;
+      border: 2px solid var(--ink);
+      background: #faf7f2;
+      cursor: pointer;
+      text-align: left;
+      transition: transform 0.1s, background 0.15s;
+      box-shadow: 2px 2px 0 rgba(43, 36, 31, 0.14);
+    }
+    .building-card:hover {
+      background: #eef4ff;
+    }
+    .building-card.selected {
+      background: #dbeafe;
+      border-color: #1d4ed8;
+      box-shadow: 3px 3px 0 var(--ink);
+      transform: translate(-1px, -1px);
+    }
+    .b-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 7px;
+      border: 2px solid var(--ink);
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      flex-shrink: 0;
+    }
+    .b-meta {
+      flex: 1;
+      min-width: 0;
+    }
+    .b-name {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--ink);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .b-sub {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--ink-muted);
+      display: flex;
+      gap: 8px;
+      margin-top: 2px;
+    }
+    .pwr-pos { color: #0284c7; }
+    .pwr-neg { color: #d97706; }
+
+    /* Center Stage */
+    .stage-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: radial-gradient(circle at center, #f9f6f0 0%, #ede5d5 100%);
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+    }
+
+    /* Floating Stage HUD */
+    .stage-hud-top {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      pointer-events: none;
+    }
+    .hud-pill {
+      pointer-events: auto;
+      background: rgba(255, 255, 255, 0.95);
+      border: 2.5px solid var(--ink);
+      border-radius: 10px;
+      padding: 8px 13px;
+      box-shadow: 3px 3px 0 var(--ink);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .hud-stat {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .stage-hud-bottom {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      pointer-events: auto;
+      background: rgba(255, 255, 255, 0.95);
+      border: 2.5px solid var(--ink);
+      border-radius: 10px;
+      padding: 8px 12px;
+      box-shadow: 3px 3px 0 var(--ink);
+    }
+    .action-btn {
+      background: #fef3c7;
+      color: var(--ink);
+      border: 2px solid var(--ink);
+      border-radius: 7px;
+      padding: 6px 11px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 2px 2px 0 var(--ink);
+      transition: transform 0.1s, background 0.15s;
+      white-space: nowrap;
+    }
+    .action-btn:hover {
+      background: #fde68a;
+    }
+    .action-btn.primary {
+      background: #2563eb;
+      color: #fff;
+    }
+    .action-btn.primary:hover {
+      background: #1d4ed8;
+    }
+    .action-btn.danger {
+      background: #dc2626;
+      color: #fff;
+    }
+
+    /* Right Inspector Panel */
+    .inspector-panel {
+      background: var(--bg-card);
+      border-left: 3px solid var(--ink);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 16px;
+      gap: 14px;
+    }
+    .insp-title-box {
+      border-bottom: 2px solid #e5dec9;
+      padding-bottom: 12px;
+    }
+    .insp-category {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 5px;
+      border: 2px solid var(--ink);
+      background: #dbeafe;
+      color: #1e3a8a;
+      margin-bottom: 6px;
+    }
+    .insp-title {
+      font-size: 19px;
+      font-weight: 900;
+      line-height: 1.15;
+    }
+    .insp-desc {
+      font-size: 12.5px;
+      line-height: 1.45;
+      color: var(--ink-muted);
+      margin-top: 6px;
+      font-weight: 500;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .stat-box {
+      background: #faf7f2;
+      border: 2px solid var(--ink);
+      border-radius: 8px;
+      padding: 8px 10px;
+      box-shadow: 2px 2px 0 rgba(43, 36, 31, 0.1);
+    }
+    .stat-label {
+      font-size: 10.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+    }
+    .stat-val {
+      font-size: 14px;
+      font-weight: 900;
+      margin-top: 2px;
+    }
+
+    .research-card {
+      background: #f0f9ff;
+      border: 2px solid var(--ink);
+      border-radius: 9px;
+      padding: 11px 12px;
+      box-shadow: 2px 2px 0 rgba(43, 36, 31, 0.12);
+    }
+    .research-card h3 {
+      font-size: 11.5px;
+      font-weight: 900;
+      text-transform: uppercase;
+      color: #0369a1;
+      margin-bottom: 5px;
+      letter-spacing: 0.4px;
+    }
+    .research-card p, .research-card li {
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--ink);
+      font-weight: 500;
+    }
+    .research-card ul {
+      padding-left: 16px;
+      margin-top: 4px;
+    }
+
+    .anim-card {
+      background: #fefce8;
+      border: 2px solid var(--ink);
+      border-radius: 9px;
+      padding: 11px 12px;
+      box-shadow: 2px 2px 0 rgba(43, 36, 31, 0.12);
+    }
+    .anim-card h3 {
+      font-size: 11.5px;
+      font-weight: 900;
+      text-transform: uppercase;
+      color: #b45309;
+      margin-bottom: 5px;
+      letter-spacing: 0.4px;
+    }
+    .anim-card ul {
+      padding-left: 16px;
+      font-size: 12px;
+      line-height: 1.45;
+      font-weight: 600;
+    }
+
+    .chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 6px;
+    }
+    .chip {
+      font-size: 11px;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 5px;
+      border: 1.5px solid var(--ink);
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <span class="brand-badge" id="faction-badge">ALL 3 FACTIONS • 31 STRUCTURES</span>
+      <div>
+        <h1 id="header-title">C&amp;C Generals: Zero Hour — Animated Ligne-Claire Military Structures</h1>
+        <p>USA (10) • China PLA (12) • GLA (9) • Strictly Zero Civilian Buildings • Live 60 FPS Tactical Overlays &amp; Wired In-Game</p>
+      </div>
+    </div>
+    <div class="mode-tabs" style="align-items:center;">
+      <button class="tab-btn active" id="fac-USA" onclick="setFaction('USA')" style="border-color:#1d4ed8;">🦅 USA (10)</button>
+      <button class="tab-btn" id="fac-CHINA" onclick="setFaction('CHINA')" style="border-color:#dc2626;">🐉 China (12)</button>
+      <button class="tab-btn" id="fac-GLA" onclick="setFaction('GLA')" style="border-color:#15803d;">🦂 GLA (9)</button>
+      <span style="width:2px;height:24px;background:#d6cfc2;margin:0 4px;"></span>
+      <button class="tab-btn active" id="tab-fob" onclick="setViewMode('fob')">🏰 Base Diorama</button>
+      <button class="tab-btn" id="tab-inspector" onclick="setViewMode('inspector')">🔍 Studio</button>
+      <button class="tab-btn" id="tab-sheets" onclick="setViewMode('sheets')">🎨 Sprite Atlas</button>
+      <a class="tab-btn" href="index.html" style="text-decoration:none;background:#16a34a;color:#fff;">🎮 Play In-Game</a>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <!-- Left Roster Sidebar -->
+    <aside class="roster-panel">
+      <div class="panel-header">
+        <h2 id="roster-header-title">USA Military Roster (10)</h2>
+        <span id="roster-header-sub" style="font-size:11px;font-weight:800;color:#1d4ed8;">ZERO HOUR</span>
+      </div>
+      <div class="roster-list" id="roster-list"></div>
+    </aside>
+
+    <!-- Center Interactive Canvas Stage -->
+    <main class="stage-wrap">
+      <canvas id="diorama-canvas"></canvas>
+
+      <div class="stage-hud-top">
+        <div class="hud-pill">
+          <div class="hud-stat">⚡ <span>Base Power:</span> <strong id="hud-power" style="color:#0284c7;">+18 / 15 GW</strong></div>
+          <div class="hud-stat">💰 <span>Supply Funds:</span> <strong id="hud-credits" style="color:#16a34a;">$14,200</strong></div>
+          <div class="hud-stat">🛰️ <span>Battle Plan:</span> <strong id="hud-plan" style="color:#2563eb;">SEARCH &amp; DESTROY</strong></div>
+        </div>
+        <div class="hud-pill">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="chk-bubbles" checked onchange="toggleBubbles(this.checked)" />
+            <span>Status Bubbles</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="chk-fx" checked onchange="toggleFX(this.checked)" />
+            <span>60 FPS Animated FX</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="stage-hud-bottom">
+        <button class="action-btn primary" onclick="triggerSelectedBuildingAction()">⚡ Trigger Selected Building Action</button>
+        <button class="action-btn" onclick="cycleStrategyPlan()">🛰️ Cycle Strategy Plan</button>
+        <button class="action-btn" onclick="toggleReactorRods()">🔋 Toggle Fusion Control Rods (+100%)</button>
+        <button class="action-btn danger" onclick="fireParticleCannonStrike()">☄️ Fire Orbital Particle Cannon</button>
+      </div>
+    </main>
+
+    <!-- Right Building Research & Animation Inspector -->
+    <aside class="inspector-panel" id="inspector-panel"></aside>
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. RESEARCHED CANONICAL USA MILITARY BUILDINGS (FROM js/data.js + C&C WIKI)
+    // =========================================================================
+    const USA_BUILDINGS = [
+      {
+        id: 'USA_COMMAND_CENTER',
+        name: 'US Command Center',
+        shortName: 'Command Center',
+        icon: '📡',
+        category: 'HQ & Radar Hub',
+        cost: 2000,
+        hp: 2000,
+        power: 0,
+        footprint: '3×3 Tiles',
+        sheet: 1,
+        // Connected component seed box on sheet1 (1376x768)
+        crop: { x: 32, y: 20, w: 484, h: 380, seedX: 260, seedY: 220 },
+        fobPos: { gx: -0.30, gy: -0.26, scale: 0.44 },
+        bubbleText: '📡 RADAR SWEEP',
+        unlocks: ['Construction Dozer ($1000)', 'Radar Minimap', 'Generals Powers'],
+        description: 'Primary USA operational headquarters and field command center. Produces Construction Dozers, houses the battlefield radar dome, and coordinates satellite & air-support General Powers.',
+        visualResearch: 'Multi-tiered white/light-grey reinforced concrete modular bunker with navy-blue stripe trim, sloped blast walls, elevated blue-glass command bridge, twin parabolic radar dishes, radio mast, and dual yellow-striped Dozer rollout bays.',
+        animations: [
+          'Rotating rooftop primary radar dish sweep ring + expanding cyan radar ping wave',
+          'Blinking red aircraft-warning strobe light atop the communications mast',
+          'Illuminated command bridge telemetry scan across tinted blue observation windows',
+          'Dozer bay hazard beacon flashes when deploying engineering units'
+        ]
+      },
+      {
+        id: 'USA_REACTOR',
+        name: 'Cold Fusion Reactor',
+        shortName: 'Fusion Reactor',
+        icon: '⚡',
+        category: 'Base Power Plant',
+        cost: 800,
+        hp: 800,
+        power: 8,
+        footprint: '2×2 Tiles',
+        sheet: 1,
+        crop: { x: 556, y: 36, w: 328, h: 324, seedX: 715, seedY: 200 },
+        fobPos: { gx: -0.66, gy: -0.08, scale: 0.38 },
+        bubbleText: '⚡ +8 GW FUSION',
+        unlocks: ['Control Rods Upgrade (+100% Power → +16 GW)'],
+        description: 'High-efficiency clean nuclear fusion plant powering all USA base defenses and superweapons. Can be upgraded with Control Rods to double output from +8 to +16 Power.',
+        visualResearch: 'Circular reinforced concrete containment base with 4 symmetrical angled metallic cooling fins/radiator buttresses surrounding a transparent vertical plasma core cylinder and side step-down transformer.',
+        animations: [
+          'Pulsing cyan-blue plasma column inside the central containment cylinder',
+          'Rising concentric plasma containment rings ascending along the core',
+          'Control Rods Overcharge mode: doubles glow intensity + arcs electric blue corona sparks'
+        ]
+      },
+      {
+        id: 'USA_SUPPLY_CENTER',
+        name: 'Supply Center',
+        shortName: 'Supply Center',
+        icon: '🚁',
+        category: 'Economy & Logistics',
+        cost: 2000,
+        hp: 1500,
+        power: -1,
+        footprint: '3×3 Tiles',
+        sheet: 1,
+        crop: { x: 868, y: 24, w: 476, h: 320, seedX: 1110, seedY: 190 },
+        fobPos: { gx: 0.14, gy: -0.32, scale: 0.43 },
+        bubbleText: '💰 +$600 CHINOOK',
+        unlocks: ['Free Chinook Supply Helicopter', 'Supply Line Logistics'],
+        description: 'Automated military logistics depot with an elevated Chinook helipad and overhead gantry crane conveyor. Processes supply pallets into war funds.',
+        visualResearch: 'Elevated concrete logistics deck featuring a yellow-and-black striped Chinook landing pad ("H" circle), yellow steel overhead bridge crane over a sorting conveyor, and stacked olive-drab military crates & blue tarp pallets.',
+        animations: [
+          'Animated tandem-rotor Chinook supply helicopter descending & hovering over the H-pad',
+          'Chasing amber perimeter landing lights around the helipad apron',
+          'Reciprocating yellow gantry crane trolley + floating "+$600" supply credit popups'
+        ]
+      },
+      {
+        id: 'USA_BARRACKS',
+        name: 'US Barracks',
+        shortName: 'US Barracks',
+        icon: '🎖️',
+        category: 'Infantry Production',
+        cost: 500,
+        hp: 1200,
+        power: 0,
+        footprint: '2×2 Tiles',
+        sheet: 1,
+        crop: { x: 84, y: 348, w: 588, h: 400, seedX: 375, seedY: 560 },
+        fobPos: { gx: -0.46, gy: 0.18, scale: 0.40 },
+        bubbleText: '🎖️ RANGER SQUAD',
+        unlocks: ['Ranger ($225)', 'Missile Defender ($300)', 'Pathfinder ($600)', 'Colonel Burton ($1500)', 'Flashbangs & Capture'],
+        description: 'Fortified infantry training compound where Rangers, laser-guided Missile Defenders, Pathfinders, and Colonel Burton deploy onto the battlefield.',
+        visualResearch: 'Rectangular modular base camp enclosed by sloped perimeter blast walls, topped with the US military roundel star insignia, roll-up troop bay door, corner sandbagged guard tower with dual spotlights, and paved drill yard.',
+        animations: [
+          'Sweeping white searchlight cone from the sandbagged corner guard tower',
+          'Miniature cel-shaded Ranger & Missile Defender soldiers marching across the drill apron',
+          'Flashing amber deployment strobe above the troop rollout shutter door'
+        ]
+      },
+      {
+        id: 'USA_WAR_FACTORY',
+        name: 'US War Factory',
+        shortName: 'War Factory',
+        icon: '⚙️',
+        category: 'Armor & Vehicle Plant',
+        cost: 2000,
+        hp: 2000,
+        power: -1,
+        footprint: '3×3 Tiles',
+        sheet: 1,
+        crop: { x: 756, y: 348, w: 528, h: 396, seedX: 1020, seedY: 560 },
+        fobPos: { gx: -0.04, gy: 0.08, scale: 0.46 },
+        bubbleText: '⚙️ CRUSADER READY',
+        unlocks: ['Humvee ($700)', 'Crusader Tank ($900)', 'Paladin Tank ($1100)', 'Tomahawk Launcher ($1200)', 'Avenger ($2000)', 'Microwave Tank ($800)', 'TOW Missile Upgrade'],
+        description: 'Heavy armored vehicle assembly plant equipped with robotic welding bays, overhead bridge crane, and repair drones.',
+        visualResearch: 'Massive arched steel-ribbed vehicle assembly hangar with wide yellow-striped open bay revealing a desert-tan M1A1 Crusader tank inside, exterior yellow gantry crane on the left, twin exhaust stacks, and spare tank treads.',
+        animations: [
+          'Bright orange-yellow welding spark bursts inside the open Crusader assembly bay',
+          'Rising cel-shaded exhaust smoke puffs from the twin rear smokestacks',
+          'Animated overhead crane hoist & Crusader tank rollout check'
+        ]
+      },
+      {
+        id: 'USA_AIRFIELD',
+        name: 'US Airfield',
+        shortName: 'US Airfield',
+        icon: '✈️',
+        category: 'Air Superiority Complex',
+        cost: 1000,
+        hp: 1500,
+        power: -1,
+        footprint: '3×3 Tiles',
+        sheet: 2,
+        crop: { x: 24, y: 28, w: 520, h: 384, seedX: 280, seedY: 225 },
+        fobPos: { gx: 0.48, gy: -0.10, scale: 0.46 },
+        bubbleText: '✈️ RAPTOR SORTIE',
+        unlocks: ['Raptor Jet ($1400)', 'Stealth Fighter ($1600)', 'Comanche ($1200)', 'Aurora Alpha Bomber ($2500)', 'Laser Missiles & Countermeasures'],
+        description: 'Four-pad military flight apron with Air Traffic Control tower, rotating air-search radar, and automated re-arm/refuel bays for up to 4 USA aircraft.',
+        visualResearch: 'Wide concrete tarmac apron divided into 4 yellow-lined readiness pads with white-and-navy F-22 Raptor jets, flanked by an Air Traffic Control tower with cyan-tinted observation glass, rotating radar bar, and aviation fuel tanks.',
+        animations: [
+          'Continuously rotating ATC tower air-search radar bar on the roof',
+          'Sequential chasing green/amber taxiway strobe lights across all 4 readiness pads',
+          'Blue-white twin afterburner exhaust plumes behind the parked Raptor fighters + air strike flyby'
+        ]
+      },
+      {
+        id: 'USA_STRATEGY_CENTER',
+        name: 'Strategy Center',
+        shortName: 'Strategy Center',
+        icon: '🛰️',
+        category: 'High-Tech Tier-3 Hub',
+        cost: 2500,
+        hp: 2000,
+        power: -2,
+        footprint: '3×3 Tiles',
+        sheet: 2,
+        crop: { x: 544, y: 44, w: 388, h: 328, seedX: 738, seedY: 210 },
+        fobPos: { gx: 0.04, gy: -0.12, scale: 0.42 },
+        bubbleText: '🛰️ BATTLE PLAN',
+        unlocks: ['Battle Plans: Bombardment (+20% Firepower) / Hold the Line (+10% Armor) / Search & Destroy (+20% Range)', 'Paladin, Tomahawk, Avenger, Aurora, Burton, Particle Cannon'],
+        description: 'Pentagon-inspired fortified tactical operations bunker. Unlocks Tier-3 USA units and broadcasts a global Battle Plan buff to all Allied forces.',
+        visualResearch: 'Octagonal reinforced bunker with sloped white-and-navy composite armor plating, glowing cyan command windows, a central geodesic radar dome, satellite uplink dishes, and corner defense turrets.',
+        animations: [
+          'Pulsing concentric Battle Plan Aura Ring around the foundation (Cyan = Search & Destroy, Red-Orange = Bombardment, Gold = Hold the Line)',
+          'Rotating geodesic dome telemetry scan & sweeping corner turret barrels',
+          'Animated satellite uplink beam pulses'
+        ]
+      },
+      {
+        id: 'USA_SUPPLY_DROP_ZONE',
+        name: 'Supply Drop Zone',
+        shortName: 'Supply Drop Zone',
+        icon: '📦',
+        category: 'Late-Game Economy',
+        cost: 2500,
+        hp: 1200,
+        power: -4,
+        footprint: '3×3 Tiles',
+        sheet: 2,
+        crop: { x: 956, y: 20, w: 392, h: 348, seedX: 1150, seedY: 210 },
+        fobPos: { gx: 0.44, gy: 0.24, scale: 0.40 },
+        bubbleText: '📦 +$1,500 AIRDROP',
+        unlocks: ['Unexhaustible Parachute Supply Drops (+$45/sec sustained)'],
+        description: 'Zero Hour high-tech logistical drop zone. Calls in periodic C-130 cargo aircraft to parachute crates of military funding directly onto the illuminated target pad.',
+        visualResearch: 'Octagonal concrete air-drop target pad painted with concentric yellow target circles, glowing cyan perimeter landing beacons, corner floodlight pylons, telemetry uplink shack, and descending paratroop cargo crate.',
+        animations: [
+          'Animated descending cargo crate on an olive-drab parachute with gentle sway + landing bounce',
+          'Inward-pulsing golden-cyan target ring beacons guiding the air drop',
+          'Floating "+$1,500 AIR DROP" credit popup when each crate touches down'
+        ]
+      },
+      {
+        id: 'USA_PATRIOT',
+        name: 'Patriot Missile System',
+        shortName: 'Patriot Battery',
+        icon: '🚀',
+        category: 'Base Defense Emplacement',
+        cost: 1000,
+        hp: 1000,
+        power: -3,
+        footprint: '1×1 Tile',
+        sheet: 2,
+        crop: { x: 244, y: 420, w: 276, h: 296, seedX: 380, seedY: 575 },
+        fobPos: { gx: -0.14, gy: 0.36, scale: 0.35 },
+        bubbleText: '🚀 SAM LOCK ON',
+        unlocks: ['Anti-Armor & Anti-Air SAM Interception', 'Networked Target Data-Link'],
+        description: 'Automated quad-tube surface-to-air and anti-armor missile battery with phased-array radar tracking. Shares targeting telemetry with nearby Patriot batteries.',
+        visualResearch: 'Octagonal concrete and steel defensive pedestal with yellow-and-black hazard stripes, sandbagged base corners, angled 4-cell MIM-104 Patriot launcher pod, and glowing cyan phased-array radar screen.',
+        animations: [
+          'Scanning cyan phased-array radar grid pulse & target-lock laser cone',
+          'Live Patriot SAM missile launch with curved white cel-shaded smoke trail',
+          'Mid-air starburst interception explosion with comic-tactical shockwave ring'
+        ]
+      },
+      {
+        id: 'USA_PARTICLE_CANNON',
+        name: 'Particle Cannon',
+        shortName: 'Particle Cannon',
+        icon: '☄️',
+        category: 'Strategic Superweapon',
+        cost: 5000,
+        hp: 2000,
+        power: -10,
+        footprint: '3×3 Tiles',
+        sheet: 2,
+        crop: { x: 716, y: 344, w: 420, h: 380, seedX: 925, seedY: 550 },
+        fobPos: { gx: 0.18, gy: 0.32, scale: 0.45 },
+        bubbleText: '☄️ BEAM READY',
+        unlocks: ['Orbital Particle Beam Strike (Steerable across enemy bases)'],
+        description: 'Ultimate USA strategic superweapon. Focuses a high-energy particle beam into the upper atmosphere and reflects it off an orbital mirror satellite to incinerate targets.',
+        visualResearch: 'Colossal circular reinforced concrete silo surrounded by 4 glowing cyan plasma capacitor banks and heavy power conduits, crowned by an articulated emitter array with unfolding mirror petals.',
+        animations: [
+          'Sequential cyan plasma charge pulsing through the 4 surrounding capacitor banks',
+          'Crackling electric-blue particle arcs dancing between the open emitter mirror petals',
+          'Full Orbital Particle Beam Strike: searing vertical cyan-white column blasting into the sky + steerable ground scorch beam'
+        ]
+      }
+    ];
+
+    // =========================================================================
+    // 1B. RESEARCHED CANONICAL CHINA (PLA) MILITARY BUILDINGS (12 STRUCTURES)
+    // =========================================================================
+    const CHINA_BUILDINGS = [
+      {
+        id: 'CHINA_COMMAND_CENTER',
+        name: 'China Command Center',
+        shortName: 'Command Center',
+        icon: '🐉',
+        category: 'PLA HQ & Radar Hub',
+        cost: 2000,
+        hp: 2000,
+        power: 0,
+        footprint: '3×3 Tiles',
+        sheet: 1,
+        crop: { x: 20, y: 0, w: 520, h: 415 },
+        fobPos: { gx: -0.34, gy: -0.28, scale: 0.43 },
+        bubbleText: '🐉 PLA COMMAND HQ',
+        unlocks: ['Construction Dozer ($1000)', 'Radar Minimap', 'Artillery & Carpet Bombing Powers'],
+        description: 'Monumental brutalist grey concrete and crimson-tiered PLA fortress headquarters. Produces Construction Dozers, provides radar telemetry, and coordinates artillery barrages.',
+        visualResearch: 'Heavy reinforced grey concrete citadel with sweeping crimson-red tiered armored eaves, a glowing gold-and-red PLA star emblem over the yellow-striped Dozer ramp, and twin rooftop radar dishes.',
+        animations: [
+          'Rotating rooftop parabolic radar dish + expanding crimson telemetry sweep ring',
+          'Pulsing gold-and-crimson PLA star insignia over the main Dozer deployment ramp',
+          'Blinking red mast warning strobes and amber observation slit sweeps'
+        ]
+      },
+      {
+        id: 'CHINA_REACTOR',
+        name: 'Nuclear Reactor',
+        shortName: 'Nuclear Reactor',
+        icon: '☢️',
+        category: 'Base Power Plant',
+        cost: 1000,
+        hp: 1000,
+        power: 10,
+        footprint: '2×2 Tiles',
+        sheet: 1,
+        crop: { x: 564, y: 16, w: 312, h: 340 },
+        fobPos: { gx: -0.68, gy: -0.10, scale: 0.38 },
+        bubbleText: '☢️ +10 GW NUCLEAR',
+        unlocks: ['Overcharge Toggle (+50% Power at 8 HP/sec self-damage)'],
+        description: 'High-output PLA pressurized nuclear power plant (+10 Power). Can be toggled into Overcharge mode for +50% emergency output.',
+        visualResearch: 'Hyperboloid reinforced concrete cooling tower paired with a pressurized crimson-and-steel reactor containment dome glowing with bright radioactive green core conduits.',
+        animations: [
+          'Billowing cel-shaded white steam clouds rising continuously from the cooling tower mouth',
+          'Pulsing radioactive emerald-green energy core inside the pressurized containment dome',
+          'Overcharge mode: rapid red hazard strobes + superheated green plasma corona'
+        ]
+      },
+      {
+        id: 'CHINA_SUPPLY_CENTER',
+        name: 'China Supply Center',
+        shortName: 'Supply Center',
+        icon: '🚛',
+        category: 'Economy & Logistics',
+        cost: 1500,
+        hp: 1500,
+        power: -1,
+        footprint: '3×3 Tiles',
+        sheet: 1,
+        crop: { x: 900, y: 28, w: 440, h: 312 },
+        fobPos: { gx: 0.10, gy: -0.34, scale: 0.41 },
+        bubbleText: '💰 +$300 SUPPLY TRUCK',
+        unlocks: ['Free Supply Truck ($600)', 'Heavy Logistics Depot'],
+        description: 'Industrial PLA supply depot with a crimson-roofed truck unloading dock, yellow gantry crane, and armored cargo sorting bay.',
+        visualResearch: 'Heavy concrete loading dock with crimson-red roofed canopy, industrial yellow-and-red overhead bridge crane, hazard-striped truck bay, and olive/red military supply crates.',
+        animations: [
+          'Reciprocating yellow-and-red overhead gantry crane trolley sliding across the loading bay',
+          'Blinking amber dock guidance beacons + "+$300" supply credit popups'
+        ]
+      },
+      {
+        id: 'CHINA_BARRACKS',
+        name: 'PLA Barracks',
+        shortName: 'PLA Barracks',
+        icon: '🚩',
+        category: 'Infantry Production',
+        cost: 600,
+        hp: 1200,
+        power: 0,
+        footprint: '2×2 Tiles',
+        sheet: 1,
+        crop: { x: 40, y: 420, w: 480, h: 332 },
+        fobPos: { gx: -0.48, gy: 0.16, scale: 0.39 },
+        bubbleText: '🚩 RED GUARD HORDE',
+        unlocks: ['Red Guard Pair ($300)', 'Tank Hunter ($300)', 'Hacker ($625)', 'Black Lotus ($1500)', 'Nationalism (+25% Horde Bonus)'],
+        description: 'Fortified PLA infantry compound training twin Red Guard squads, anti-armor Tank Hunters, cyber Hackers, and elite agent Black Lotus.',
+        visualResearch: 'Fortified concrete infantry compound with an armored crimson-red gatehouse roof, gold star insignia above the wide deployment bay, sandbagged corner pillboxes, and red banners.',
+        animations: [
+          'Sweeping white searchlight cone from the corner guard pillbox across the parade apron',
+          'Pulsing gold PLA star emblem + waving crimson military banners'
+        ]
+      },
+      {
+        id: 'CHINA_WAR_FACTORY',
+        name: 'China War Factory',
+        shortName: 'War Factory',
+        icon: '🏭',
+        category: 'Heavy Armor Plant',
+        cost: 2000,
+        hp: 2200,
+        power: -1,
+        footprint: '3×3 Tiles',
+        sheet: 1,
+        crop: { x: 532, y: 416, w: 388, h: 324 },
+        fobPos: { gx: -0.08, gy: 0.04, scale: 0.44 },
+        bubbleText: '🏭 OVERLORD ASSEMBLY',
+        unlocks: ['Battlemaster ($800)', 'Dragon Tank ($800)', 'Gattling Tank ($800)', 'Troop Crawler ($1400)', 'Inferno Cannon ($900)', 'ECM Tank ($900)', 'Overlord Tank ($2000)', 'Nuke Cannon ($1600)', 'Chain Guns & Black Napalm'],
+        description: 'Heavy-industry PLA armor foundry where Battlemaster, Dragon, Gattling, and colossal twin-barreled Overlord tanks are forged.',
+        visualResearch: 'Corrugated steel and crimson-trimmed heavy assembly hangar with twin rear smokestacks, exterior steel bridge crane, and open yellow-striped bay revealing a Battlemaster tank.',
+        animations: [
+          'Billowing cel-shaded grey industrial smoke clouds rising from the twin rear smokestacks',
+          'Bright orange-yellow robotic welding arc flashes inside the tank assembly bay'
+        ]
+      },
+      {
+        id: 'CHINA_AIRFIELD',
+        name: 'China Airfield',
+        shortName: 'China Airfield',
+        icon: '🛩️',
+        category: 'Air Superiority Complex',
+        cost: 1000,
+        hp: 1500,
+        power: -1,
+        footprint: '3×3 Tiles',
+        sheet: 1,
+        crop: { x: 928, y: 404, w: 424, h: 336 },
+        fobPos: { gx: 0.46, gy: -0.14, scale: 0.43 },
+        bubbleText: '🛩️ MIG FIRESTORM',
+        unlocks: ['MiG-1.44 Fighter ($1200)', 'Helix Heavy Transport/Gunship ($1500)', 'MiG Armor (+25% HP)'],
+        description: 'Fortified PLA four-pad military tarmac with red-striped Air Traffic Control tower, fuel depot, and re-arming bays for napalm-armed MiG-1.44 fighters and Helix helicopters.',
+        visualResearch: 'Concrete tarmac apron with 4 yellow-lined jet readiness pads, delta-wing grey-and-crimson MiG-1.44 fighters, aviation fuel tanks, and red-striped ATC radar tower.',
+        animations: [
+          'Rotating crimson-and-white ATC air-search radar bar atop the control tower',
+          'Chasing red/amber taxiway strobe lights + orange napalm afterburner plumes behind parked MiGs'
+        ]
+      },
+      {
+        id: 'CHINA_PROPAGANDA_CENTER',
+        name: 'Propaganda Center',
+        shortName: 'Propaganda Center',
+        icon: '📻',
+        category: 'High-Tech Tier-3 Hub',
+        cost: 2000,
+        hp: 2000,
+        power: -2,
+        footprint: '3×3 Tiles',
+        sheet: 2,
+        crop: { x: 28, y: 4, w: 436, h: 408 },
+        fobPos: { gx: 0.06, gy: -0.14, scale: 0.40 },
+        bubbleText: '📻 SUBLIMINAL BROADCAST',
+        unlocks: ['Overlord Tank', 'Helix', 'Inferno Cannon', 'ECM Tank', 'Nuke Cannon', 'Black Lotus', 'Nuclear Silo', 'Subliminal Messaging (+25% Speaker Tower Rate)'],
+        description: 'Monumental brutalist PLA ideological & strategic command complex. Unlocks Tier-3 heavy armor, Black Lotus, Nuclear Missile Silo, and Subliminal Messaging.',
+        visualResearch: 'Towering brutalist grey concrete broadcast citadel with heavy vertical pillars, crimson-red vertical banners bearing gold stars, amber tactical windows, and a rooftop megaphone broadcast mast.',
+        animations: [
+          'Concentric crimson-and-gold broadcast waves radiating from the rooftop megaphone mast',
+          'Warm pulsing amber command windows across the central concrete facade'
+        ]
+      },
+      {
+        id: 'CHINA_INTERNET_CENTER',
+        name: 'Internet Center',
+        shortName: 'Internet Center',
+        icon: '💻',
+        category: 'Cyber-Warfare Bunker',
+        cost: 2500,
+        hp: 2200,
+        power: -3,
+        footprint: '3×3 Tiles',
+        sheet: 2,
+        crop: { x: 544, y: 28, w: 348, h: 340 },
+        fobPos: { gx: 0.44, gy: 0.22, scale: 0.39 },
+        bubbleText: '💻 +$80/S HACKER BUNKER',
+        unlocks: ['8-Slot Armored Hacker Garrison (+$80/sec Continuous Cyber Income)', 'Satellite Hack Espionage'],
+        description: 'Zero Hour high-security windowless cyber-warfare bunker. Houses up to 8 PLA Hackers safely inside while generating continuous satellite-encrypted war funds.',
+        visualResearch: 'Windowless reinforced concrete cyber-bunker with glowing green server cooling vents, crimson armor trim, perimeter security wall, and an oversized rotating rooftop satellite uplink dish.',
+        animations: [
+          'Slowly sweeping oversized rooftop satellite uplink dish with green data-link beam',
+          'Blinking emerald-green server rack cooling vents around the bunker perimeter'
+        ]
+      },
+      {
+        id: 'CHINA_GATTLING_CANNON',
+        name: 'Gattling Cannon',
+        shortName: 'Gattling Cannon',
+        icon: '🔫',
+        category: 'Anti-Infantry & Anti-Air Defense',
+        cost: 1200,
+        hp: 1000,
+        power: -3,
+        footprint: '1×1 Tile',
+        sheet: 2,
+        crop: { x: 1000, y: 28, w: 304, h: 332 },
+        fobPos: { gx: -0.22, gy: 0.34, scale: 0.34 },
+        bubbleText: '🔫 SPIN-UP GATTLING',
+        unlocks: ['Continuous Spin-Up Rate of Fire (Up to 2.5× ROF)', 'Stealth Detection'],
+        description: 'Automated dual-pod 6-barrel rotary Gatling turret that spins up to blistering fire rates against both ground forces and enemy aircraft.',
+        visualResearch: 'Octagonal reinforced concrete turret emplacement with yellow-and-black hazard stripes, crimson armor plating, and a swiveling dual-pod 6-barrel rotary Gatling cannon with brass ammo drums.',
+        animations: [
+          'High-speed rotary barrel spin blur + glowing orange muzzle flash bursts',
+          'Tracer bullet stream streaking across the defense perimeter'
+        ]
+      },
+      {
+        id: 'CHINA_BUNKER',
+        name: 'Fortified Bunker',
+        shortName: 'Fortified Bunker',
+        icon: '🛡️',
+        category: '5-Squad Garrison Pillbox',
+        cost: 400,
+        hp: 1200,
+        power: 0,
+        footprint: '1×1 Tile',
+        sheet: 2,
+        crop: { x: 84, y: 436, w: 332, h: 288 },
+        fobPos: { gx: -0.42, gy: 0.38, scale: 0.33 },
+        bubbleText: '🛡️ 5/5 GARRISON FIRE',
+        unlocks: ['5-Infantry Garrison Protection', 'Land Mines Perimeter'],
+        description: 'Reinforced concrete pillbox that protects up to 5 PLA infantry squads (such as Tank Hunters and Red Guards) allowing them to fire safely through armored slits.',
+        visualResearch: 'Octagonal brutalist concrete pillbox with horizontal armored firing slits, sandbagged base corners, crimson-red roof hatch with gold star emblem, and rooftop periscope.',
+        animations: [
+          'Flickering red-orange muzzle flashes and RPG trails firing from the horizontal bunker slits',
+          '5 golden garrison readiness pips + rotating rooftop observation periscope'
+        ]
+      },
+      {
+        id: 'CHINA_SPEAKER_TOWER',
+        name: 'Speaker Tower',
+        shortName: 'Speaker Tower',
+        icon: '📢',
+        category: 'Propaganda Healing Tower',
+        cost: 500,
+        hp: 600,
+        power: -1,
+        footprint: '1×1 Tile',
+        sheet: 2,
+        crop: { x: 492, y: 370, w: 180, h: 346 },
+        fobPos: { gx: -0.02, gy: 0.30, scale: 0.34 },
+        bubbleText: '📢 +25% ROF & HEAL AURA',
+        unlocks: ['210px Propaganda Aura: +16 HP/sec Auto-Heal + +25% Rate of Fire'],
+        description: 'Battlefield broadcast tower that continuously heals nearby friendly infantry and vehicles while boosting their weapon fire rate by +25%.',
+        visualResearch: 'Tall crimson-and-steel lattice broadcast tower on a hazard-striped octagonal concrete pad, topped with 4 directional red megaphone loudspeaker horns and a red strobe beacon.',
+        animations: [
+          'Continuous concentric crimson-and-gold sonic healing waves expanding outward in 2:1 isometric projection',
+          'Flashing red top beacon light synchronized with the broadcast pulse'
+        ]
+      },
+      {
+        id: 'CHINA_NUCLEAR_SILO',
+        name: 'Nuclear Missile Silo',
+        shortName: 'Nuclear Silo',
+        icon: '🚀',
+        category: 'Strategic Superweapon',
+        cost: 5000,
+        hp: 2200,
+        power: -10,
+        footprint: '3×3 Tiles',
+        sheet: 2,
+        crop: { x: 756, y: 356, w: 504, h: 380 },
+        fobPos: { gx: 0.22, gy: 0.34, scale: 0.44 },
+        bubbleText: '🚀 ICBM WARHEAD ARMED',
+        unlocks: ['Tactical Thermonuclear ICBM Strike', 'Uranium Shells (+25% Tank Cannon Damage)', 'Nuclear Tanks (+25% Tank Speed)'],
+        description: 'Colossal subterranean PLA thermonuclear ICBM launch complex. Also researches Depleted Uranium Shells and Nuclear Tank Engines.',
+        visualResearch: 'Reinforced concrete subterranean silo with heavy yellow-and-black striped blast doors slid open, crimson steel launch gantry, glowing green radiation vents, and a red-and-white ICBM warhead nose-cone.',
+        animations: [
+          'Pulsing radioactive green steam venting from the open silo pit around the ICBM warhead',
+          'Synchronized red-and-yellow nuclear launch hazard strobes + full ICBM ignition flame column when triggered'
+        ]
+      }
+    ];
+
+    // =========================================================================
+    // 1C. RESEARCHED CANONICAL GLA MILITARY BUILDINGS (9 STRUCTURES)
+    // =========================================================================
+    const GLA_BUILDINGS = [
+      {
+        id: 'GLA_COMMAND_CENTER',
+        name: 'GLA Command Center',
+        shortName: 'Command Center',
+        icon: '🦂',
+        category: 'Guerrilla HQ & Tunnel Hub',
+        cost: 2000,
+        hp: 2000,
+        power: 0,
+        footprint: '3×3 Tiles',
+        sheet: 1,
+        crop: { x: 36, y: 8, w: 472, h: 368 },
+        fobPos: { gx: -0.32, gy: -0.26, scale: 0.43 },
+        bubbleText: '🦂 GLA CELL HQ (NO POWER REQ)',
+        unlocks: ['GLA Worker ($200)', 'Subterranean GLA Hole Rebuilds', 'Rebel Ambush & Anthrax Bomb Powers'],
+        description: 'Camouflaged desert guerrilla headquarters requiring zero grid power. Rebuilds automatically from a subterranean GLA Hole if destroyed unless the hole is also eliminated.',
+        visualResearch: 'Fortified desert sandstone compound with corrugated scrap-metal roofing, olive-drab camouflage netting, improvised rooftop radar dish, radio mast, oil drums, and armored tunnel hatch.',
+        animations: [
+          'Rotating improvised rooftop radar dish + blinking amber radio mast beacon',
+          'Fluttering olive-drab camouflage netting highlights & subterranean dust wisps'
+        ]
+      },
+      {
+        id: 'GLA_SUPPLY_STASH',
+        name: 'Supply Stash',
+        shortName: 'Supply Stash',
+        icon: '🛢️',
+        category: 'Economy & Contraband Depot',
+        cost: 1500,
+        hp: 1400,
+        power: 0,
+        footprint: '3×3 Tiles',
+        sheet: 1,
+        crop: { x: 516, y: 80, w: 428, h: 284 },
+        fobPos: { gx: 0.14, gy: -0.32, scale: 0.41 },
+        bubbleText: '💰 +$150 WORKER STASH',
+        unlocks: ['Free GLA Worker', 'Worker Supply Gathering'],
+        description: 'Sandbagged contraband & supply collection yard where GLA Workers haul crates on foot to fund the insurgency.',
+        visualResearch: 'Sandy concrete depot yard with a corrugated iron and timber sorting shed shaded by olive camo tarp, wooden loading ramp, stacked wooden ammo crates, and bright green toxin drums.',
+        animations: [
+          'Rising toxic-green vapor bubbles above the stored chemical drums',
+          'Warm swaying depot lantern glow + "+$150" contraband credit popups'
+        ]
+      },
+      {
+        id: 'GLA_BARRACKS',
+        name: 'GLA Barracks',
+        shortName: 'GLA Barracks',
+        icon: '⚔️',
+        category: 'Militia & Insurgent Camp',
+        cost: 500,
+        hp: 1200,
+        power: 0,
+        footprint: '2×2 Tiles',
+        sheet: 1,
+        crop: { x: 960, y: 12, w: 396, h: 364 },
+        fobPos: { gx: -0.48, gy: 0.16, scale: 0.39 },
+        bubbleText: '⚔️ REBEL & RPG CELL',
+        unlocks: ['Rebel ($150)', 'RPG Trooper ($300)', 'Terrorist ($200)', 'Angry Mob ($800)', 'Hijacker ($600)', 'Saboteur ($800)', 'Jarmen Kell ($1500)', 'Booby Traps & Capture'],
+        description: 'Fortified desert militia training compound deploying Rebels, RPG Troopers, Terrorists, Angry Mobs, Hijackers, Saboteurs, and legendary sniper Jarmen Kell.',
+        visualResearch: 'Sandbag-reinforced sandstone compound with an arched bunker deployment doorway, corner wooden/steel watchtower with spotlight, olive-green banners, and exterior RPG racks.',
+        animations: [
+          'Sweeping amber searchlight cone from the corner watchtower across the courtyard',
+          'Waving olive-green insurgency banner + deployment doorway strobe'
+        ]
+      },
+      {
+        id: 'GLA_ARMS_DEALER',
+        name: 'Arms Dealer',
+        shortName: 'Arms Dealer',
+        icon: '🔧',
+        category: 'Vehicle & Salvage Workshop',
+        cost: 2500,
+        hp: 2000,
+        power: 0,
+        footprint: '3×3 Tiles',
+        sheet: 1,
+        crop: { x: 80, y: 376, w: 588, h: 372 },
+        fobPos: { gx: -0.04, gy: 0.06, scale: 0.44 },
+        bubbleText: '🔧 SCORPION & SALVAGE',
+        unlocks: ['Technical ($500)', 'Scorpion Tank ($600)', 'Quad Cannon ($700)', 'Toxin Tractor ($600)', 'Radar Van ($500)', 'Bomb Truck ($1200)', 'Marauder Tank ($800)', 'Rocket Buggy ($900)', 'Battle Bus ($1200)', 'Scud Launcher ($1400)', 'Scorpion Rocket & Junk Repair'],
+        description: 'Fortified vehicle workshop and black-market armor assembly bay. Produces Technicals, Scorpion Tanks, Quad Cannons, Rocket Buggies, Battle Buses, and Scud Launchers.',
+        visualResearch: 'Reinforced sandstone and corrugated steel hangar draped in desert camo netting, with an exterior steel A-frame hoist crane, stacked tank treads, twin exhaust pipes, and a Scorpion Tank in the bay.',
+        animations: [
+          'Puffing cel-shaded diesel exhaust rings from the twin rooftop pipes',
+          'Bright yellow-orange welding sparks flashing inside the Scorpion Tank assembly bay'
+        ]
+      },
+      {
+        id: 'GLA_PALACE',
+        name: 'GLA Palace',
+        shortName: 'GLA Palace',
+        icon: '🕌',
+        category: 'High-Tech Tier-3 Citadel',
+        cost: 2500,
+        hp: 2500,
+        power: 0,
+        footprint: '3×3 Tiles',
+        sheet: 1,
+        crop: { x: 756, y: 360, w: 536, h: 376 },
+        fobPos: { gx: 0.08, gy: -0.10, scale: 0.43 },
+        bubbleText: '🕌 5-SLOT CITADEL FORTRESS',
+        unlocks: ['5-Infantry Armored Garrison', 'Angry Mob (AK-47s)', 'Battle Bus', 'Scud Launcher', 'Jarmen Kell', 'Black Market', 'Scud Storm', 'Anthrax Beta (+25% Toxin Damage)', 'Camo Netting'],
+        description: 'Heavily fortified Middle Eastern citadel bunker that doubles as GLA Tier-3 tech center and an almost-indestructible 5-squad infantry fortress.',
+        visualResearch: 'Massive sandstone masonry citadel with an armored central dome, tiered rooftop and window sandbagged RPG firing embrasures, concrete dragon-teeth barriers, and radio antennas.',
+        animations: [
+          'Flickering RPG & rifle muzzle flashes from the tiered sandbagged firing embrasures',
+          'Pulsing emerald-gold command dome beacon + 5 garrison readiness pips'
+        ]
+      },
+      {
+        id: 'GLA_BLACK_MARKET',
+        name: 'Black Market',
+        shortName: 'Black Market',
+        icon: '💵',
+        category: 'Late-Game Economy & Upgrades',
+        cost: 2500,
+        hp: 1800,
+        power: 0,
+        footprint: '3×3 Tiles',
+        sheet: 2,
+        crop: { x: 96, y: 20, w: 512, h: 356 },
+        fobPos: { gx: 0.44, gy: 0.18, scale: 0.41 },
+        bubbleText: '💵 +$45/S CONTRABAND',
+        unlocks: ['+$45/sec Unexhaustible Contraband Income', 'AP Bullets (+25% MG Damage)', 'AP Rockets (+25% Missile Damage)', 'Buggy Ammo (+50% Volleys)', 'Junk Repair (Auto-Heal Vehicles)'],
+        description: 'Clandestine arms-smuggling bazaar that generates continuous +$45/sec war funds while researching Armor-Piercing Bullets, AP Rockets, Buggy Ammo, and Junk Repair.',
+        visualResearch: 'Fortified sandstone vault compound shaded by olive-drab military canvas canopies, stacked wooden rocket crates, glowing green anthrax barrels, and a camouflaged rooftop satellite dish.',
+        animations: [
+          'Rotating camouflaged satellite uplink dish on the roof',
+          'Glowing green anthrax barrel vapor wisps + periodic "+$1,000 SMUGGLED" cash popups'
+        ]
+      },
+      {
+        id: 'GLA_TUNNEL_NETWORK',
+        name: 'Tunnel Network',
+        shortName: 'Tunnel Network',
+        icon: '🕳️',
+        category: 'Subterranean Teleport & Defense',
+        cost: 800,
+        hp: 1000,
+        power: 0,
+        footprint: '1×1 Tile',
+        sheet: 2,
+        crop: { x: 740, y: 28, w: 548, h: 308 },
+        fobPos: { gx: -0.18, gy: 0.34, scale: 0.36 },
+        bubbleText: '🕳️ 10-UNIT TUNNEL TRANSIT',
+        unlocks: ['2 Free RPG Troopers', 'Shared 10-Unit Instant Subterranean Teleport & Rapid Heal Network'],
+        description: 'Subterranean bunker portal topped with a twin-barrel machine-gun turret. Units entering any Tunnel Network heal rapidly and can emerge instantly from any other Tunnel on the map.',
+        visualResearch: 'Reinforced concrete and corrugated-steel subterranean bunker portal dug into an armored earthen mound ringed with sandbags and camo netting, topped with a swiveling twin-MG turret.',
+        animations: [
+          'Swiveling twin-barrel heavy machine-gun turret with yellow muzzle flash bursts',
+          'Glowing amber subterranean portal mouth + rising desert dust motes'
+        ]
+      },
+      {
+        id: 'GLA_STINGER_SITE',
+        name: 'Stinger Site',
+        shortName: 'Stinger Site',
+        icon: '🎯',
+        category: 'Camouflaged SAM & Anti-Armor Pit',
+        cost: 900,
+        hp: 900,
+        power: 0,
+        footprint: '1×1 Tile',
+        sheet: 2,
+        crop: { x: 108, y: 416, w: 480, h: 316 },
+        fobPos: { gx: 0.42, gy: -0.12, scale: 0.36 },
+        bubbleText: '🎯 STINGER SAM VOLLEY',
+        unlocks: ['Dual Stinger Missile Salvos (Anti-Air & Anti-Vehicle)'],
+        description: 'Sandbagged anti-aircraft and anti-armor bunker pit draped in desert camouflage netting, crewed by Stinger missile troopers.',
+        visualResearch: 'Circular sandbagged defensive bunker pit under an olive-tan camouflage net canopy supported by steel poles, housing a swiveling multi-rail Stinger missile launcher and green ammo crates.',
+        animations: [
+          'Swiveling Stinger launcher turret with red target-lock laser beam',
+          'Live Stinger missile salvo launch with corkscrew white smoke trail'
+        ]
+      },
+      {
+        id: 'GLA_SCUD_STORM',
+        name: 'Scud Storm',
+        shortName: 'Scud Storm',
+        icon: '☣️',
+        category: 'Strategic Superweapon',
+        cost: 5000,
+        hp: 2200,
+        power: 0,
+        footprint: '3×3 Tiles',
+        sheet: 2,
+        crop: { x: 704, y: 340, w: 596, h: 408 },
+        fobPos: { gx: 0.18, gy: 0.34, scale: 0.45 },
+        bubbleText: '☣️ 9× ANTHRAX SCUD SALVO',
+        unlocks: ['9-Missile Anthrax Ballistic Salvo + Lingering Toxic Fallout Cloud'],
+        description: 'Ultimate GLA strategic superweapon. Launches a devastating 9-missile ballistic Scud salvo tipped with high-explosive and Anthrax warheads across enemy bases.',
+        visualResearch: 'Colossal fortified ballistic missile complex enclosed by thick sandstone blast walls, hazard stripes, and glowing toxic-green anthrax fuel tanks, featuring 9 elevated green-and-yellow Scud missiles on steel erector gantries.',
+        animations: [
+          'Bubbling radioactive-green anthrax fuel tanks and rising toxic vapor plumes around the 9 erector gantries',
+          'Full Scud Storm Salvo: sequential ignition of all 9 ballistic Scud missiles blasting skyward on twin flame columns'
+        ]
+      }
+    ];
+
+    const FACTION_META = {
+      USA: {
+        name: 'Allied (USA)',
+        badge: '🦅 USA MILITARY ARCHITECT (10)',
+        color: '#2563eb',
+        powerText: '+18 / 15 GW',
+        planLabel: 'Battle Plan:',
+        planVal: 'SEARCH & DESTROY',
+        buildings: USA_BUILDINGS,
+        sheets: ['assets/diorama/usa_buildings_sheet_1.png', 'assets/diorama/usa_buildings_sheet_2.png']
+      },
+      CHINA: {
+        name: 'China (PLA)',
+        badge: '🐉 CHINA PLA ARCHITECT (12)',
+        color: '#dc2626',
+        powerText: '+20 / 12 GW (NUCLEAR)',
+        planLabel: 'Doctrine:',
+        planVal: 'SUBLIMINAL + HORDE',
+        buildings: CHINA_BUILDINGS,
+        sheets: ['assets/diorama/china_buildings_sheet_1.png', 'assets/diorama/china_buildings_sheet_2.png']
+      },
+      GLA: {
+        name: 'GLA Insurgency',
+        badge: '🦂 GLA CELL ARCHITECT (9)',
+        color: '#15803d',
+        powerText: '0 / 0 GW (NO POWER REQ)',
+        planLabel: 'Toxin Grade:',
+        planVal: 'ANTHRAX BETA (+25%)',
+        buildings: GLA_BUILDINGS,
+        sheets: ['assets/diorama/gla_buildings_sheet_1.png', 'assets/diorama/gla_buildings_sheet_2.png']
+      }
+    };
+
+    const ALL_BUILDINGS = [...USA_BUILDINGS, ...CHINA_BUILDINGS, ...GLA_BUILDINGS];
+
+    // =========================================================================
+    // 2. STATE & SPRITE EXTRACTION ENGINE (ALL 31 BUILDINGS ACROSS 3 FACTIONS)
+    // =========================================================================
+    let currentFaction = 'USA'; // 'USA' | 'CHINA' | 'GLA'
+    let viewMode = 'fob'; // 'fob' | 'inspector' | 'sheets'
+    let selectedIdx = 0;
+    let showBubbles = true;
+    let showFX = true;
+    let controlRodsUpgraded = false;
+    let strategyPlanIdx = 0; // 0: SEARCH & DESTROY, 1: BOMBARDMENT, 2: HOLD THE LINE
+    const STRATEGY_PLANS = [
+      { name: 'SEARCH & DESTROY', color: '#06b6d4', badge: '+20% Sight & Weapon Range' },
+      { name: 'BOMBARDMENT', color: '#ef4444', badge: '+20% Weapon Damage + Cannon' },
+      { name: 'HOLD THE LINE', color: '#f59e0b', badge: '+10% Armor Durability' }
+    ];
+
+    const factionSheetImages = {
+      USA: [new Image(), new Image()],
+      CHINA: [new Image(), new Image()],
+      GLA: [new Image(), new Image()]
+    };
+    const extractedSprites = {};
+    let assetsReady = false;
+
+    // Dynamic FX entities
+    let projectiles = [];
+    let explosions = [];
+    let floatingTexts = [];
+    let particleBeamTimer = 0;
+    let supplyCredits = 14200;
+
+    function getActiveBuildings() {
+      return FACTION_META[currentFaction].buildings;
+    }
+
+    function loadAllSprites() {
+      for (const fac of ['USA', 'CHINA', 'GLA']) {
+        factionSheetImages[fac][0].src = FACTION_META[fac].sheets[0];
+        factionSheetImages[fac][1].src = FACTION_META[fac].sheets[1];
+      }
+
+      let loaded = 0;
+      const total = ALL_BUILDINGS.length;
+      for (const b of ALL_BUILDINGS) {
+        const img = new Image();
+        img.onload = () => {
+          extractedSprites[b.id] = img;
+          loaded++;
+          if (loaded >= 10) {
+            assetsReady = true;
+          }
+        };
+        img.src = `assets/diorama/buildings/${b.id.toLowerCase()}.png`;
+      }
+    }
+
+    function setFaction(fac) {
+      currentFaction = fac;
+      selectedIdx = 0;
+      for (const k of ['USA', 'CHINA', 'GLA']) {
+        const btn = document.getElementById('fac-' + k);
+        if (btn) btn.classList.toggle('active', k === fac);
+      }
+      const meta = FACTION_META[fac];
+      document.getElementById('faction-badge').textContent = meta.badge;
+      document.getElementById('faction-badge').style.background = meta.color;
+      document.getElementById('roster-header-title').textContent = `${meta.name} Roster (${meta.buildings.length})`;
+      document.getElementById('roster-header-sub').style.color = meta.color;
+      document.getElementById('hud-power').textContent = meta.powerText;
+      document.getElementById('hud-plan').textContent = meta.planVal;
+      document.getElementById('hud-plan').style.color = meta.color;
+      renderRoster();
+      renderInspector();
+    }
+
+    // =========================================================================
+    // 3. UI ROSTER & INSPECTOR PANEL
+    // =========================================================================
+    function renderRoster() {
+      const listEl = document.getElementById('roster-list');
+      listEl.innerHTML = '';
+      const list = getActiveBuildings();
+      list.forEach((b, idx) => {
+        const card = document.createElement('button');
+        card.className = 'building-card' + (idx === selectedIdx ? ' selected' : '');
+        const pwrVal = b.id === 'USA_REACTOR' && controlRodsUpgraded ? 16 : (b.id === 'CHINA_REACTOR' && controlRodsUpgraded ? 15 : b.power);
+        const pwrStr = pwrVal > 0 ? `+${pwrVal} PWR` : pwrVal < 0 ? `${pwrVal} PWR` : '0 PWR';
+        const pwrClass = pwrVal > 0 ? 'pwr-pos' : pwrVal < 0 ? 'pwr-neg' : '';
+        card.innerHTML = `
+          <div class="b-icon">${b.icon}</div>
+          <div class="b-meta">
+            <div class="b-name">${idx + 1}. ${b.name}</div>
+            <div class="b-sub">
+              <span>$${b.cost}</span>
+              <span class="${pwrClass}">${pwrStr}</span>
+              <span>${b.footprint}</span>
+            </div>
+          </div>
+        `;
+        card.onclick = () => {
+          selectedIdx = idx;
+          renderRoster();
+          renderInspector();
+          triggerBuildingHighlightEffect(b);
+        };
+        listEl.appendChild(card);
+      });
+    }
+
+    function renderInspector() {
+      const list = getActiveBuildings();
+      const b = list[selectedIdx] || list[0];
+      const pwrVal = b.id === 'USA_REACTOR' && controlRodsUpgraded ? 16 : (b.id === 'CHINA_REACTOR' && controlRodsUpgraded ? 15 : b.power);
+      const pwrStr = pwrVal > 0 ? `+${pwrVal} GW` : pwrVal < 0 ? `${pwrVal} GW` : '0 GW (No Power Req)';
+      const panel = document.getElementById('inspector-panel');
+
+      panel.innerHTML = `
+        <div class="insp-title-box">
+          <span class="insp-category">${b.category}</span>
+          <div class="insp-title">${b.icon} ${b.name}</div>
+          <p class="insp-desc">${b.description}</p>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-box">
+            <div class="stat-label">Build Cost</div>
+            <div class="stat-val" style="color:#16a34a;">$${b.cost.toLocaleString()}</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Armor Hull (HP)</div>
+            <div class="stat-val">${b.hp.toLocaleString()} HP</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Grid Power</div>
+            <div class="stat-val" style="color:${pwrVal >= 0 ? '#0284c7' : '#d97706'};">${pwrStr}</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Iso Footprint</div>
+            <div class="stat-val">${b.footprint}</div>
+          </div>
+        </div>
+
+        <div class="research-card">
+          <h3>📐 C&amp;C Generals Visual Research</h3>
+          <p>${b.visualResearch}</p>
+        </div>
+
+        <div class="anim-card">
+          <h3>🎬 Live Ligne-Claire 60 FPS Animations</h3>
+          <ul>
+            ${b.animations.map(a => `<li>${a}</li>`).join('')}
+          </ul>
+        </div>
+
+        <div class="research-card" style="background:#f8fafc;">
+          <h3>🔓 Unlocks &amp; Production</h3>
+          <div class="chip-list">
+            ${b.unlocks.map(u => `<span class="chip">${u}</span>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // 4. INTERACTIVE ACTIONS & TRIGGERS
+    // =========================================================================
+    function setViewMode(mode) {
+      viewMode = mode;
+      document.getElementById('tab-fob').classList.toggle('active', mode === 'fob');
+      document.getElementById('tab-inspector').classList.toggle('active', mode === 'inspector');
+      document.getElementById('tab-sheets').classList.toggle('active', mode === 'sheets');
+    }
+
+    function toggleBubbles(val) { showBubbles = val; }
+    function toggleFX(val) { showFX = val; }
+
+    function cycleStrategyPlan() {
+      strategyPlanIdx = (strategyPlanIdx + 1) % STRATEGY_PLANS.length;
+      const plan = STRATEGY_PLANS[strategyPlanIdx];
+      const el = document.getElementById('hud-plan');
+      el.textContent = plan.name;
+      el.style.color = plan.color;
+    }
+
+    function toggleReactorRods() {
+      controlRodsUpgraded = !controlRodsUpgraded;
+      const pwrEl = document.getElementById('hud-power');
+      pwrEl.textContent = controlRodsUpgraded ? '+26 / 15 GW (OVERCHARGED)' : FACTION_META[currentFaction].powerText;
+      renderRoster();
+      renderInspector();
+    }
+
+    function fireParticleCannonStrike() {
+      particleBeamTimer = 180; // 3 seconds at 60fps
+    }
+
+    function triggerBuildingHighlightEffect(b) {
+      if (b.id === 'USA_PARTICLE_CANNON' || b.id === 'CHINA_NUCLEAR_SILO' || b.id === 'GLA_SCUD_STORM') {
+        fireParticleCannonStrike();
+      } else if (b.id === 'USA_STRATEGY_CENTER' || b.id === 'CHINA_PROPAGANDA_CENTER') {
+        cycleStrategyPlan();
+      } else if (b.id === 'USA_REACTOR' || b.id === 'CHINA_REACTOR') {
+        toggleReactorRods();
+      }
+    }
+
+    function triggerSelectedBuildingAction() {
+      const list = getActiveBuildings();
+      const b = list[selectedIdx] || list[0];
+      if (b.id === 'USA_PARTICLE_CANNON' || b.id === 'CHINA_NUCLEAR_SILO' || b.id === 'GLA_SCUD_STORM') {
+        fireParticleCannonStrike();
+      } else if (b.id === 'USA_STRATEGY_CENTER' || b.id === 'CHINA_PROPAGANDA_CENTER') {
+        cycleStrategyPlan();
+      } else if (b.id === 'USA_REACTOR' || b.id === 'CHINA_REACTOR') {
+        toggleReactorRods();
+      } else if (b.id.includes('SUPPLY') || b.id === 'CHINA_INTERNET_CENTER' || b.id === 'GLA_BLACK_MARKET') {
+        const amt = b.id === 'USA_SUPPLY_DROP_ZONE' ? 1500 : (b.id === 'GLA_BLACK_MARKET' ? 1000 : 600);
+        supplyCredits += amt;
+        document.getElementById('hud-credits').textContent = '$' + supplyCredits.toLocaleString();
+        floatingTexts.push({
+          text: `+$${amt.toLocaleString()}`,
+          bId: b.id,
+          age: 0,
+          maxAge: 75,
+          color: '#16a34a'
+        });
+      } else {
+        floatingTexts.push({
+          text: `${b.icon} ${b.shortName.toUpperCase()} ACTIVE!`,
+          bId: b.id,
+          age: 0,
+          maxAge: 70,
+          color: FACTION_META[currentFaction].color
+        });
+      }
+    }
+
+
+    // =========================================================================
+    // 5. LIVE 60 FPS LIGNE-CLAIRE ANIMATION OVERLAYS PER BUILDING
+    // =========================================================================
+    function drawComicBubble(ctx, x, y, text, accentColor, t) {
+      if (!showBubbles) return;
+      const bob = Math.sin(t * 3.2 + x * 0.02) * 3.5;
+      const by = y + bob;
+
+      ctx.save();
+      ctx.font = '800 11px -apple-system, BlinkMacSystemFont, sans-serif';
+      const padX = 9;
+      const tw = ctx.measureText(text).width + padX * 2;
+      const th = 22;
+      const rx = x - tw / 2;
+      const ry = by - th - 8;
+
+      // Drop shadow
+      ctx.fillStyle = '#2b241f';
+      ctx.beginPath();
+      ctx.roundRect(rx + 2, ry + 2, tw, th, 6);
+      ctx.fill();
+
+      // White card body
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#2b241f';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(rx, ry, tw, th, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      // Pointer triangle
+      ctx.beginPath();
+      ctx.moveTo(x - 5, ry + th);
+      ctx.lineTo(x, ry + th + 6);
+      ctx.lineTo(x + 5, ry + th);
+      ctx.closePath();
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.stroke();
+
+      // Left accent bar
+      ctx.fillStyle = accentColor || '#2563eb';
+      ctx.fillRect(rx + 3, ry + 4, 3, th - 8);
+
+      // Label
+      ctx.fillStyle = '#2b241f';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x + 2, ry + th / 2 + 0.5);
+      ctx.restore();
+    }
+
+    function drawBuildingLiveAnimation(ctx, b, cx, cy, dw, dh, t, isInspector) {
+      if (!showFX) return;
+      ctx.save();
+
+      if (b.id === 'USA_COMMAND_CENTER') {
+        // 1. Expanding isometric radar sweep ring from rooftop dish
+        const dishX = cx + dw * 0.25;
+        const dishY = cy - dh * 0.24;
+        const pulse = (t * 0.85) % 1;
+        ctx.strokeStyle = `rgba(6, 182, 212, ${1 - pulse})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.ellipse(dishX, dishY, dw * 0.12 + pulse * dw * 0.35, (dw * 0.12 + pulse * dw * 0.35) * 0.5, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Rotating radar beam cone on dish
+        const ang = t * 2.4;
+        ctx.fillStyle = 'rgba(37, 99, 235, 0.22)';
+        ctx.beginPath();
+        ctx.moveTo(dishX, dishY);
+        ctx.ellipse(dishX, dishY, dw * 0.22, dw * 0.11, 0, ang, ang + 0.65);
+        ctx.closePath();
+        ctx.fill();
+
+        // Blinking red comms mast beacon
+        const mastX = cx - dw * 0.21;
+        const mastY = cy - dh * 0.38;
+        const blink = Math.sin(t * 7) > 0;
+        if (blink) {
+          ctx.fillStyle = '#ef4444';
+          ctx.beginPath();
+          ctx.arc(mastX, mastY, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#2b241f';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
+
+      else if (b.id === 'USA_REACTOR') {
+        // Pulsing cyan plasma core + ascending containment rings
+        const coreX = cx - dw * 0.01;
+        const coreY = cy - dh * 0.07;
+        const boost = controlRodsUpgraded ? 1.45 : 1.0;
+
+        // Core radial glow
+        const grad = ctx.createRadialGradient(coreX, coreY, 4, coreX, coreY, dw * 0.28 * boost);
+        grad.addColorStop(0, controlRodsUpgraded ? 'rgba(56, 189, 248, 0.65)' : 'rgba(6, 182, 212, 0.42)');
+        grad.addColorStop(1, 'rgba(6, 182, 212, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(coreX, coreY, dw * 0.28 * boost, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 3 rising isometric plasma rings inside cylinder
+        for (let i = 0; i < 3; i++) {
+          const phase = ((t * (controlRodsUpgraded ? 1.4 : 0.8) + i / 3) % 1);
+          const ry = coreY + dh * 0.14 - phase * dh * 0.34;
+          ctx.strokeStyle = `rgba(165, 243, 252, ${Math.sin(phase * Math.PI)})`;
+          ctx.lineWidth = controlRodsUpgraded ? 3 : 2;
+          ctx.beginPath();
+          ctx.ellipse(coreX, ry, dw * 0.11, dw * 0.055, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      else if (b.id === 'USA_SUPPLY_CENTER') {
+        // Hovering miniature Ligne-Claire Chinook helicopter over the H-pad + gantry trolley
+        const padX = cx - dw * 0.18;
+        const padY = cy - dh * 0.16;
+        const hoverY = padY - dh * 0.22 + Math.sin(t * 2.6) * (dh * 0.05);
+
+        // Helipad strobe lights
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + 0.4;
+          const lx = padX + Math.cos(a) * dw * 0.15;
+          const ly = padY + Math.sin(a) * dw * 0.075;
+          const on = Math.floor(t * 6) % 4 === i;
+          ctx.fillStyle = on ? '#facc15' : '#ea580c';
+          ctx.beginPath();
+          ctx.arc(lx, ly, on ? 3.5 : 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Rotor wash ring on pad
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.ellipse(padX, padY, dw * 0.12 + Math.sin(t * 8) * 3, dw * 0.06, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Miniature Ligne-Claire Chinook Helicopter
+        const chScale = Math.max(0.65, dw / 240);
+        ctx.save();
+        ctx.translate(padX, hoverY);
+        ctx.scale(chScale, chScale);
+        // Fuselage
+        ctx.fillStyle = '#6b705c';
+        ctx.strokeStyle = '#2b241f';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(-22, -8, 44, 15, 6);
+        ctx.fill();
+        ctx.stroke();
+        // Cockpit glass
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.roundRect(-20, -6, 11, 8, 3);
+        ctx.fill();
+        ctx.stroke();
+        // Tandem Rotor Discs
+        for (const rx of [-15, 15]) {
+          ctx.strokeStyle = 'rgba(43, 36, 31, 0.65)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.ellipse(rx, -10, 16, 6, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          const bAng = t * 18;
+          ctx.beginPath();
+          ctx.moveTo(rx - Math.cos(bAng) * 15, -10 - Math.sin(bAng) * 5);
+          ctx.lineTo(rx + Math.cos(bAng) * 15, -10 + Math.sin(bAng) * 5);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      else if (b.id === 'USA_BARRACKS') {
+        // Guard tower sweeping searchlight cone + marching Ranger dots on drill yard
+        const towerX = cx - dw * 0.30;
+        const towerY = cy - dh * 0.02;
+        const sweepX = cx - dw * 0.14 + Math.sin(t * 1.8) * (dw * 0.08);
+        const sweepY = cy + dh * 0.24 + Math.cos(t * 1.8) * (dh * 0.04);
+
+        const grad = ctx.createLinearGradient(towerX, towerY, sweepX, sweepY);
+        grad.addColorStop(0, 'rgba(254, 240, 138, 0.45)');
+        grad.addColorStop(1, 'rgba(254, 240, 138, 0.05)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(towerX, towerY);
+        ctx.lineTo(sweepX - 18, sweepY);
+        ctx.lineTo(sweepX + 18, sweepY);
+        ctx.closePath();
+        ctx.fill();
+
+        // Spotlight target oval on drill yard
+        ctx.strokeStyle = 'rgba(250, 204, 21, 0.65)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(sweepX, sweepY, 16, 8, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Flashing amber deployment beacon over roll-up door
+        const doorX = cx - dw * 0.06;
+        const doorY = cy + dh * 0.02;
+        if (Math.sin(t * 6) > 0) {
+          ctx.fillStyle = '#f59e0b';
+          ctx.beginPath();
+          ctx.arc(doorX, doorY, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      else if (b.id === 'USA_WAR_FACTORY') {
+        // Welding sparks inside the open tank assembly bay + rising chimney smoke puffs
+        const bayX = cx - dw * 0.14;
+        const bayY = cy + dh * 0.16;
+        if (Math.sin(t * 19) > -0.2) {
+          for (let i = 0; i < 5; i++) {
+            const a = t * 12 + i * 1.3;
+            const r = ((t * 40 + i * 7) % 14);
+            ctx.fillStyle = i % 2 === 0 ? '#facc15' : '#f97316';
+            ctx.beginPath();
+            ctx.arc(bayX + Math.cos(a) * r, bayY + Math.sin(a) * r * 0.6, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // Animated rising cel-shaded smoke puffs from twin stacks
+        const stackX = cx + dw * 0.25;
+        const stackY = cy - dh * 0.36;
+        for (let i = 0; i < 3; i++) {
+          const p = ((t * 0.55 + i / 3) % 1);
+          const sx = stackX + p * 18;
+          const sy = stackY - p * 26;
+          const rad = 5 + p * 7;
+          ctx.fillStyle = `rgba(226, 232, 240, ${0.85 * (1 - p)})`;
+          ctx.strokeStyle = `rgba(43, 36, 31, ${0.6 * (1 - p)})`;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(sx, sy, rad, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+
+      else if (b.id === 'USA_AIRFIELD') {
+        // Rotating ATC radar bar + sequential taxiway strobes + Raptor jet afterburner glow
+        const radarX = cx + dw * 0.04;
+        const radarY = cy - dh * 0.39;
+        const rAng = t * 3.2;
+        ctx.strokeStyle = '#06b6d4';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(radarX, radarY, 16, 7, 0, rAng, rAng + Math.PI * 0.8);
+        ctx.stroke();
+
+        // Chasing green runway approach strobes along central taxiway
+        for (let i = 0; i < 5; i++) {
+          const active = Math.floor(t * 7) % 5 === i;
+          const lx = cx - dw * 0.18 + i * (dw * 0.06);
+          const ly = cy + dh * 0.02 + i * (dh * 0.03);
+          ctx.fillStyle = active ? '#22c55e' : 'rgba(34, 197, 94, 0.3)';
+          ctx.beginPath();
+          ctx.arc(lx, ly, active ? 3.5 : 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Twin blue afterburner glow on Raptor jets
+        const jetPads = [
+          { x: cx - dw * 0.28, y: cy + dh * 0.04 },
+          { x: cx - dw * 0.12, y: cy - dh * 0.11 },
+          { x: cx + dw * 0.08, y: cy + dh * 0.02 }
+        ];
+        for (const jp of jetPads) {
+          const fl = 4 + Math.sin(t * 22) * 2;
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.75)';
+          ctx.beginPath();
+          ctx.arc(jp.x - 8, jp.y - 4, fl, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      else if (b.id === 'USA_STRATEGY_CENTER') {
+        // Battle Plan Aura Ring pulsing around the base + geodesic dome scan
+        const plan = STRATEGY_PLANS[strategyPlanIdx];
+        const pulse = (t * 0.65) % 1;
+        ctx.strokeStyle = plan.color;
+        ctx.globalAlpha = 0.85 * (1 - pulse);
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + dh * 0.08, dw * (0.35 + pulse * 0.22), dh * (0.20 + pulse * 0.12), 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        // Geodesic dome telemetry sweep
+        const domeX = cx;
+        const domeY = cy - dh * 0.22;
+        ctx.strokeStyle = plan.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(domeX, domeY, dw * 0.09, t * 2.5, t * 2.5 + 1.4);
+        ctx.stroke();
+      }
+
+      else if (b.id === 'USA_SUPPLY_DROP_ZONE') {
+        // Inward-pulsing target ring on pad + animated swaying parachute crate
+        const padX = cx - dw * 0.02;
+        const padY = cy + dh * 0.14;
+        const inPulse = 1 - ((t * 0.9) % 1);
+        ctx.strokeStyle = `rgba(250, 204, 21, ${0.85 * (1 - inPulse)})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.ellipse(padX, padY, dw * 0.28 * inPulse, dh * 0.14 * inPulse, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Perimeter cyan landing strobes
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          const bx = padX + Math.cos(a) * dw * 0.29;
+          const by = padY + Math.sin(a) * dh * 0.15;
+          const on = (Math.floor(t * 8) + i) % 4 === 0;
+          if (on) {
+            ctx.fillStyle = '#22d3ee';
+            ctx.beginPath();
+            ctx.arc(bx, by, 3.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      else if (b.id === 'USA_PATRIOT') {
+        // Phased-array radar scan + periodic Patriot SAM missile launch
+        const radarX = cx + dw * 0.03;
+        const radarY = cy - dh * 0.28;
+        const scanY = radarY - 6 + ((t * 16) % 12);
+        ctx.strokeStyle = '#a5f3fc';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(radarX - 7, scanY);
+        ctx.lineTo(radarX + 7, scanY + 3);
+        ctx.stroke();
+
+        // Targeting laser cone
+        const podX = cx - dw * 0.08;
+        const podY = cy - dh * 0.15;
+        const lAng = -2.2 + Math.sin(t * 1.7) * 0.25;
+        ctx.strokeStyle = 'rgba(34, 197, 94, 0.55)';
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(podX, podY);
+        ctx.lineTo(podX + Math.cos(lAng) * dw * 0.55, podY + Math.sin(lAng) * dh * 0.55);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      else if (b.id === 'USA_PARTICLE_CANNON') {
+        // Capacitor bank sequential plasma pulse + vertical Orbital Particle Beam column
+        const coreX = cx - dw * 0.01;
+        const coreY = cy - dh * 0.18;
+
+        // Rotating plasma containment halo around the open mirror petals
+        ctx.strokeStyle = 'rgba(34, 211, 238, 0.85)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.ellipse(coreX, coreY, dw * 0.16, dw * 0.08, 0, t * 4, t * 4 + Math.PI * 1.3);
+        ctx.stroke();
+
+        // If Orbital Particle Beam is active (or in Inspector mode, pulse periodically)
+        const beamActive = particleBeamTimer > 0 || (isInspector && (Math.floor(t) % 5 < 2));
+        if (beamActive) {
+          const beamW = (isInspector ? 22 : 16) + Math.sin(t * 35) * 4;
+          const beamGrad = ctx.createLinearGradient(coreX - beamW, 0, coreX + beamW, 0);
+          beamGrad.addColorStop(0, 'rgba(6, 182, 212, 0)');
+          beamGrad.addColorStop(0.25, 'rgba(34, 211, 238, 0.75)');
+          beamGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.98)');
+          beamGrad.addColorStop(0.75, 'rgba(34, 211, 238, 0.75)');
+          beamGrad.addColorStop(1, 'rgba(6, 182, 212, 0)');
+
+          ctx.fillStyle = beamGrad;
+          ctx.fillRect(coreX - beamW, 0, beamW * 2, coreY);
+
+          // Base shockwave rings
+          for (let r = 0; r < 2; r++) {
+            const p = ((t * 2.5 + r * 0.5) % 1);
+            ctx.strokeStyle = `rgba(165, 243, 252, ${1 - p})`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.ellipse(coreX, coreY, dw * (0.12 + p * 0.28), dh * (0.06 + p * 0.14), 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+      }
+
+      // ==================== CHINA (12) LIVE ANIMATIONS ====================
+      else if (b.id === 'CHINA_COMMAND_CENTER' || b.id === 'GLA_COMMAND_CENTER') {
+        const isChina = b.id === 'CHINA_COMMAND_CENTER';
+        const dishX = cx + (isChina ? dw * 0.18 : -dw * 0.16);
+        const dishY = cy - dh * 0.28;
+        const pulse = (t * 0.85) % 1;
+        ctx.strokeStyle = isChina ? `rgba(239, 68, 68, ${1 - pulse})` : `rgba(34, 197, 94, ${1 - pulse})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.ellipse(dishX, dishY, dw * 0.10 + pulse * dw * 0.30, (dw * 0.10 + pulse * dw * 0.30) * 0.5, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Pulsing emblem / beacon
+        if (Math.sin(t * 6) > 0) {
+          ctx.fillStyle = isChina ? '#facc15' : '#22c55e';
+          ctx.beginPath();
+          ctx.arc(cx, cy - dh * 0.12, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      else if (b.id === 'CHINA_REACTOR') {
+        // Billowing white steam puffs from cooling tower + glowing green nuclear dome core
+        const towerX = cx - dw * 0.14;
+        const towerY = cy - dh * 0.28;
+        for (let i = 0; i < 3; i++) {
+          const p = (t * 0.65 + i / 3) % 1;
+          const sx = towerX + Math.sin(t * 2 + i) * 6 + p * 10;
+          const sy = towerY - p * 32;
+          const rad = 6 + p * 9;
+          ctx.fillStyle = `rgba(248, 250, 252, ${0.85 * (1 - p)})`;
+          ctx.strokeStyle = `rgba(43, 36, 31, ${0.55 * (1 - p)})`;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(sx, sy, rad, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+        const domeX = cx + dw * 0.18;
+        const domeY = cy - dh * 0.02;
+        const gPulse = 0.5 + 0.5 * Math.sin(t * 6);
+        ctx.fillStyle = `rgba(74, 222, 128, ${0.35 + 0.45 * gPulse})`;
+        ctx.beginPath();
+        ctx.arc(domeX, domeY, dw * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      else if (b.id === 'CHINA_SUPPLY_CENTER' || b.id === 'GLA_SUPPLY_STASH' || b.id === 'GLA_BLACK_MARKET') {
+        // Moving crane trolley or glowing green anthrax contraband vapor
+        for (let i = 0; i < 3; i++) {
+          const p = (t * 0.75 + i / 3) % 1;
+          ctx.fillStyle = b.id === 'CHINA_SUPPLY_CENTER'
+            ? `rgba(250, 204, 21, ${(1 - p) * 0.75})`
+            : `rgba(74, 222, 128, ${(1 - p) * 0.75})`;
+          ctx.beginPath();
+          ctx.arc(cx + (i - 1) * 14, cy - p * 24, 3.5 + p * 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      else if (b.id === 'CHINA_BARRACKS' || b.id === 'GLA_BARRACKS') {
+        // Sweeping guard searchlight cone
+        const towerX = cx - dw * 0.22;
+        const towerY = cy - dh * 0.12;
+        const sweepX = cx + Math.sin(t * 1.9) * (dw * 0.16);
+        const sweepY = cy + dh * 0.22;
+        ctx.fillStyle = 'rgba(254, 240, 138, 0.28)';
+        ctx.beginPath();
+        ctx.moveTo(towerX, towerY);
+        ctx.lineTo(sweepX - 16, sweepY);
+        ctx.lineTo(sweepX + 16, sweepY);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      else if (b.id === 'CHINA_WAR_FACTORY' || b.id === 'GLA_ARMS_DEALER') {
+        // Smokestack puffs + robotic welding spark bursts
+        const stackX = cx - dw * 0.18;
+        const stackY = cy - dh * 0.34;
+        for (let i = 0; i < 3; i++) {
+          const p = ((t * 0.6 + i / 3) % 1);
+          ctx.fillStyle = `rgba(203, 213, 225, ${0.8 * (1 - p)})`;
+          ctx.beginPath();
+          ctx.arc(stackX + p * 14, stackY - p * 26, 5 + p * 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (Math.sin(t * 20) > 0) {
+          ctx.fillStyle = '#facc15';
+          ctx.beginPath();
+          ctx.arc(cx + dw * 0.08, cy + dh * 0.14, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      else if (b.id === 'CHINA_AIRFIELD') {
+        // Rotating crimson radar bar + MiG afterburner glow
+        const rx = cx + dw * 0.18, ry = cy - dh * 0.34;
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.ellipse(rx, ry, 15, 7, 0, t * 3, t * 3 + Math.PI * 0.85);
+        ctx.stroke();
+      }
+
+      else if (b.id === 'CHINA_PROPAGANDA_CENTER' || b.id === 'CHINA_SPEAKER_TOWER') {
+        // Concentric crimson & gold propaganda broadcast soundwaves
+        for (let i = 0; i < 3; i++) {
+          const p = (t * 0.8 + i / 3) % 1;
+          ctx.strokeStyle = i % 2 === 0
+            ? `rgba(239, 68, 68, ${1 - p})`
+            : `rgba(250, 204, 21, ${1 - p})`;
+          ctx.lineWidth = 2.4;
+          ctx.beginPath();
+          ctx.ellipse(cx, cy - dh * 0.32, dw * (0.08 + p * 0.36), dh * (0.04 + p * 0.18), 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      else if (b.id === 'CHINA_INTERNET_CENTER') {
+        // Sweeping satellite uplink beam + emerald cyber pulses
+        const dishY = cy - dh * 0.28;
+        const pulse = (t * 0.9) % 1;
+        ctx.strokeStyle = `rgba(34, 197, 94, ${1 - pulse})`;
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.ellipse(cx, dishY, dw * (0.12 + pulse * 0.25), dh * (0.06 + pulse * 0.12), 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      else if (b.id === 'CHINA_GATTLING_CANNON' || b.id === 'CHINA_BUNKER' || b.id === 'GLA_TUNNEL_NETWORK' || b.id === 'GLA_STINGER_SITE' || b.id === 'GLA_PALACE') {
+        // Sweeping targeting laser + periodic muzzle flash burst
+        const lAng = -0.6 + Math.sin(t * 2.1) * 0.45;
+        ctx.strokeStyle = b.id.startsWith('CHINA') ? 'rgba(239, 68, 68, 0.6)' : 'rgba(34, 197, 94, 0.6)';
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - dh * 0.1);
+        ctx.lineTo(cx + Math.cos(lAng) * dw * 0.5, cy - dh * 0.1 + Math.sin(lAng) * dh * 0.4);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      else if (b.id === 'CHINA_NUCLEAR_SILO' || b.id === 'GLA_SCUD_STORM') {
+        const isNuke = b.id === 'CHINA_NUCLEAR_SILO';
+        const coreY = cy - dh * 0.12;
+        const pulse = (t * 0.85) % 1;
+        ctx.strokeStyle = isNuke ? `rgba(239, 68, 68, ${1 - pulse})` : `rgba(74, 222, 128, ${1 - pulse})`;
+        ctx.lineWidth = 2.8;
+        ctx.beginPath();
+        ctx.ellipse(cx, coreY, dw * (0.14 + pulse * 0.28), dh * (0.07 + pulse * 0.14), 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        const beamActive = particleBeamTimer > 0 || (isInspector && (Math.floor(t) % 5 < 2));
+        if (beamActive) {
+          const colW = isInspector ? 20 : 14;
+          ctx.fillStyle = isNuke ? 'rgba(249, 115, 22, 0.82)' : 'rgba(74, 222, 128, 0.82)';
+          ctx.fillRect(cx - colW, 0, colW * 2, coreY);
+        }
+      }
+
+      ctx.restore();
+    }
+
+    // =========================================================================
+    // 6. MAIN RENDERING LOOP (FOB DIORAMA, SINGLE STUDIO, & SPRITE ATLAS)
+    // =========================================================================
+    const canvas = document.getElementById('diorama-canvas');
+    const ctx = canvas.getContext('2d');
+    const buildingScreenBoxes = [];
+
+    function resizeCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // Click handler on canvas to select building in FOB mode
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+
+      if (viewMode === 'fob') {
+        for (let i = buildingScreenBoxes.length - 1; i >= 0; i--) {
+          const sb = buildingScreenBoxes[i];
+          if (mx >= sb.x && mx <= sb.x + sb.w && my >= sb.y && my <= sb.y + sb.h) {
+            selectedIdx = sb.idx;
+            renderRoster();
+            renderInspector();
+            triggerSelectedBuildingAction();
+            return;
+          }
+        }
+      } else if (viewMode === 'inspector') {
+        triggerSelectedBuildingAction();
+      }
+    });
+
+    function drawIsometricMilitaryBasePlatform(ctx, cx, cy, rx, ry) {
+      ctx.save();
+      const depth = 26;
+
+      // Left earth/concrete slab wall
+      ctx.fillStyle = '#8b7e6a';
+      ctx.strokeStyle = '#2b241f';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cx - rx, cy);
+      ctx.lineTo(cx, cy + ry);
+      ctx.lineTo(cx, cy + ry + depth);
+      ctx.lineTo(cx - rx, cy + depth);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Right concrete slab wall
+      ctx.fillStyle = '#6c604f';
+      ctx.beginPath();
+      ctx.moveTo(cx + rx, cy);
+      ctx.lineTo(cx, cy + ry);
+      ctx.lineTo(cx, cy + ry + depth);
+      ctx.lineTo(cx + rx, cy + depth);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Top fortified military tarmac & desert-olive compound surface
+      ctx.fillStyle = '#dcd4c0';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - ry);
+      ctx.lineTo(cx + rx, cy);
+      ctx.lineTo(cx, cy + ry);
+      ctx.lineTo(cx - rx, cy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Subtle isometric military grid & yellow perimeter safety line
+      ctx.strokeStyle = 'rgba(43, 36, 31, 0.10)';
+      ctx.lineWidth = 1.2;
+      const steps = 8;
+      for (let i = 1; i < steps; i++) {
+        const f = i / steps;
+        // Grid lines parallel to top-left -> bottom-right
+        ctx.beginPath();
+        ctx.moveTo(cx - rx * (1 - f), cy - ry * f);
+        ctx.lineTo(cx + rx * f, cy + ry * (1 - f));
+        ctx.stroke();
+        // Grid lines parallel to top-right -> bottom-left
+        ctx.beginPath();
+        ctx.moveTo(cx + rx * (1 - f), cy - ry * f);
+        ctx.lineTo(cx - rx * f, cy + ry * (1 - f));
+        ctx.stroke();
+      }
+
+      // Inner yellow military compound boundary diamond
+      ctx.strokeStyle = 'rgba(217, 119, 6, 0.45)';
+      ctx.setLineDash([8, 6]);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - ry * 0.93);
+      ctx.lineTo(cx + rx * 0.93, cy);
+      ctx.lineTo(cx, cy + ry * 0.93);
+      ctx.lineTo(cx - rx * 0.93, cy);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.restore();
+    }
+
+    function renderFrame(now) {
+      const t = now * 0.001;
+      if (particleBeamTimer > 0) particleBeamTimer--;
+
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      ctx.clearRect(0, 0, w, h);
+
+      if (!assetsReady) {
+        ctx.fillStyle = '#2b241f';
+        ctx.font = '800 15px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Loading Ligne-Claire Military Building Sprites...', w / 2, h / 2);
+        requestAnimationFrame(renderFrame);
+        return;
+      }
+
+      buildingScreenBoxes.length = 0;
+      const activeList = getActiveBuildings();
+      const facColor = FACTION_META[currentFaction].color;
+
+      if (viewMode === 'fob') {
+        const cx = w * 0.5;
+        const cy = h * 0.53;
+        const rx = Math.min(w * 0.46, 540);
+        const ry = rx * 0.50;
+
+        // Draw raised 2:1 isometric military FOB plateau
+        drawIsometricMilitaryBasePlatform(ctx, cx, cy, rx, ry);
+
+        // Sort buildings back-to-front by screen Y
+        const renderOrder = activeList.map((b, idx) => ({
+          b,
+          idx,
+          sx: cx + b.fobPos.gx * rx,
+          sy: cy + b.fobPos.gy * ry
+        })).sort((a, b) => a.sy - b.sy);
+
+        for (const item of renderOrder) {
+          const { b, idx, sx, sy } = item;
+          const spr = extractedSprites[b.id];
+          if (!spr) continue;
+
+          const scale = (rx / 520) * b.fobPos.scale;
+          const dw = spr.width * scale;
+          const dh = spr.height * scale;
+          const dx = sx - dw / 2;
+          const dy = sy - dh / 2;
+
+          // Selection ring on ground if selected
+          if (idx === selectedIdx) {
+            ctx.save();
+            ctx.strokeStyle = facColor;
+            ctx.fillStyle = 'rgba(37, 99, 235, 0.12)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.ellipse(sx, sy + dh * 0.12, dw * 0.48, dw * 0.24, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // Draw Ligne-Claire building sprite
+          ctx.drawImage(spr, dx, dy, dw, dh);
+
+          // Draw live 60 FPS animations for this building
+          drawBuildingLiveAnimation(ctx, b, sx, sy, dw, dh, t, false);
+
+          // Save screen hit box
+          buildingScreenBoxes.push({ idx, x: dx, y: dy, w: dw, h: dh, sx, sy });
+        }
+
+        // Draw SAM / Gatling / Stinger Defense Interception arc on FOB
+        if (showFX) {
+          const patriotItem = renderOrder.find(r =>
+            r.b.id === 'USA_PATRIOT' || r.b.id === 'CHINA_GATTLING_CANNON' || r.b.id === 'GLA_STINGER_SITE'
+          );
+          if (patriotItem) {
+            const samPhase = (t * 0.65) % 1;
+            const startX = patriotItem.sx - 10;
+            const startY = patriotItem.sy - 28;
+            const targetX = cx - rx * 0.55;
+            const targetY = cy - ry * 0.85;
+            const curX = startX + (targetX - startX) * samPhase;
+            const curY = startY + (targetY - startY) * samPhase - Math.sin(samPhase * Math.PI) * 95;
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.quadraticCurveTo((startX + curX) / 2, Math.min(startY, curY) - 40 * samPhase, curX, curY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            if (samPhase < 0.9) {
+              ctx.fillStyle = facColor;
+              ctx.strokeStyle = '#2b241f';
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              ctx.arc(curX, curY, 4.5, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+            } else {
+              const p = (samPhase - 0.9) * 10;
+              ctx.fillStyle = '#facc15';
+              ctx.strokeStyle = '#2b241f';
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.arc(targetX, targetY, 8 + p * 14, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+        }
+
+        // Draw comic status bubbles on top
+        for (const item of renderOrder) {
+          const { b, idx, sx, sy } = item;
+          const spr = extractedSprites[b.id];
+          if (!spr) continue;
+          const scale = (rx / 520) * b.fobPos.scale;
+          const dh = spr.height * scale;
+          const accent = idx === selectedIdx ? facColor : '#1e293b';
+          let label = b.bubbleText;
+          if (b.id === 'USA_REACTOR' && controlRodsUpgraded) label = '⚡ +16 GW RODS';
+          if (b.id === 'CHINA_REACTOR' && controlRodsUpgraded) label = '☢️ +15 GW OVERCHARGE';
+          if (b.id === 'USA_STRATEGY_CENTER') label = '🛰️ ' + STRATEGY_PLANS[strategyPlanIdx].name.split(' ')[0];
+          drawComicBubble(ctx, sx, sy - dh * 0.42, label, accent, t + idx);
+        }
+
+        // Floating credit / action popups
+        for (let i = floatingTexts.length - 1; i >= 0; i--) {
+          const ft = floatingTexts[i];
+          ft.age++;
+          const target = renderOrder.find(r => r.b.id === ft.bId);
+          if (target) {
+            const p = ft.age / ft.maxAge;
+            ctx.save();
+            ctx.font = '900 14px -apple-system, sans-serif';
+            ctx.fillStyle = ft.color;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 4;
+            ctx.textAlign = 'center';
+            ctx.globalAlpha = 1 - p;
+            ctx.strokeText(ft.text, target.sx, target.sy - 55 - p * 35);
+            ctx.fillText(ft.text, target.sx, target.sy - 55 - p * 35);
+            ctx.restore();
+          }
+          if (ft.age >= ft.maxAge) floatingTexts.splice(i, 1);
+        }
+      }
+
+      else if (viewMode === 'inspector') {
+        // Single-building high-detail studio plinth view
+        const b = activeList[selectedIdx] || activeList[0];
+        const spr = extractedSprites[b.id];
+        const cx = w * 0.5;
+        const cy = h * 0.54;
+
+        drawIsometricMilitaryBasePlatform(ctx, cx, cy + 30, 250, 125);
+
+        if (spr) {
+          const maxDim = Math.min(w, h) * 0.56;
+          const scale = Math.min(maxDim / spr.width, maxDim / spr.height);
+          const dw = spr.width * scale;
+          const dh = spr.height * scale;
+          ctx.drawImage(spr, cx - dw / 2, cy - dh / 2, dw, dh);
+          drawBuildingLiveAnimation(ctx, b, cx, cy, dw, dh, t, true);
+          drawComicBubble(ctx, cx, cy - dh * 0.46, `${b.icon} ${b.name.toUpperCase()}`, facColor, t);
+        }
+      }
+
+      else if (viewMode === 'sheets') {
+        // Side-by-side display of both generated Ligne-Claire sprite sheets for the active faction
+        const pad = 24;
+        const availW = (w - pad * 3) / 2;
+        const availH = h - 130;
+        const [s1, s2] = factionSheetImages[currentFaction];
+        if (s1 && s1.complete && s1.naturalWidth > 0) {
+          const scale = Math.min(availW / s1.width, availH / s1.height);
+          const sw = s1.width * scale;
+          const sh = s1.height * scale;
+          const y0 = (h - sh) / 2;
+
+          [s1, s2].forEach((img, sIdx) => {
+            if (!img || !img.complete) return;
+            const x0 = pad + sIdx * (sw + pad);
+            ctx.fillStyle = '#f4efe6';
+            ctx.strokeStyle = '#2b241f';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.roundRect(x0 - 4, y0 - 4, sw + 8, sh + 8, 10);
+            ctx.fill();
+            ctx.stroke();
+            ctx.drawImage(img, x0, y0, sw, sh);
+
+            // Highlight selected building if on this sheet
+            activeList.filter(b => b.sheet === sIdx + 1).forEach(b => {
+              const isSel = activeList[selectedIdx] && activeList[selectedIdx].id === b.id;
+              const bx = x0 + b.crop.x * scale;
+              const by = y0 + b.crop.y * scale;
+              const bw = b.crop.w * scale;
+              const bh = b.crop.h * scale;
+              ctx.strokeStyle = isSel ? facColor : 'rgba(43, 36, 31, 0.35)';
+              ctx.lineWidth = isSel ? 3 : 1.5;
+              ctx.strokeRect(bx, by, bw, bh);
+            });
+          });
+        }
+      }
+
+      requestAnimationFrame(renderFrame);
+    }
+
+
+    // Boot
+    renderRoster();
+    renderInspector();
+    resizeCanvas();
+    loadAllSprites();
+    requestAnimationFrame(renderFrame);
+  </script>
+</body>
+</html>

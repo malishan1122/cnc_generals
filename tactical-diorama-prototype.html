@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>C&amp;C Generals — Illustrated Isometric Diorama &amp; Sprite Study</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  body {
+    background: #f4EFE6;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #231f1c;
+    overflow: hidden;
+  }
+  #app {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background: #f4EFE6;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+  }
+  canvas:active { cursor: grabbing; }
+
+  .top-bar {
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    pointer-events: none;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .pill-card {
+    pointer-events: auto;
+    background: rgba(255, 253, 248, 0.94);
+    border: 2px solid #2b241f;
+    border-radius: 12px;
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 4px 0 #2b241f;
+  }
+  .title-badge {
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    color: #2b241f;
+  }
+  .tab-group {
+    pointer-events: auto;
+    display: flex;
+    gap: 8px;
+  }
+  .btn {
+    background: #fffdf8;
+    border: 2px solid #2b241f;
+    border-radius: 10px;
+    padding: 7px 13px;
+    font-weight: 700;
+    font-size: 12px;
+    color: #2b241f;
+    cursor: pointer;
+    box-shadow: 0 3px 0 #2b241f;
+    transition: transform 0.1s ease, background 0.15s ease;
+  }
+  .btn:hover {
+    background: #f6e3;
+    transform: translateY(-1px);
+  }
+  .btn:active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 #2b241f;
+  }
+  .btn.active {
+    background: #ffcf5c;
+  }
+
+  .bottom-bar {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    pointer-events: none;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .action-deck {
+    pointer-events: auto;
+    background: rgba(255, 253, 248, 0.94);
+    border: 2px solid #2b241f;
+    border-radius: 12px;
+    padding: 8px 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    box-shadow: 0 4px 0 #2b241f;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="dioramaCanvas"></canvas>
+
+  <div class="top-bar">
+    <div class="pill-card">
+      <span class="title-badge">🎖️ C&amp;C GENERALS // ILLUSTRATED ISOMETRIC DIORAMA</span>
+    </div>
+    <div class="tab-group">
+      <button class="btn active" data-mode="battle" id="tabBattle">🌉 Battleground Diorama</button>
+      <button class="btn" data-mode="usa" id="tabUsa">🦅 USA Buildings (Sheet 1)</button>
+      <button class="btn" data-mode="usa2" id="tabUsa2">🦅 USA Buildings (Sheet 2)</button>
+      <a class="btn" href="usa-buildings-diorama.html" style="text-decoration:none;background:#2563eb;color:#fff;">🏰 Animated USA Base Showcase (All 10) →</a>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <div class="action-deck">
+      <button class="btn" id="btnBarrage">💥 Bridge Tank Exchange</button>
+      <button class="btn" id="btnSam">🚀 Launch Patriot SAMs</button>
+      <button class="btn" id="btnSpawnTank">🛡️ + Deploy Illustrated Crusader</button>
+      <button class="btn" id="btnSpawnOverlord">☢️ + Deploy Illustrated Overlord</button>
+      <button class="btn" id="btnReset">🔍 Reset View</button>
+    </div>
+    <div class="pill-card" style="font-size:12px; font-weight:600;">
+      Click any tab above to inspect the USA military sprite sheets • Open the Animated USA Base Showcase for all 10 live buildings
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('dioramaCanvas');
+  const ctx = canvas.getContext('2d');
+
+  let W = window.innerWidth, H = window.innerHeight, dpr = 1;
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const battleImg = new Image();
+  battleImg.src = 'assets/diorama/battle_concept.png';
+
+  const assetImg = new Image();
+  assetImg.src = 'assets/diorama/asset_sheet.png';
+
+  const sheetImages = {
+    battle: battleImg,
+    assets: assetImg,
+    usa: new Image(),
+    usa2: new Image()
+  };
+  sheetImages.usa.src = 'assets/diorama/usa_buildings_sheet_1.png';
+  sheetImages.usa2.src = 'assets/diorama/usa_buildings_sheet_2.png';
+
+  // Chroma-keyed transparent sprite sheet canvas for deploying live illustrated units
+  let keyedSpritesCanvas = null;
+  assetImg.onload = () => {
+    const oc = document.createElement('canvas');
+    oc.width = assetImg.width;
+    oc.height = assetImg.height;
+    const octx = oc.getContext('2d');
+    octx.drawImage(assetImg, 0, 0);
+    try {
+      const imgData = octx.getImageData(0, 0, oc.width, oc.height);
+      const data = imgData.data;
+      const bgR = data[0], bgG = data[1], bgB = data[2];
+      for (let i = 0; i < data.length; i += 4) {
+        const dr = Math.abs(data[i] - bgR);
+        const dg = Math.abs(data[i + 1] - bgG);
+        const db = Math.abs(data[i + 2] - bgB);
+        const dist = dr + dg + db;
+        if (dist < 26) {
+          data[i + 3] = 0;
+        } else if (dist < 42) {
+          data[i + 3] = Math.round(((dist - 26) / 16) * 255);
+        }
+      }
+      octx.putImageData(imgData, 0, 0);
+      keyedSpritesCanvas = oc;
+    } catch (e) {
+      keyedSpritesCanvas = assetImg;
+    }
+  };
+
+  let mode = 'battle'; // 'battle' | 'assets'
+  let simTime = 0;
+
+  const cam = { x: 0, y: 0, zoom: 1, dragging: false, sx: 0, sy: 0, moved: false, shake: 0 };
+
+  // Animated status bubbles anchored in normalized image UV coordinates
+  const bubbles = [
+    { u: 0.118, v: 0.265, icon: '🎯', label: 'RADAR LOCK', phase: 0.0 },
+    { u: 0.312, v: 0.415, icon: '🛡️', label: 'SAM READY', phase: 1.1 },
+    { u: 0.508, v: 0.145, icon: '🔧', label: 'REPAIR BAY', phase: 2.2 },
+    { u: 0.735, v: 0.258, icon: '🛡️', label: 'GARRISON 4/4', phase: 3.1 },
+    { u: 0.556, v: 0.668, icon: '🎯', label: 'ENGAGING', phase: 4.0 },
+    { u: 0.708, v: 0.658, icon: '⚙️', label: 'DOZER OPS', phase: 5.2 }
+  ];
+
+  // Live projectiles & cel-shaded explosions in normalized UV space
+  const projectiles = [];
+  const explosions = [];
+  const deployedUnits = [];
+
+  function spawnShell(u0, v0, u1, v1, kind = 'shell') {
+    projectiles.push({
+      u0, v0, u1, v1,
+      t: 0,
+      speed: kind === 'sam' ? 1.2 : 1.85,
+      arc: kind === 'sam' ? 0.14 : 0.045,
+      kind
+    });
+  }
+
+  function spawnCelBurst(u, v, scale = 1.0) {
+    explosions.push({ u, v, t: 0, dur: 0.75, scale });
+  }
+
+  function drawComicBubble(x, y, icon, scale = 1) {
+    const w = 32 * scale;
+    const h = 30 * scale;
+    const r = 7 * scale;
+    const bx = x - w * 0.5;
+    const by = y - h - 8 * scale;
+
+    ctx.save();
+    ctx.fillStyle = '#fffdf8';
+    ctx.strokeStyle = '#26201b';
+    ctx.lineWidth = 2.2 * scale;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, w, h, r);
+    ctx.fill();
+    ctx.stroke();
+
+    // Little pointer triangle at bottom center
+    ctx.beginPath();
+    ctx.moveTo(x - 5 * scale, by + h - 1);
+    ctx.lineTo(x, by + h + 6 * scale);
+    ctx.lineTo(x + 5 * scale, by + h - 1);
+    ctx.closePath();
+    ctx.fillStyle = '#fffdf8';
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.font = `${Math.round(15 * scale)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(icon, x, by + h * 0.52);
+    ctx.restore();
+  }
+
+  function drawCelExplosion(x, y, prog, scale) {
+    ctx.save();
+    ctx.translate(x, y);
+    const s = scale * (0.65 + prog * 0.65);
+
+    // Outer cel-shaded smoke puffs
+    const puffOffsets = [
+      [-18, -8, 14], [18, -6, 13], [0, -20, 16], [-10, 8, 11], [12, 8, 12]
+    ];
+    ctx.fillStyle = prog < 0.5 ? '#e8dfd1' : '#9c9286';
+    ctx.strokeStyle = '#26201b';
+    ctx.lineWidth = 2.2 * scale;
+    for (const [ox, oy, pr] of puffOffsets) {
+      const dist = 1 + prog * 0.7;
+      ctx.beginPath();
+      ctx.arc(ox * dist * scale, oy * dist * scale, pr * (1 - prog * 0.45) * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Spiky comic starburst core
+    if (prog < 0.75) {
+      const spikes = 10;
+      const outerR = 26 * s * (1 - prog * 0.4);
+      const innerR = 11 * s * (1 - prog * 0.4);
+      ctx.fillStyle = '#ff9d2e';
+      ctx.beginPath();
+      for (let i = 0; i < spikes * 2; i++) {
+        const rad = i % 2 === 0 ? outerR : innerR;
+        const ang = (i * Math.PI) / spikes + prog * 1.5;
+        const px = Math.cos(ang) * rad;
+        const py = Math.sin(ang) * rad;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Inner bright yellow star
+      ctx.fillStyle = '#fff380';
+      ctx.beginPath();
+      ctx.arc(0, 0, 8 * s * (1 - prog * 0.5), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  let autoFireTimer = 0.8;
+
+  function update(dt) {
+    simTime += dt;
+    if (cam.shake > 0) cam.shake = Math.max(0, cam.shake - dt * 20);
+
+    if (mode === 'battle') {
+      autoFireTimer -= dt;
+      if (autoFireTimer <= 0) {
+        // Alternate fire across the suspension bridge between USA Crusader and China Overlord
+        if (Math.random() < 0.55) {
+          spawnShell(0.39, 0.47, 0.57 + (Math.random() - 0.5) * 0.03, 0.61 + (Math.random() - 0.5) * 0.03, 'shell');
+        } else {
+          spawnShell(0.57, 0.61, 0.39 + (Math.random() - 0.5) * 0.03, 0.47 + (Math.random() - 0.5) * 0.03, 'shell');
+        }
+        autoFireTimer = 1.15;
+      }
+    }
+
+    for (const u of deployedUnits) {
+      const du = u.tu - u.u;
+      const dv = u.tv - u.v;
+      const dist = Math.hypot(du, dv);
+      if (dist > 0.004) {
+        const step = Math.min(dist, dt * 0.065);
+        u.u += (du / dist) * step;
+        u.v += (dv / dist) * step;
+      }
+    }
+
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+      const p = projectiles[i];
+      p.t += dt * p.speed;
+      if (p.t >= 1) {
+        spawnCelBurst(p.u1, p.v1, p.kind === 'sam' ? 1.15 : 0.9);
+        projectiles.splice(i, 1);
+      }
+    }
+
+    for (let i = explosions.length - 1; i >= 0; i--) {
+      const e = explosions[i];
+      e.t += dt;
+      if (e.t >= e.dur) explosions.splice(i, 1);
+    }
+  }
+
+  function getImageRect(img) {
+    const availW = W * 0.92;
+    const availH = H * 0.84;
+    const scale = Math.min(availW / img.width, availH / img.height) * cam.zoom;
+    const drawW = img.width * scale;
+    const drawH = img.height * scale;
+    const drawX = (W - drawW) * 0.5 + cam.x;
+    const drawY = (H - drawH) * 0.5 + cam.y;
+    return { x: drawX, y: drawY, w: drawW, h: drawH, scale };
+  }
+
+  function render() {
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#f4EFE6';
+    ctx.fillRect(0, 0, W, H);
+
+    if (cam.shake > 0) {
+      ctx.translate((Math.random() - 0.5) * cam.shake, (Math.random() - 0.5) * cam.shake);
+    }
+
+    const activeImg = sheetImages[mode] || battleImg;
+    if (activeImg.complete && activeImg.naturalWidth > 0) {
+      const r = getImageRect(activeImg);
+      ctx.drawImage(activeImg, r.x, r.y, r.w, r.h);
+
+      if (mode === 'battle') {
+        // Draw deployed illustrated sprite units on the roads
+        if (keyedSpritesCanvas) {
+          for (const u of deployedUnits) {
+            const crop = u.kind === 'crusader'
+              ? { sx: 0.255 * 1376, sy: 0.405 * 768, sw: 0.26 * 1376, sh: 0.28 * 768, dw: 118, dh: 72 }
+              : { sx: 0.68 * 1376, sy: 0.56 * 768, sw: 0.29 * 1376, sh: 0.36 * 768, dw: 135, dh: 88 };
+            const px = r.x + u.u * r.w;
+            const py = r.y + u.v * r.h;
+            const bob = Math.sin(simTime * 12) * 1.2 * r.scale;
+            ctx.drawImage(
+              keyedSpritesCanvas,
+              crop.sx, crop.sy, crop.sw, crop.sh,
+              px - (crop.dw * 0.5) * r.scale,
+              py - (crop.dh * 0.5) * r.scale + bob,
+              crop.dw * r.scale,
+              crop.dh * r.scale
+            );
+            drawComicBubble(px, py - 24 * r.scale + bob, u.kind === 'crusader' ? '🛡️' : '☢️', r.scale * 0.85);
+          }
+        }
+
+        // Draw animated projectiles with cel-shaded smoke trails
+        for (const p of projectiles) {
+          const u = p.u0 + (p.u1 - p.u0) * p.t;
+          const v = p.v0 + (p.v1 - p.v0) * p.t - Math.sin(p.t * Math.PI) * p.arc;
+          const prevT = Math.max(0, p.t - 0.14);
+          const pu = p.u0 + (p.u1 - p.u0) * prevT;
+          const pv = p.v0 + (p.v1 - p.v0) * prevT - Math.sin(prevT * Math.PI) * p.arc;
+
+          const x = r.x + u * r.w;
+          const y = r.y + v * r.h;
+          const tx = r.x + pu * r.w;
+          const ty = r.y + pv * r.h;
+
+          ctx.strokeStyle = '#26201b';
+          ctx.lineWidth = 5 * r.scale;
+          ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x, y); ctx.stroke();
+
+          ctx.strokeStyle = p.kind === 'sam' ? '#ff5e3a' : '#ffcf40';
+          ctx.lineWidth = 2.6 * r.scale;
+          ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x, y); ctx.stroke();
+        }
+
+        // Draw cel-shaded explosions
+        for (const e of explosions) {
+          const x = r.x + e.u * r.w;
+          const y = r.y + e.v * r.h;
+          drawCelExplosion(x, y, e.t / e.dur, e.scale * r.scale);
+        }
+
+        // Draw bobbing comic-tactical status bubbles
+        for (const b of bubbles) {
+          const bx = r.x + b.u * r.w;
+          const by = r.y + b.v * r.h + Math.sin(simTime * 3.8 + b.phase) * 4 * r.scale;
+          drawComicBubble(bx, by, b.icon, r.scale * 0.85);
+        }
+      }
+    }
+
+    ctx.restore();
+  }
+
+  // Controls
+  canvas.addEventListener('mousedown', (e) => {
+    cam.dragging = true;
+    cam.moved = false;
+    cam.sx = e.clientX - cam.x;
+    cam.sy = e.clientY - cam.y;
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!cam.dragging) return;
+    const nx = e.clientX - cam.sx;
+    const ny = e.clientY - cam.sy;
+    if (Math.hypot(nx - cam.x, ny - cam.y) > 4) cam.moved = true;
+    cam.x = nx;
+    cam.y = ny;
+  });
+
+  window.addEventListener('mouseup', (e) => {
+    if (!cam.dragging) return;
+    cam.dragging = false;
+    if (cam.moved) return;
+
+    const activeImg = sheetImages[mode] || battleImg;
+    if (!activeImg.complete) return;
+    const r = getImageRect(activeImg);
+    const u = (e.clientX - r.x) / r.w;
+    const v = (e.clientY - r.y) / r.h;
+    if (u >= 0 && u <= 1 && v >= 0 && v <= 1 && mode === 'battle') {
+      spawnShell(0.18, 0.34, u, v, 'sam');
+      cam.shake = 5;
+    }
+  });
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    cam.zoom = Math.max(0.7, Math.min(2.5, cam.zoom * (e.deltaY < 0 ? 1.08 : 0.92)));
+  }, { passive: false });
+
+  function setActiveTab(nextMode) {
+    mode = nextMode;
+    document.querySelectorAll('.tab-group button.btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === nextMode);
+    });
+  }
+
+  document.querySelectorAll('.tab-group button.btn').forEach(btn => {
+    btn.addEventListener('click', () => setActiveTab(btn.dataset.mode));
+  });
+
+  document.getElementById('btnBarrage').addEventListener('click', () => {
+    setActiveTab('battle');
+    for (let i = 0; i < 4; i++) {
+      setTimeout(() => {
+        spawnShell(0.38, 0.46, 0.56 + (Math.random() - 0.5) * 0.05, 0.60 + (Math.random() - 0.5) * 0.05, 'shell');
+        spawnShell(0.58, 0.62, 0.45 + (Math.random() - 0.5) * 0.05, 0.53 + (Math.random() - 0.5) * 0.05, 'shell');
+        cam.shake = 6;
+      }, i * 180);
+    }
+  });
+
+  document.getElementById('btnSam').addEventListener('click', () => {
+    mode = 'battle';
+    spawnShell(0.255, 0.54, 0.59, 0.62, 'sam');
+    spawnShell(0.31, 0.49, 0.56, 0.74, 'sam');
+    spawnShell(0.415, 0.14, 0.68, 0.34, 'sam');
+  });
+
+  document.getElementById('btnSpawnTank').addEventListener('click', () => {
+    mode = 'battle';
+    deployedUnits.push({
+      kind: 'crusader',
+      u: 0.28, v: 0.38,
+      tu: 0.44 + (Math.random() - 0.5) * 0.06,
+      tv: 0.52 + (Math.random() - 0.5) * 0.04
+    });
+  });
+
+  document.getElementById('btnSpawnOverlord').addEventListener('click', () => {
+    mode = 'battle';
+    deployedUnits.push({
+      kind: 'overlord',
+      u: 0.68, v: 0.72,
+      tu: 0.54 + (Math.random() - 0.5) * 0.05,
+      tv: 0.59 + (Math.random() - 0.5) * 0.04
+    });
+  });
+
+  document.getElementById('btnReset').addEventListener('click', () => {
+    cam.x = 0;
+    cam.y = 0;
+    cam.zoom = 1;
+  });
+
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    update(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

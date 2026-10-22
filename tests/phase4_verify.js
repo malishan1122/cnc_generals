@@ -327,7 +327,163 @@ console.log('\n--- [SYS-28] macOS Native .app v2.0 Shell & HUD Wiring ---');
   );
 }
 
+// ----------------------------------------------------------------------------
+// 5. SYS-29: Ligne-Claire Vector-Cel Diorama Unit Design Studio (All 22 USA + 21 China Units)
+// ----------------------------------------------------------------------------
+console.log('\n--- [SYS-29] Ligne-Claire Diorama Unit Design Studio (22 USA + 21 China Units) ---');
+{
+  eval(fs.readFileSync(path.join(rootDir, 'js/vfx.js'), 'utf8'));
+  eval(fs.readFileSync(path.join(rootDir, 'js/unit_models.js'), 'utf8'));
+  eval(fs.readFileSync(path.join(rootDir, 'js/unit_studio.js'), 'utf8'));
+
+  const expectedUsaUnits = [
+    'USA_DOZER', 'USA_CHINOOK',
+    'USA_RANGER', 'USA_MISSILE_DEFENDER', 'USA_PATHFINDER',
+    'USA_CRUSADER', 'USA_LASER_CRUSADER', 'USA_PALADIN', 'USA_LASER_TANK',
+    'USA_HUMVEE', 'USA_AVENGER', 'USA_TOMAHAWK',
+    'USA_COMANCHE', 'USA_COMBAT_CHINOOK', 'USA_RAPTOR', 'USA_KING_RAPTOR',
+    'USA_AURORA', 'USA_AURORA_ALPHA'
+  ];
+
+  const expectedChinaUnits = [
+    'CHINA_DOZER', 'CHINA_SUPPLY_TRUCK',
+    'CHINA_RED_GUARD', 'CHINA_MINIGUNNER', 'CHINA_TANK_HUNTER', 'CHINA_HACKER', 'CHINA_BLACK_LOTUS',
+    'CHINA_BATTLEMASTER', 'CHINA_GATTLING_TANK', 'CHINA_DRAGON_TANK',
+    'CHINA_TROOP_CRAWLER', 'CHINA_ASSAULT_CRAWLER', 'CHINA_LISTENING_OUTPOST',
+    'CHINA_INFERNO_CANNON', 'CHINA_ECM_TANK', 'CHINA_OVERLORD', 'CHINA_EMPEROR_OVERLORD', 'CHINA_NUKE_CANNON',
+    'CHINA_MIG', 'CHINA_NUKE_MIG', 'CHINA_HELIX'
+  ];
+
+  const allUsaRegistered = expectedUsaUnits.every(id => ZH_UNIT_MODELS.hasBespokeModel(id));
+  assert(
+    allUsaRegistered,
+    `All ${expectedUsaUnits.length} USA Allied Army units have bespoke Ligne-Claire Diorama models in ZH_UNIT_MODELS`
+  );
+
+  const allChinaRegistered = expectedChinaUnits.every(id => ZH_UNIT_MODELS.hasBespokeModel(id));
+  assert(
+    allChinaRegistered,
+    `All ${expectedChinaUnits.length} China PLA units have bespoke Ligne-Claire Diorama models in ZH_UNIT_MODELS`
+  );
+
+  const allRefsExistOnDisk = Object.entries(ZH_UNIT_MODELS.MODEL_REGISTRY).every(([k, entry]) => {
+    const ok = entry.referenceImage && fs.existsSync(path.join(rootDir, entry.referenceImage));
+    if (!ok) console.error('  [MISSING REF]', k, entry.referenceImage);
+    return ok;
+  });
+  assert(
+    allRefsExistOnDisk,
+    'Every registered unit model points to an existing cropped diorama reference blueprint in assets/refs/'
+  );
+
+  const allSpritesExistOnDisk = Object.entries(ZH_UNIT_MODELS.MODEL_REGISTRY).every(([k, entry]) => {
+    const ok = entry.spriteImage && fs.existsSync(path.join(rootDir, entry.spriteImage));
+    if (!ok) console.error('  [MISSING SPRITE]', k, entry.spriteImage);
+    return ok;
+  });
+  assert(
+    allSpritesExistOnDisk,
+    'Every registered unit model points to an existing extracted Ligne-Claire transparent PNG sprite in assets/diorama/units/'
+  );
+
+  let renderErrors = 0;
+  const engine = new ZH_ENGINE.GameEngine(makeCanvas(1280, 720), makeCanvas(200, 200));
+  engine.initMatch({
+    mode: 'SKIRMISH',
+    playerGeneralId: 'USA_ALEXANDER',
+    aiGeneralId: 'CHINA_KWAI',
+    mapId: 'TOURNAMENT_DESERT',
+    difficulty: 'MEDIUM'
+  });
+
+  const allBespokeUnits = [...expectedUsaUnits, ...expectedChinaUnits];
+  for (const unitId of allBespokeUnits) {
+    try {
+      const fac = unitId.startsWith('CHINA_') ? ZH_DATA.FACTIONS.CHINA : ZH_DATA.FACTIONS.USA;
+      const u = engine.spawnUnit(unitId, 0, 600, 600);
+      for (const yawDeg of [0, 45, 139, 225, 315]) {
+        u.angle = (yawDeg * Math.PI) / 180;
+        u.turretAngle = ((yawDeg + 25) * Math.PI) / 180;
+        const rendered = ZH_UNIT_MODELS.renderUnitIfBespoke(ctxStub, u, fac, { pitchScale: 0.64, zScale: 0.78 });
+        if (!rendered) renderErrors++;
+        ZH_VFX.renderArticulatedUnit(ctxStub, u, fac, { pitchScale: 1.0, zScale: 0.42 });
+      }
+    } catch (err) {
+      renderErrors++;
+      console.error(`Render error for ${unitId}:`, err);
+    }
+  }
+  assert(
+    renderErrors === 0,
+    `All ${allBespokeUnits.length} bespoke Ligne-Claire Diorama models (USA + China) render across 5 turntable yaw angles with 0 runtime errors`
+  );
+
+  // Verify deep CAD upgrade for USA_TOMAHAWK (5 schema groups, 5 presets, recoil & preset rendering)
+  const tomahawkEntry = ZH_UNIT_MODELS.getModelEntry('USA_TOMAHAWK');
+  const tomahawkSchema = (tomahawkEntry && tomahawkEntry.paramSchema) || [];
+  const tomahawkPresetKeys = Object.keys((tomahawkEntry && tomahawkEntry.presets) || {});
+  assert(
+    tomahawkEntry &&
+      Array.isArray(tomahawkSchema) &&
+      tomahawkSchema.length === 5 &&
+      tomahawkPresetKeys.length === 5,
+    `USA_TOMAHAWK has 5 parametric CAD inspector groups (${tomahawkSchema.length}) and 5 studio presets (${tomahawkPresetKeys.join(', ')})`
+  );
+
+  let tomahawkPresetErrors = 0;
+  const tomahawkUnit = engine.spawnUnit('USA_TOMAHAWK', 0, 640, 640);
+  for (const presetKey of tomahawkPresetKeys) {
+    try {
+      const presetObj = tomahawkEntry.presets[presetKey];
+      ZH_UNIT_MODELS.setParams('USA_TOMAHAWK', presetObj.params, false);
+      tomahawkUnit.recoilOffset = 5.5;
+      ZH_UNIT_MODELS.renderUnitIfBespoke(ctxStub, tomahawkUnit, ZH_DATA.FACTIONS.USA, { pitchScale: 0.64, zScale: 0.78 });
+    } catch (err) {
+      tomahawkPresetErrors++;
+      console.error(`Tomahawk preset error (${presetKey}):`, err);
+    }
+  }
+  ZH_UNIT_MODELS.resetParams('USA_TOMAHAWK', false);
+  assert(
+    tomahawkPresetErrors === 0,
+    'USA_TOMAHAWK renders cleanly across all 5 studio presets with active missile launch recoil and backblast'
+  );
+
+  // Verify deep CAD upgrade for USA_DOZER (5 schema groups, 5 presets, blade scoop cycle & preset rendering)
+  const dozerEntry = ZH_UNIT_MODELS.getModelEntry('USA_DOZER');
+  const dozerSchema = (dozerEntry && dozerEntry.paramSchema) || [];
+  const dozerPresetKeys = Object.keys((dozerEntry && dozerEntry.presets) || {});
+  assert(
+    dozerEntry &&
+      Array.isArray(dozerSchema) &&
+      dozerSchema.length === 5 &&
+      dozerPresetKeys.length === 5,
+    `USA_DOZER has 5 parametric CAD inspector groups (${dozerSchema.length}) and 5 studio presets (${dozerPresetKeys.join(', ')})`
+  );
+
+  let dozerPresetErrors = 0;
+  const dozerUnit = engine.spawnUnit('USA_DOZER', 0, 660, 660);
+  for (const presetKey of dozerPresetKeys) {
+    try {
+      const presetObj = dozerEntry.presets[presetKey];
+      ZH_UNIT_MODELS.setParams('USA_DOZER', presetObj.params, false);
+      dozerUnit.recoilOffset = 6.0;
+      dozerUnit.treadPhase = 0.45;
+      ZH_UNIT_MODELS.renderUnitIfBespoke(ctxStub, dozerUnit, ZH_DATA.FACTIONS.USA, { pitchScale: 0.64, zScale: 0.78 });
+    } catch (err) {
+      dozerPresetErrors++;
+      console.error(`Dozer preset error (${presetKey}):`, err);
+    }
+  }
+  ZH_UNIT_MODELS.resetParams('USA_DOZER', false);
+  assert(
+    dozerPresetErrors === 0,
+    'USA_DOZER renders cleanly across all 5 studio presets with active hydraulic blade scoop cycle and rolling treads'
+  );
+}
+
 console.log('\n======================================================================');
 console.log(` PHASE 4 VERIFICATION SUMMARY: ${passed} PASSED, ${failed} FAILED`);
 console.log('======================================================================');
 if (failed > 0) process.exit(1);
+

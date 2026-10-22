@@ -595,12 +595,13 @@ window.ZH_DATA = (function () {
       sight: 240,
       trains: [
         'CHINA_BATTLEMASTER', 'CHINA_GATTLING_TANK', 'CHINA_DRAGON_TANK',
-        'CHINA_TROOP_CRAWLER', 'CHINA_ASSAULT_CRAWLER', 'CHINA_INFERNO_CANNON',
+        'CHINA_TROOP_CRAWLER', 'CHINA_ASSAULT_CRAWLER', 'CHINA_LISTENING_OUTPOST',
+        'CHINA_ECM_TANK', 'CHINA_INFERNO_CANNON',
         'CHINA_OVERLORD', 'CHINA_EMPEROR_OVERLORD', 'CHINA_NUKE_CANNON'
       ],
       upgrades: ['UPG_BLACK_NAPALM', 'UPG_CHAIN_GUNS'],
       voiceSelect: 'China War Factory ready.',
-      description: 'Produces Battlemasters, Gattling/Dragon Tanks, Troop/Assault Crawlers, Inferno Cannons, Overlords, and Nuke Cannons.'
+      description: 'Produces Battlemasters, Gattling/Dragon Tanks, Troop/Assault Crawlers, Listening Outposts, ECM Tanks, Inferno Cannons, Overlords, and Nuke Cannons.'
     },
     CHINA_AIRFIELD: {
       id: 'CHINA_AIRFIELD',
@@ -613,10 +614,10 @@ window.ZH_DATA = (function () {
       power: -2,
       size: 84,
       sight: 260,
-      trains: ['CHINA_MIG', 'CHINA_NUKE_MIG'],
+      trains: ['CHINA_MIG', 'CHINA_NUKE_MIG', 'CHINA_HELIX'],
       upgrades: [],
       voiceSelect: 'PLA Airfield ready for sorties.',
-      description: 'Deploys Napalm MiG-1.44 Tactical Fighters and Gen. Tao\'s Tactical Nuke MiGs.'
+      description: 'Deploys Napalm MiG-1.44 Tactical Fighters, Gen. Tao\'s Tactical Nuke MiGs, and Heavy Helix Gunships.'
     },
     CHINA_PROPAGANDA_CENTER: {
       id: 'CHINA_PROPAGANDA_CENTER',
@@ -1958,6 +1959,94 @@ window.ZH_DATA = (function () {
       voiceSelect: 'Nuclear MiG airborne!',
       voiceMove: 'Delivering tactical atomic payload!',
       description: 'Gen. Tao Exclusive. Supersonic strike fighter armed with tactical nuclear-tipped missiles that scatter enemy columns.'
+    },
+    CHINA_LISTENING_OUTPOST: {
+      id: 'CHINA_LISTENING_OUTPOST',
+      faction: 'CHINA',
+      name: 'Listening Outpost',
+      shortName: 'OUTPOST',
+      category: 'LIGHT_VEHICLE',
+      locomotor: 'WHEELED',
+      cost: 800,
+      buildTime: 8,
+      hp: 460,
+      speed: 102,
+      radius: 17,
+      sight: 320,
+      detectsStealth: true,
+      stealthedWhenStill: true,
+      weapon: {
+        damage: 58,
+        range: 225,
+        cooldown: 1.05,
+        damageType: 'ARMOR_PIERCING',
+        projectileSpeed: 520,
+        projType: 'MISSILE',
+        antiAir: true
+      },
+      voiceSelect: 'Listening Outpost operational.',
+      voiceMove: 'Scanning enemy frequencies.',
+      description: 'Stealth reconnaissance van with dual Tank Hunter fireports and wide-area stealth detection radar.'
+    },
+    CHINA_ECM_TANK: {
+      id: 'CHINA_ECM_TANK',
+      faction: 'CHINA',
+      name: 'ECM Electronic Warfare Tank',
+      shortName: 'ECM TANK',
+      category: 'TANK',
+      locomotor: 'TRACKED',
+      cost: 800,
+      buildTime: 9,
+      hp: 580,
+      speed: 84,
+      radius: 18,
+      sight: 265,
+      requiresTech: true,
+      hasPointDefenseLaser: true,
+      pdlCooldown: 0.9,
+      weapon: {
+        damage: 38,
+        range: 240,
+        cooldown: 1.4,
+        damageType: 'LASER',
+        projectileSpeed: 999,
+        projType: 'LASER',
+        antiAir: false
+      },
+      voiceSelect: 'ECM Tank ready.',
+      voiceMove: 'Jamming frequencies active.',
+      description: 'Electronic warfare support tank that deflects incoming enemy missiles and disrupts enemy vehicle electronics.'
+    },
+    CHINA_HELIX: {
+      id: 'CHINA_HELIX',
+      faction: 'CHINA',
+      name: 'Helix Heavy Assault Gunship',
+      shortName: 'HELIX',
+      category: 'AIRCRAFT',
+      locomotor: 'HELICOPTER',
+      cost: 1500,
+      buildTime: 14,
+      hp: 820,
+      speed: 128,
+      radius: 22,
+      sight: 280,
+      isAir: true,
+      isHelicopter: true,
+      isPropagandaCarrier: true,
+      auraRadius: 175,
+      weapon: {
+        damage: 44,
+        range: 235,
+        cooldown: 0.32,
+        damageType: 'SMALL_ARMS',
+        projectileSpeed: 640,
+        projType: 'BULLET',
+        splash: 18,
+        antiAir: true
+      },
+      voiceSelect: 'Helix on the scene.',
+      voiceMove: 'Battle fortress in the air!',
+      description: 'Colossal coaxial-rotor heavy assault helicopter armed with a chin Gattling cannon and Propaganda Speaker aura.'
     },
 
     // ================= GLA UNITS =================

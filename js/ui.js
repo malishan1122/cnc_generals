@@ -17,6 +17,7 @@
   // Input & camera state
   const keys = {};
   let isDraggingBox = false;
+  let isMinimapDragging = false;
   let isMiddlePanning = false;
   let middlePanLast = { x: 0, y: 0 };
   let dragStartScreen = { x: 0, y: 0 };
@@ -24,6 +25,8 @@
   let pointerClient = { x: -1, y: -1, insideViewport: false };
   let lastClickTime = 0;
   let lastClickedDefId = null;
+  let activeSubgroupDefId = null;
+  let lastBuilderCycleIdx = 0;
 
   // HUD live-update tier state
   let hudLiveAccum = 0;
@@ -39,6 +42,7 @@
     clock: '',
     powersBtn: '',
     powersGlow: false,
+    builderBtn: '',
     tunnelDisplay: '',
     tunnelText: '',
     swHtml: ''
@@ -54,7 +58,7 @@
     musicVol: 50,
     sfxVol: 80,
     voiceVol: 90,
-    edgeScroll: false,
+    edgeScroll: true,
     healthBars: 'DAMAGED', // 'DAMAGED' | 'ALWAYS' | 'SELECTED'
     reducedMotion: false,
     uiScale: '100'
@@ -112,6 +116,9 @@
     setupSettingsControls();
     setupCanvasInput(canvas, minimap);
     setupKeyboardInput();
+    if (window.ZH_UNIT_STUDIO && ZH_UNIT_STUDIO.initStudio) {
+      ZH_UNIT_STUDIO.initStudio();
+    }
 
     // Main 60Hz Fixed-Timestep Accumulator Loop (Phase 2 SYS-01)
     let lastTime = performance.now();
@@ -143,6 +150,8 @@
           } else {
             updateTopBarAndTimers();
           }
+        } else {
+          renderMenuBackdrop(now);
         }
       } catch (err) {
         console.error('[ZH Frame Loop Error]', err);
@@ -214,6 +223,7 @@
 
     if (engine) {
       engine.pixelRatio = dpr;
+      engine.dpr = dpr;
       engine.viewW = viewW;
       engine.viewH = viewH;
       const z = (engine.cam && engine.cam.zoom) || 1;
@@ -366,20 +376,48 @@
   // ==========================================================================
   // Start Screen & Generals Selection (Generals' Challenge + Skirmish)
   // ==========================================================================
+  let dossierTauntIndex = 0;
+
+  const DIFFICULTY_DOCTRINE_NOTES = {
+    EASY: 'Cadet Doctrine: Relaxed AI build cadence, slower wave timers & reduced harvest pressure.',
+    NORMAL: 'Commander Doctrine: Balanced multi-squad combined arms, active tech capture & coordinated flank attacks.',
+    HARD: 'Brutal General Doctrine: Relentless APM, accelerated production, superweapons & Generals Powers.'
+  };
+
+  const MAP_STRATEGIC_NOTES = {
+    TOURNAMENT_DESERT: { tag: 'DESERT', resources: '$166k Supply • 2 Derricks • 4 Bunkers' },
+    FINAL_CRUSADE:     { tag: 'TEMPERATE', resources: '$166k Supply • Hospital & 2 Derricks' },
+    DEFCON_6:          { tag: 'ARCTIC', resources: '$166k Supply • Repair Bay & Chokes' }
+  };
+
   function setupStartScreen() {
     const modeBtns = document.querySelectorAll('.mode-tab-btn');
     modeBtns.forEach(btn => {
+      if (!btn.dataset || !btn.dataset.mode) return;
       btn.addEventListener('click', () => {
-        modeBtns.forEach(b => b.classList.remove('active'));
+        modeBtns.forEach(b => {
+          if (b.dataset && b.dataset.mode) b.classList.remove('active');
+        });
         btn.classList.add('active');
         selectedMode = btn.dataset.mode;
-        document.getElementById('ai-general-picker-wrap').style.display =
-          selectedMode === 'SKIRMISH' ? 'block' : 'none';
-        document.getElementById('challenge-ladder-preview').style.display =
-          selectedMode === 'CHALLENGE' ? 'flex' : 'none';
+        const aiWrap = document.getElementById('ai-general-picker-wrap');
+        if (aiWrap) {
+          aiWrap.style.display = selectedMode === 'SKIRMISH' ? 'block' : 'none';
+        }
+        const ladderPreview = document.getElementById('challenge-ladder-preview');
+        if (ladderPreview) {
+          ladderPreview.style.display = selectedMode === 'CHALLENGE' ? 'flex' : 'none';
+        }
+        const challengeSec = document.getElementById('challenge-section');
+        if (challengeSec) {
+          challengeSec.style.display = selectedMode === 'CHALLENGE' ? 'block' : 'none';
+        }
         if (selectedMode === 'CHALLENGE') {
           renderChallengeLadder();
         }
+        renderGeneralCards('ai-general-grid', false);
+        renderCommanderDossier();
+        renderMapPreview();
         updateStartMatchupSummary();
         ZH_AUDIO.playSFX('click');
       });
@@ -388,9 +426,64 @@
     renderGeneralCards('player-general-grid', true);
     renderGeneralCards('ai-general-grid', false);
     renderChallengeLadder();
+    renderVisualMapCards();
     renderMapAndDiffSelectors();
+    renderCommanderDossier();
     renderMapPreview();
     updateStartMatchupSummary();
+
+    const randomPlayerBtn = document.getElementById('btn-random-player-gen');
+    if (randomPlayerBtn) {
+      randomPlayerBtn.addEventListener('click', () => {
+        const ids = Object.keys(ZH_DATA.GENERALS).filter(id => id !== selectedPlayerGeneralId);
+        if (ids.length > 0) {
+          selectedPlayerGeneralId = ids[Math.floor(Math.random() * ids.length)];
+          renderGeneralCards('player-general-grid', true);
+          renderChallengeLadder();
+          renderGeneralCards('ai-general-grid', false);
+          renderCommanderDossier();
+          renderMapPreview();
+          updateStartMatchupSummary();
+          ZH_AUDIO.playSFX('click');
+        }
+      });
+    }
+
+    const randomAiBtn = document.getElementById('btn-random-ai-gen');
+    if (randomAiBtn) {
+      randomAiBtn.addEventListener('click', () => {
+        const ids = Object.keys(ZH_DATA.GENERALS).filter(id => id !== selectedAiGeneralId);
+        if (ids.length > 0) {
+          selectedAiGeneralId = ids[Math.floor(Math.random() * ids.length)];
+          renderGeneralCards('ai-general-grid', false);
+          renderCommanderDossier();
+          renderMapPreview();
+          updateStartMatchupSummary();
+          ZH_AUDIO.playSFX('click');
+        }
+      });
+    }
+
+    const tauntBtn = document.getElementById('btn-dossier-taunt');
+    if (tauntBtn) {
+      tauntBtn.addEventListener('click', () => {
+        const aiGen = ZH_DATA.GENERALS[selectedAiGeneralId] || Object.values(ZH_DATA.GENERALS)[1];
+        if (!aiGen || !Array.isArray(aiGen.taunts) || aiGen.taunts.length === 0) return;
+        dossierTauntIndex = (dossierTauntIndex + 1) % aiGen.taunts.length;
+        const quote = aiGen.taunts[dossierTauntIndex];
+        const banner = document.getElementById('dossier-taunt-banner');
+        if (banner) {
+          banner.innerHTML = `
+            <span class="comms-wave-bars" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+            <span><strong>[SAT-COMMS // ${aiGen.name.toUpperCase()}]:</strong> "${quote}"</span>
+          `;
+        }
+        if (window.ZH_AUDIO) {
+          ZH_AUDIO.playSFX('click');
+          if (ZH_AUDIO.speak) ZH_AUDIO.speak(quote, { priority: true });
+        }
+      });
+    }
 
     document.getElementById('btn-launch-operation').addEventListener('click', () => {
       ZH_AUDIO.playSFX('promote');
@@ -401,6 +494,28 @@
     const fileInput = document.getElementById('zhsave-file-input');
     if (loadSaveMenuBtn && fileInput) {
       loadSaveMenuBtn.addEventListener('click', () => fileInput.click());
+    }
+
+    const quickLoadMenuBtn = document.getElementById('btn-quick-load-menu');
+    if (quickLoadMenuBtn) {
+      quickLoadMenuBtn.addEventListener('click', () => {
+        const ok = quickLoad('quicksave');
+        if (!ok) {
+          showTacticalAlert('No QuickSave snapshot found in local storage yet. Use Quick Save [F5] during combat.', '#fde047');
+          if (window.ZH_AUDIO) ZH_AUDIO.playSFX('click');
+        }
+      });
+    }
+
+    const startSettingsBtn = document.getElementById('btn-start-settings');
+    if (startSettingsBtn) {
+      startSettingsBtn.addEventListener('click', () => {
+        const gameMenuModal = document.getElementById('game-menu-modal');
+        if (gameMenuModal) {
+          gameMenuModal.classList.remove('hidden');
+        }
+        if (window.ZH_AUDIO) ZH_AUDIO.playSFX('click');
+      });
     }
 
     const previewPowersBtn = document.getElementById('btn-open-powers-preview');
@@ -414,6 +529,275 @@
     }
   }
 
+  const GENERAL_MILITARY_META = {
+    USA_GRANGER: {
+      serial: 'US-01',
+      branch: 'USAF // AIR COMBAT CMD',
+      rankStars: '★★★★',
+      callsign: 'GEN. "ACE" GRANGER',
+      unitTag: 'F-22 KING RAPTOR'
+    },
+    USA_TOWNES: {
+      serial: 'US-02',
+      branch: 'DARPA // DIRECTED ENERGY',
+      rankStars: '★★★★',
+      callsign: 'GEN. "PINPOINT" TOWNES',
+      unitTag: 'LASER CRUSADER'
+    },
+    USA_ALEXANDER: {
+      serial: 'US-03',
+      branch: 'STRATCOM // ORBITAL DEF',
+      rankStars: '★★★★',
+      callsign: 'GEN. ALEXIS ALEXANDER',
+      unitTag: 'AURORA ALPHA'
+    },
+    CHINA_KWAI: {
+      serial: 'CN-01',
+      branch: 'PLA // 1ST ARMORED DIV',
+      rankStars: '★★★★',
+      callsign: 'GEN. TA HUN KWAI',
+      unitTag: 'EMPEROR OVERLORD'
+    },
+    CHINA_SHIN_FAI: {
+      serial: 'CN-02',
+      branch: 'PLA // ASSAULT INFANTRY',
+      rankStars: '★★★★',
+      callsign: 'GEN. "ANVIL" SHIN FAI',
+      unitTag: 'ASSAULT CRAWLER'
+    },
+    CHINA_TAO: {
+      serial: 'CN-03',
+      branch: 'PLA // STRATEGIC ROCKET',
+      rankStars: '★★★★',
+      callsign: 'GEN. TSING SHI TAO',
+      unitTag: 'TACTICAL NUKE MIG'
+    },
+    GLA_THRAX: {
+      serial: 'GL-01',
+      branch: 'GLA // BIO-CHEM DIVISION',
+      rankStars: '◆ ◆ ◆',
+      callsign: 'DR. THRAX',
+      unitTag: 'ANTHRAX GAMMA'
+    },
+    GLA_JUHZIZ: {
+      serial: 'GL-02',
+      branch: 'GLA // ORDNANCE & DEMO',
+      rankStars: '◆ ◆ ◆',
+      callsign: 'GEN. "DEMO" JUHZIZ',
+      unitTag: 'COMBAT CYCLE'
+    },
+    GLA_KASSAD: {
+      serial: 'GL-03',
+      branch: 'GLA // COVERT RECON CELL',
+      rankStars: '◆ ◆ ◆',
+      callsign: 'PRINCE KASSAD',
+      unitTag: 'STEALTH HIJACKER'
+    }
+  };
+
+  function getGeneralMilitaryMeta(gen) {
+    if (!gen) return { serial: 'OP-00', branch: 'COMMAND', rankStars: '★★★', callsign: 'COMMANDER', unitTag: 'COMBINED ARMS' };
+    return GENERAL_MILITARY_META[gen.id] || {
+      serial: 'OP-00',
+      branch: gen.faction || 'COMMAND',
+      rankStars: '★★★',
+      callsign: (gen.name || 'COMMANDER').toUpperCase(),
+      unitTag: gen.specialty || 'TACTICAL'
+    };
+  }
+
+  function getGeneralPortraitSVG(genId) {
+    switch (genId) {
+      case 'USA_GRANGER':
+        return `<svg viewBox="0 0 56 56" class="gen-portrait-svg" aria-hidden="true">
+          <rect width="56" height="56" fill="#0b1528"/>
+          <path d="M0 14 H56 M0 28 H56 M0 42 H56 M14 0 V56 M28 0 V56 M42 0 V56" stroke="#1e3a8a" stroke-width="0.7" opacity="0.55"/>
+          <polygon points="28,6 34,22 50,28 34,32 38,48 28,42 18,48 22,32 6,28 22,22" fill="#2563eb" stroke="#93c5fd" stroke-width="1.4"/>
+          <polygon points="28,11 31,24 44,28 31,30 28,40 25,30 12,28 25,24" fill="#60a5fa"/>
+          <polygon points="24,18 32,18 30,25 26,25" fill="#fde047"/>
+        </svg>`;
+      case 'USA_TOWNES':
+        return `<svg viewBox="0 0 56 56" class="gen-portrait-svg" aria-hidden="true">
+          <rect width="56" height="56" fill="#09162a"/>
+          <circle cx="28" cy="28" r="20" fill="none" stroke="#1d4ed8" stroke-width="1.2" stroke-dasharray="4 2"/>
+          <circle cx="28" cy="28" r="12" fill="#172554" stroke="#60a5fa" stroke-width="1.4"/>
+          <line x1="28" y1="3" x2="28" y2="53" stroke="#38bdf8" stroke-width="1.2"/>
+          <line x1="3" y1="28" x2="53" y2="28" stroke="#38bdf8" stroke-width="1.2"/>
+          <polygon points="28,16 39,35 17,35" fill="none" stroke="#fde047" stroke-width="1.6"/>
+          <circle cx="28" cy="28" r="4" fill="#fde047"/>
+        </svg>`;
+      case 'USA_ALEXANDER':
+        return `<svg viewBox="0 0 56 56" class="gen-portrait-svg" aria-hidden="true">
+          <rect width="56" height="56" fill="#0a1326"/>
+          <polygon points="28,5 48,14 44,38 28,50 12,38 8,14" fill="#1e3a8a" stroke="#93c5fd" stroke-width="1.5"/>
+          <ellipse cx="28" cy="28" rx="18" ry="7" transform="rotate(-25 28 28)" fill="none" stroke="#38bdf8" stroke-width="1.4"/>
+          <ellipse cx="28" cy="28" rx="18" ry="7" transform="rotate(25 28 28)" fill="none" stroke="#38bdf8" stroke-width="1.4"/>
+          <line x1="28" y1="4" x2="28" y2="52" stroke="#fde047" stroke-width="2.2"/>
+          <circle cx="28" cy="28" r="5" fill="#ffffff" stroke="#fde047" stroke-width="1.5"/>
+        </svg>`;
+      case 'CHINA_KWAI':
+        return `<svg viewBox="0 0 56 56" class="gen-portrait-svg" aria-hidden="true">
+          <rect width="56" height="56" fill="#240b0b"/>
+          <path d="M0 14 H56 M0 28 H56 M0 42 H56" stroke="#7f1d1d" stroke-width="0.8" opacity="0.6"/>
+          <rect x="10" y="26" width="36" height="18" fill="#991b1b" stroke="#fca5a5" stroke-width="1.4"/>
+          <polygon points="16,26 21,15 35,15 40,26" fill="#dc2626" stroke="#fde047" stroke-width="1.3"/>
+          <rect x="22" y="5" width="4" height="14" fill="#facc15"/>
+          <rect x="30" y="5" width="4" height="14" fill="#facc15"/>
+          <polygon points="28,28 30,33 35,33 31,36 32.5,41 28,38 23.5,41 25,36 21,33 26,33" fill="#fde047"/>
+        </svg>`;
+      case 'CHINA_SHIN_FAI':
+        return `<svg viewBox="0 0 56 56" class="gen-portrait-svg" aria-hidden="true">
+          <rect width="56" height="56" fill="#220909"/>
+          <polygon points="28,5 49,17 49,39 28,51 7,39 7,17" fill="#7f1d1d" stroke="#f87171" stroke-width="1.5"/>
+          <polygon points="14,36 28,24 42,36 42,42 28,30 14,42" fill="#facc15"/>
+          <polygon points="28,9 31.8,19.5 43,19.8 34,26.2 37.2,36.8 28,30.4 18.8,36.8 22,26.2 13,19.8 24.2,19.5" fill="#fde047" stroke="#991b1b" stroke-width="0.9"/>
+        </svg>`;
+      case 'CHINA_TAO':
+        return `<svg viewBox="0 0 56 56" class="gen-portrait-svg" aria-hidden="true">
+          <rect width="56" height="56" fill="#1f0a07"/>
+          <circle cx="28" cy="28" r="21" fill="#450a0a" stroke="#f59e0b" stroke-width="1.5"/>
+          <path d="M28 28 L18 11 A19 19 0 0 1 38 11 Z" fill="#facc15"/>
+          <path d="M28 28 L46 31 A19 19 0 0 1 36 46 Z" fill="#facc15"/>
+          <path d="M28 28 L20 46 A19 19 0 0 1 10 31 Z" fill="#facc15"/>
+          <circle cx="28" cy="28" r="6.5" fill="#1f0a07" stroke="#fde047" stroke-width="1.6"/>
+          <circle cx="28" cy="28" r="3" fill="#ef4444"/>
+        </svg>`;
+      case 'GLA_THRAX':
+        return `<svg viewBox="0 0 56 56" class="gen-portrait-svg" aria-hidden="true">
+          <rect width="56" height="56" fill="#0d1c10"/>
+          <circle cx="28" cy="28" r="20" fill="#14331b" stroke="#4ade80" stroke-width="1.4"/>
+          <circle cx="28" cy="20" r="9" fill="none" stroke="#a3e635" stroke-width="2.2"/>
+          <circle cx="20" cy="34" r="9" fill="none" stroke="#a3e635" stroke-width="2.2"/>
+          <circle cx="36" cy="34" r="9" fill="none" stroke="#a3e635" stroke-width="2.2"/>
+          <circle cx="28" cy="29" r="5" fill="#0d1c10" stroke="#fde047" stroke-width="1.5"/>
+        </svg>`;
+      case 'GLA_JUHZIZ':
+        return `<svg viewBox="0 0 56 56" class="gen-portrait-svg" aria-hidden="true">
+          <rect width="56" height="56" fill="#211508"/>
+          <polygon points="28,4 34,18 49,12 39,25 52,33 37,36 41,50 28,40 15,50 19,36 4,33 17,25 7,12 22,18" fill="#b45309" stroke="#fde047" stroke-width="1.3"/>
+          <polygon points="28,13 32,23 42,20 35,28 43,34 32,35 34,43 28,36 22,43 24,35 13,34 21,28 14,20 24,23" fill="#facc15"/>
+          <circle cx="28" cy="29" r="4.5" fill="#7f1d1d"/>
+        </svg>`;
+      case 'GLA_KASSAD':
+      default:
+        return `<svg viewBox="0 0 56 56" class="gen-portrait-svg" aria-hidden="true">
+          <rect width="56" height="56" fill="#141812"/>
+          <polygon points="28,6 48,16 48,40 28,50 8,40 8,16" fill="#1e261a" stroke="#a3b199" stroke-width="1.3"/>
+          <rect x="11" y="22" width="14" height="9" fill="#16a34a" stroke="#86efac" stroke-width="1.3"/>
+          <rect x="31" y="22" width="14" height="9" fill="#16a34a" stroke="#86efac" stroke-width="1.3"/>
+          <line x1="25" y1="26.5" x2="31" y2="26.5" stroke="#eab308" stroke-width="2"/>
+          <circle cx="18" cy="26.5" r="2.5" fill="#dcfce7"/>
+          <circle cx="38" cy="26.5" r="2.5" fill="#dcfce7"/>
+          <path d="M16 39 H40" stroke="#eab308" stroke-width="1.5" stroke-dasharray="3 2"/>
+        </svg>`;
+    }
+  }
+
+  function formatModifierChips(gen) {
+    const mods = (gen && gen.modifiers) || {};
+    const chips = [];
+    if (mods.aircraftCostMult) chips.push(`AIR COST ${Math.round((mods.aircraftCostMult - 1) * 100)}%`);
+    if (mods.aircraftHpMult) chips.push(`AIR HP +${Math.round((mods.aircraftHpMult - 1) * 100)}%`);
+    if (mods.aircraftStartVet) chips.push('VET AIR');
+    if (mods.powerOutputMult) chips.push(`PWR +${Math.round((mods.powerOutputMult - 1) * 100)}%`);
+    if (mods.laserDamageMult) chips.push(`LASER +${Math.round((mods.laserDamageMult - 1) * 100)}%`);
+    if (mods.superweaponCostMult) chips.push(`SW COST ${Math.round((mods.superweaponCostMult - 1) * 100)}%`);
+    if (mods.superweaponCooldownMult) chips.push(`SW CD ${Math.round((mods.superweaponCooldownMult - 1) * 100)}%`);
+    if (mods.defenseDamageMult) chips.push(`DEF +${Math.round((mods.defenseDamageMult - 1) * 100)}%`);
+    if (mods.tankCostMult) chips.push(`ARMOR COST ${Math.round((mods.tankCostMult - 1) * 100)}%`);
+    if (mods.tankStartVet) chips.push('VET ARMOR');
+    if (mods.tankSpeedMult) chips.push(`SPD +${Math.round((mods.tankSpeedMult - 1) * 100)}%`);
+    if (mods.tankDamageMult) chips.push(`DMG +${Math.round((mods.tankDamageMult - 1) * 100)}%`);
+    if (mods.infantryStartVet) chips.push('VET INF');
+    if (mods.infantryHpMult) chips.push(`INF HP +${Math.round((mods.infantryHpMult - 1) * 100)}%`);
+    if (mods.hordeRofBonus) chips.push(`ROF +${Math.round((mods.hordeRofBonus - 1) * 100)}%`);
+    if (mods.nukeDamageMult) chips.push(`NUKE +${Math.round((mods.nukeDamageMult - 1) * 100)}%`);
+    if (mods.toxinDamageMult) chips.push(`TOXIN +${Math.round((mods.toxinDamageMult - 1) * 100)}%`);
+    if (mods.explosiveDamageMult) chips.push(`HE DMG +${Math.round((mods.explosiveDamageMult - 1) * 100)}%`);
+    if (mods.demoCostMult) chips.push(`DEMO COST ${Math.round((mods.demoCostMult - 1) * 100)}%`);
+    if (mods.tunnelCostMult) chips.push(`TUNNEL ${Math.round((mods.tunnelCostMult - 1) * 100)}%`);
+    if (mods.unitSpeedMult) chips.push(`MOBILITY +${Math.round((mods.unitSpeedMult - 1) * 100)}%`);
+    if (mods.sniperBonusMult) chips.push(`AMBUSH +${Math.round((mods.sniperBonusMult - 1) * 100)}%`);
+    return chips;
+  }
+
+  function renderCommanderDossier() {
+    const pGen = ZH_DATA.GENERALS[selectedPlayerGeneralId] || Object.values(ZH_DATA.GENERALS)[0];
+    const aiGen = ZH_DATA.GENERALS[selectedAiGeneralId] || Object.values(ZH_DATA.GENERALS)[1];
+    if (!pGen || !aiGen) return;
+
+    const pFac = ZH_DATA.FACTIONS[pGen.faction] || ZH_DATA.FACTIONS.USA;
+    const aiFac = ZH_DATA.FACTIONS[aiGen.faction] || ZH_DATA.FACTIONS.CHINA;
+    const pMeta = getGeneralMilitaryMeta(pGen);
+    const aiMeta = getGeneralMilitaryMeta(aiGen);
+
+    const pCard = document.getElementById('dossier-player-card');
+    if (pCard) {
+      pCard.style.borderLeft = `3px solid ${pFac.color}`;
+      const pChips = formatModifierChips(pGen);
+      pCard.innerHTML = `
+        <div class="dossier-combatant-header">
+          <div class="dossier-portrait-box" style="border-color:${pFac.color}">
+            ${getGeneralPortraitSVG(pGen.id)}
+          </div>
+          <div class="dossier-title-col">
+            <div class="dossier-side-tag">ALLIED COMMAND // ${pMeta.serial}</div>
+            <div class="dossier-name">${pMeta.callsign}</div>
+            <div class="dossier-role" style="color:${pFac.accent}">${pMeta.branch}</div>
+          </div>
+        </div>
+        <div class="dossier-specialty">DOCTRINE // ${pGen.specialty}</div>
+        <ul class="dossier-perks-list">
+          ${pGen.perks.map(p => `<li>${p}</li>`).join('')}
+        </ul>
+        <div class="dossier-mod-chips">
+          ${pChips.map(c => `<span class="dossier-mod-chip">${c}</span>`).join('')}
+        </div>
+      `;
+    }
+
+    const aiCard = document.getElementById('dossier-ai-card');
+    if (aiCard) {
+      aiCard.style.borderLeft = `3px solid ${aiFac.color}`;
+      const aiChips = formatModifierChips(aiGen);
+      const modeTag = selectedMode === 'CHALLENGE'
+        ? `OPFOR TARGET // STAGE ${(challengeStageIndex % 8) + 1}`
+        : `HOSTILE COMMAND // ${aiMeta.serial}`;
+      aiCard.innerHTML = `
+        <div class="dossier-combatant-header">
+          <div class="dossier-portrait-box" style="border-color:${aiFac.color}">
+            ${getGeneralPortraitSVG(aiGen.id)}
+          </div>
+          <div class="dossier-title-col">
+            <div class="dossier-side-tag">${modeTag}</div>
+            <div class="dossier-name">${aiMeta.callsign}</div>
+            <div class="dossier-role" style="color:${aiFac.accent}">${aiMeta.branch}</div>
+          </div>
+        </div>
+        <div class="dossier-specialty">DOCTRINE // ${aiGen.specialty}</div>
+        <ul class="dossier-perks-list">
+          ${aiGen.perks.map(p => `<li>${p}</li>`).join('')}
+        </ul>
+        <div class="dossier-mod-chips">
+          ${aiChips.map(c => `<span class="dossier-mod-chip">${c}</span>`).join('')}
+        </div>
+      `;
+    }
+
+    const banner = document.getElementById('dossier-taunt-banner');
+    if (banner) {
+      const taunts = Array.isArray(aiGen.taunts) && aiGen.taunts.length > 0
+        ? aiGen.taunts
+        : ['Prepare your defenses, General. Zero Hour has arrived.'];
+      const quote = taunts[dossierTauntIndex % taunts.length];
+      banner.style.borderLeftColor = aiFac.color;
+      banner.innerHTML = `
+        <span class="comms-wave-bars" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        <span><strong>[SAT-COMMS // ${aiGen.name.toUpperCase()}]:</strong> "${quote}"</span>
+      `;
+    }
+  }
+
   function renderGeneralCards(containerId, isPlayer) {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -421,22 +805,37 @@
 
     Object.values(ZH_DATA.GENERALS).forEach(gen => {
       const fac = ZH_DATA.FACTIONS[gen.faction];
+      const meta = getGeneralMilitaryMeta(gen);
+      const chips = formatModifierChips(gen).slice(0, 2);
       const card = document.createElement('div');
       const isSelected = isPlayer
         ? gen.id === selectedPlayerGeneralId
         : gen.id === selectedAiGeneralId;
 
       card.className = `general-card ${isSelected ? 'selected' : ''}`;
-      card.style.borderColor = isSelected ? fac.color : 'rgba(148,163,184,0.22)';
+      card.dataset.generalId = gen.id;
+      card.style.borderLeft = `3.5px solid ${fac.color}`;
       card.innerHTML = `
-        <div class="gen-card-header" style="background: linear-gradient(90deg, ${fac.darkColor}88, transparent)">
-          <span class="gen-badge">${gen.badge}</span>
-          <div>
-            <div class="gen-name">${gen.name}</div>
-            <div class="gen-title" style="color:${fac.accent}">${fac.shortName} • ${gen.title}</div>
+        <div class="gen-card-top">
+          <div class="gen-portrait-frame">
+            ${getGeneralPortraitSVG(gen.id)}
+            <span class="gen-serial-tag">${meta.serial}</span>
+          </div>
+          <div class="gen-id-block">
+            <div class="gen-rank-row">
+              <span class="gen-stars">${meta.rankStars}</span>
+              ${isSelected ? `<span class="gen-active-stamp">${isPlayer ? 'CMD' : 'OPFOR'}</span>` : ''}
+            </div>
+            <div class="gen-name">${meta.callsign}</div>
+            <div class="gen-title" style="color:${fac.accent}">${meta.branch}</div>
           </div>
         </div>
-        <div class="gen-specialty">${gen.specialty}</div>
+        <div class="gen-card-bottom">
+          <div class="gen-specialty">${meta.unitTag}</div>
+          <div class="gen-card-chips">
+            ${chips.map(c => `<span class="gen-mini-chip">${c}</span>`).join('')}
+          </div>
+        </div>
         <ul class="gen-perks">
           ${gen.perks.map(p => `<li>${p}</li>`).join('')}
         </ul>
@@ -447,10 +846,14 @@
           selectedPlayerGeneralId = gen.id;
           renderGeneralCards('player-general-grid', true);
           renderChallengeLadder();
+          renderGeneralCards('ai-general-grid', false);
         } else {
           selectedAiGeneralId = gen.id;
           renderGeneralCards('ai-general-grid', false);
         }
+        dossierTauntIndex = 0;
+        renderCommanderDossier();
+        renderMapPreview();
         updateStartMatchupSummary();
         ZH_AUDIO.playSFX('click');
       });
@@ -463,24 +866,88 @@
     const wrap = document.getElementById('challenge-ladder-preview');
     if (!wrap) return;
     const ladder = ZH_DATA.CHALLENGE_LADDER.filter(id => id !== selectedPlayerGeneralId);
-    const currentOpponentId = ladder[challengeStageIndex % ladder.length];
+    const activeIdx = challengeStageIndex % ladder.length;
+    const currentOpponentId = ladder[activeIdx];
     if (selectedMode === 'CHALLENGE') {
       selectedAiGeneralId = currentOpponentId;
     }
 
-    wrap.innerHTML = ladder.map((gId, idx) => {
+    const stageBadge = document.getElementById('challenge-stage-badge');
+    if (stageBadge) {
+      const opp = ZH_DATA.GENERALS[currentOpponentId];
+      stageBadge.textContent = `OP-0${activeIdx + 1} / 0${ladder.length} • TARGET: ${opp ? opp.name.toUpperCase() : 'CHALLENGER'}`;
+    }
+
+    wrap.innerHTML = '';
+    ladder.forEach((gId, idx) => {
       const g = ZH_DATA.GENERALS[gId];
-      const stateClass = idx < challengeStageIndex ? 'defeated'
-        : idx === challengeStageIndex ? 'current'
+      if (!g) return;
+      const meta = getGeneralMilitaryMeta(g);
+      const isFinalBoss = idx === ladder.length - 1;
+      const stateClass = idx < activeIdx ? 'defeated'
+        : idx === activeIdx ? 'current'
         : 'locked';
-      return `
-        <div class="ladder-step ${stateClass}">
-          <span class="step-num">#${idx + 1}</span>
-          <span class="step-icon">${g.badge}</span>
-          <span class="step-name">${g.name}</span>
+      const statusText = idx < activeIdx ? 'CLEARED'
+        : idx === activeIdx ? 'TARGET'
+        : isFinalBoss ? 'BOSS' : 'LOCKED';
+
+      const step = document.createElement('div');
+      step.className = `ladder-step ${stateClass} ${isFinalBoss ? 'boss-node' : ''}`;
+      step.title = `Operation Stage 0${idx + 1}: ${g.name} (${g.title}) — Click to designate target`;
+      step.innerHTML = `
+        <div class="step-portrait-mini">${getGeneralPortraitSVG(g.id)}</div>
+        <div class="step-info-col">
+          <div class="step-top-row">
+            <span class="step-num">OP-0${idx + 1}</span>
+            <span class="step-status-tag">${statusText}</span>
+          </div>
+          <span class="step-name">${meta.callsign}</span>
         </div>
       `;
-    }).join('');
+      step.addEventListener('click', () => {
+        challengeStageIndex = idx;
+        renderChallengeLadder();
+        renderGeneralCards('ai-general-grid', false);
+        dossierTauntIndex = 0;
+        renderCommanderDossier();
+        renderMapPreview();
+        updateStartMatchupSummary();
+        ZH_AUDIO.playSFX('click');
+      });
+      wrap.appendChild(step);
+    });
+  }
+
+  function renderVisualMapCards() {
+    const cardsWrap = document.getElementById('visual-map-cards');
+    if (!cardsWrap) return;
+    cardsWrap.innerHTML = '';
+
+    ZH_DATA.MAPS.forEach((m, idx) => {
+      const isSelected = m.id === selectedMapId;
+      const notes = MAP_STRATEGIC_NOTES[m.id] || { tag: m.theme || 'TACTICAL', resources: '7 Supply • 4 Tech' };
+      const card = document.createElement('div');
+      card.className = `visual-map-card ${isSelected ? 'active' : ''}`;
+      card.dataset.mapId = m.id;
+      card.innerHTML = `
+        <div class="vmap-swatch-bar" style="background: linear-gradient(90deg, ${m.bgPrimary}, ${m.ridgeColor || m.bgSecondary}, ${m.bgSecondary})"></div>
+        <div class="vmap-title-row">
+          <span class="vmap-name">SEC-0${idx + 1} // ${m.name}</span>
+          <span class="vmap-theme-tag">${notes.tag}</span>
+        </div>
+        <div class="vmap-resources">${notes.resources}</div>
+      `;
+      card.addEventListener('click', () => {
+        selectedMapId = m.id;
+        const mapSel = document.getElementById('map-selector');
+        if (mapSel) mapSel.value = m.id;
+        renderVisualMapCards();
+        renderMapPreview();
+        updateStartMatchupSummary();
+        ZH_AUDIO.playSFX('click');
+      });
+      cardsWrap.appendChild(card);
+    });
   }
 
   function renderMapAndDiffSelectors() {
@@ -489,8 +956,10 @@
       mapSel.innerHTML = ZH_DATA.MAPS.map(m =>
         `<option value="${m.id}">${m.name} — ${m.subtitle}</option>`
       ).join('');
+      mapSel.value = selectedMapId;
       mapSel.addEventListener('change', (e) => {
         selectedMapId = e.target.value;
+        renderVisualMapCards();
         renderMapPreview();
         updateStartMatchupSummary();
       });
@@ -502,19 +971,23 @@
         diffBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         selectedDifficulty = btn.dataset.diff;
+        const intelEl = document.getElementById('difficulty-intel-desc');
+        if (intelEl && DIFFICULTY_DOCTRINE_NOTES[selectedDifficulty]) {
+          intelEl.textContent = DIFFICULTY_DOCTRINE_NOTES[selectedDifficulty];
+        }
         updateStartMatchupSummary();
         ZH_AUDIO.playSFX('click');
       });
     });
   }
 
-  function renderMapPreview() {
+  function renderMapPreview(nowMs = 0) {
     const mapDef = ZH_DATA.MAPS.find(m => m.id === selectedMapId) || ZH_DATA.MAPS[0];
     if (!mapDef) return;
 
     const metaEl = document.getElementById('map-preview-meta');
     if (metaEl) {
-      metaEl.textContent = `${mapDef.name} • ${mapDef.subtitle || '2-Player Tactical Theater'}`;
+      metaEl.textContent = `${mapDef.name.toUpperCase()} // ${mapDef.subtitle || '2-Player Tactical Sector'}`;
     }
 
     const previewCanvas = document.getElementById('map-preview-canvas');
@@ -522,45 +995,277 @@
     const ctx = previewCanvas.getContext('2d');
     if (!ctx) return;
 
-    const w = previewCanvas.width || 110;
-    const h = previewCanvas.height || 110;
-    ctx.fillStyle = mapDef.groundColor || '#c2a675';
+    const w = previewCanvas.width || 148;
+    const h = previewCanvas.height || 148;
+    const scale = w / 3200;
+
+    // 1. Satellite Thermal / Biome Ground Fill
+    const bgGrad = ctx.createLinearGradient(0, 0, w, h);
+    bgGrad.addColorStop(0, mapDef.bgPrimary || '#c2a36b');
+    bgGrad.addColorStop(1, mapDef.bgSecondary || '#b08f54');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, w, h);
 
-    // Subtle tactical grid
-    ctx.strokeStyle = mapDef.gridColor || 'rgba(255,255,255,0.08)';
+    // Subtle dark military radar tint
+    ctx.fillStyle = 'rgba(8, 14, 10, 0.28)';
+    ctx.fillRect(0, 0, w, h);
+
+    // 2. Topographic C4ISR Grid & Range Circles
+    ctx.strokeStyle = 'rgba(74, 222, 128, 0.18)';
     ctx.lineWidth = 1;
-    for (let x = 22; x < w; x += 22) {
+    const step = Math.max(18, Math.round(w / 6));
+    for (let x = step; x < w; x += step) {
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
     }
-    for (let y = 22; y < h; y += 22) {
+    for (let y = step; y < h; y += step) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
     }
-
-    // Center ridge / river accent
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.35)';
-    ctx.lineWidth = 6;
     ctx.beginPath();
-    ctx.moveTo(12, h - 12);
-    ctx.lineTo(w - 12, 12);
+    ctx.arc(w / 2, h / 2, w * 0.36, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Supply dock markers (gold squares)
+    // 3. Strategic Ridges & Main Highway Road
+    ctx.strokeStyle = mapDef.ridgeColor || 'rgba(15, 23, 42, 0.42)';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.14, h * 0.18);
+    ctx.lineTo(w * 0.44, h * 0.46);
+    ctx.moveTo(w * 0.56, h * 0.54);
+    ctx.lineTo(w * 0.86, h * 0.82);
+    ctx.stroke();
+
+    ctx.strokeStyle = mapDef.roadColor || 'rgba(20, 26, 18, 0.55)';
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.moveTo(14, h - 14);
+    ctx.lineTo(w - 14, 14);
+    ctx.stroke();
+
+    // 4. Neutral Civilian Garrison Bunkers (4 choke points)
+    const bunkers = [
+      { x: 1380, y: 1380 },
+      { x: 1820, y: 1820 },
+      { x: 980,  y: 2220 },
+      { x: 2220, y: 980 }
+    ];
+    ctx.fillStyle = '#334155';
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1;
+    bunkers.forEach(b => {
+      const bx = b.x * scale;
+      const by = b.y * scale;
+      ctx.fillRect(bx - 3, by - 3, 6, 6);
+      ctx.strokeRect(bx - 3, by - 3, 6, 6);
+    });
+
+    // 5. Neutral Tech Structures (2 Oil Derricks, 1 Hospital, 1 Repair Bay)
+    const techs = [
+      { x: 450,  y: 450 },
+      { x: 2750, y: 2750 },
+      { x: 1180, y: 2020 },
+      { x: 2020, y: 1180 }
+    ];
+    ctx.fillStyle = '#f8fafc';
+    ctx.strokeStyle = '#16a34a';
+    techs.forEach(t => {
+      const tx = t.x * scale;
+      const ty = t.y * scale;
+      ctx.fillRect(tx - 3.5, ty - 3.5, 7, 7);
+      ctx.strokeRect(tx - 3.5, ty - 3.5, 7, 7);
+    });
+
+    // 6. All 7 Supply Docks (Gold Crates)
+    const docks = [
+      { x: 760,  y: 2840 },
+      { x: 360,  y: 2360 },
+      { x: 2440, y: 360 },
+      { x: 2840, y: 840 },
+      { x: 1600, y: 1600 },
+      { x: 680,  y: 680 },
+      { x: 2520, y: 2520 }
+    ];
     ctx.fillStyle = '#eab308';
-    ctx.fillRect(24, 24, 7, 7);
-    ctx.fillRect(w - 31, h - 31, 7, 7);
-    ctx.fillRect(w / 2 - 4, h / 2 - 4, 8, 8);
+    ctx.strokeStyle = '#090c08';
+    docks.forEach(d => {
+      const dx = d.x * scale;
+      const dy = d.y * scale;
+      ctx.fillRect(dx - 3.5, dy - 3.5, 7, 7);
+      ctx.strokeRect(dx - 3.5, tyOrDy(dy) - 3.5, 7, 7);
+    });
+    function tyOrDy(v) { return v; }
 
-    // Spawn markers (Player bottom-left blue, Enemy top-right red)
-    ctx.fillStyle = '#38bdf8';
-    ctx.beginPath();
-    ctx.arc(20, h - 20, 6, 0, Math.PI * 2);
-    ctx.fill();
+    // 7. Player HQ (bottom-left) & AI HQ (top-right)
+    const pGen = ZH_DATA.GENERALS[selectedPlayerGeneralId] || Object.values(ZH_DATA.GENERALS)[0];
+    const aiGen = ZH_DATA.GENERALS[selectedAiGeneralId] || Object.values(ZH_DATA.GENERALS)[1];
+    const pColor = (pGen && ZH_DATA.FACTIONS[pGen.faction] && ZH_DATA.FACTIONS[pGen.faction].color) || '#38bdf8';
+    const aiColor = (aiGen && ZH_DATA.FACTIONS[aiGen.faction] && ZH_DATA.FACTIONS[aiGen.faction].color) || '#ef4444';
 
-    ctx.fillStyle = '#ef4444';
+    const px = 440 * scale;
+    const py = (3200 - 440) * scale;
+    const ax = (3200 - 440) * scale;
+    const ay = 440 * scale;
+
+    ctx.strokeStyle = pColor;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(w - 20, 20, 6, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.arc(px, py, 10, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = pColor;
+    ctx.fillRect(px - 4, py - 4, 8, 8);
+
+    ctx.strokeStyle = aiColor;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(ax, ay, 10, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = aiColor;
+    ctx.fillRect(ax - 4, ay - 4, 8, 8);
+
+    // 8. C4ISR Phosphor Radar Sweep
+    const angle = (settings && settings.reducedMotion) ? 0.85 : ((nowMs || 0) * 0.0016) % (Math.PI * 2);
+    const cx = w / 2;
+    const cy = h / 2;
+    ctx.strokeStyle = 'rgba(74, 222, 128, 0.65)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(angle) * (w * 0.68), cy + Math.sin(angle) * (h * 0.68));
+    ctx.stroke();
+  }
+
+  function renderMenuBackdrop(nowMs = 0) {
+    const startModal = document.getElementById('start-modal');
+    if (startModal && startModal.classList.contains('hidden')) return;
+
+    const t = (settings && settings.reducedMotion) ? 12.0 : (nowMs || 0) * 0.001;
+    renderMapPreview(nowMs);
+
+    const canvas = document.getElementById('game-canvas');
+    if (canvas && canvas.getContext) {
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const vw = (canvas.width || 1280) / dpr;
+      const vh = (canvas.height || 800) / dpr;
+      if (ctx && vw > 0 && vh > 0) {
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const mapDef = ZH_DATA.MAPS.find(m => m.id === selectedMapId) || ZH_DATA.MAPS[0];
+        const pGen = ZH_DATA.GENERALS[selectedPlayerGeneralId] || Object.values(ZH_DATA.GENERALS)[0];
+        const aiGen = ZH_DATA.GENERALS[selectedAiGeneralId] || Object.values(ZH_DATA.GENERALS)[1];
+        const pFac = (pGen && ZH_DATA.FACTIONS[pGen.faction]) || ZH_DATA.FACTIONS.USA;
+        const aiFac = (aiGen && ZH_DATA.FACTIONS[aiGen.faction]) || ZH_DATA.FACTIONS.CHINA;
+
+        // 1. Satellite Tactical Theater Ground & Dark Olive Vignette
+        const grad = ctx.createLinearGradient(0, 0, vw, vh);
+        grad.addColorStop(0, mapDef.bgPrimary || '#526f43');
+        grad.addColorStop(1, mapDef.bgSecondary || '#435d36');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, vw, vh);
+
+        ctx.fillStyle = 'rgba(8, 12, 8, 0.68)';
+        ctx.fillRect(0, 0, vw, vh);
+
+        // 2. Topographical C4ISR Grid
+        ctx.strokeStyle = 'rgba(74, 222, 128, 0.09)';
+        ctx.lineWidth = 1;
+        const gridStep = 64;
+        for (let x = 0; x < vw; x += gridStep) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, vh); ctx.stroke();
+        }
+        for (let y = 0; y < vh; y += gridStep) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(vw, y); ctx.stroke();
+        }
+
+        // 3. Strategic Highway & Patrolling 3D Armored Column
+        ctx.strokeStyle = 'rgba(234, 179, 8, 0.14)';
+        ctx.lineWidth = 38;
+        ctx.beginPath();
+        ctx.moveTo(vw * 0.05, vh * 0.88);
+        ctx.lineTo(vw * 0.95, vh * 0.12);
+        ctx.stroke();
+
+        // Render bespoke 3D Crusader Tanks patrolling if ZH_UNIT_MODELS is loaded
+        if (window.ZH_UNIT_MODELS && typeof window.ZH_UNIT_MODELS.renderUnitIfBespoke === 'function') {
+          for (let i = 0; i < 2; i++) {
+            const prog = ((t * 0.045 + i * 0.35) % 1);
+            const tx = vw * (0.08 + prog * 0.84);
+            const ty = vh * (0.86 - prog * 0.72);
+            const mockTank = {
+              defId: pGen.id === 'USA_TOWNES' ? 'USA_LASER_CRUSADER' : 'USA_CRUSADER',
+              x: tx,
+              y: ty,
+              angle: -0.62,
+              turretAngle: -0.62 + Math.sin(t * 1.4 + i) * 0.45,
+              radius: 22,
+              veterancy: 2,
+              recoilOffset: 0
+            };
+            window.ZH_UNIT_MODELS.renderUnitIfBespoke(ctx, mockTank, pFac);
+          }
+        }
+
+        // 4. Forward Operating Base Perimeters
+        const pBaseX = vw * 0.09;
+        const pBaseY = vh * 0.76;
+        ctx.strokeStyle = pFac.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(pBaseX, pBaseY, 64 + Math.sin(t * 2) * 3, 0, Math.PI * 2);
+        ctx.stroke();
+
+        const aiBaseX = vw * 0.91;
+        const aiBaseY = vh * 0.22;
+        ctx.strokeStyle = aiFac.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(aiBaseX, aiBaseY, 64 + Math.cos(t * 2) * 3, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 5. Center Satellite Radar Scope
+        const cx = vw * 0.5;
+        const cy = vh * 0.46;
+        const rMax = Math.min(vw, vh) * 0.43;
+        ctx.strokeStyle = 'rgba(234, 179, 8, 0.16)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(cx, cy, rMax, 0, Math.PI * 2);
+        ctx.stroke();
+
+        const sweepAngle = (t * 0.65) % (Math.PI * 2);
+        ctx.strokeStyle = 'rgba(74, 222, 128, 0.28)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(sweepAngle) * rMax, cy + Math.sin(sweepAngle) * rMax);
+        ctx.stroke();
+
+        ctx.restore();
+      }
+    }
+
+    // Also render live radar scope on #minimap-canvas when on Main Menu
+    const minimap = document.getElementById('minimap-canvas');
+    if (minimap && minimap.getContext) {
+      const mctx = minimap.getContext('2d');
+      const mw = minimap.width || 184;
+      const mh = minimap.height || 184;
+      if (mctx && mw > 0 && mh > 0) {
+        mctx.fillStyle = '#070b07';
+        mctx.fillRect(0, 0, mw, mh);
+        mctx.strokeStyle = 'rgba(74, 222, 128, 0.25)';
+        mctx.lineWidth = 1;
+        mctx.beginPath();
+        mctx.arc(mw / 2, mh / 2, mw * 0.4, 0, Math.PI * 2);
+        mctx.stroke();
+        const mAngle = (t * 1.1) % (Math.PI * 2);
+        mctx.strokeStyle = '#4ade80';
+        mctx.beginPath();
+        mctx.moveTo(mw / 2, mh / 2);
+        mctx.lineTo(mw / 2 + Math.cos(mAngle) * (mw * 0.4), mh / 2 + Math.sin(mAngle) * (mh * 0.4));
+        mctx.stroke();
+      }
+    }
   }
 
   function updateStartMatchupSummary() {
@@ -570,8 +1275,10 @@
     const aiGen = ZH_DATA.GENERALS[selectedAiGeneralId] || Object.values(ZH_DATA.GENERALS)[1];
     const mapDef = ZH_DATA.MAPS.find(m => m.id === selectedMapId) || ZH_DATA.MAPS[0];
     if (!pGen || !aiGen || !mapDef) return;
+    const pMeta = getGeneralMilitaryMeta(pGen);
+    const aiMeta = getGeneralMilitaryMeta(aiGen);
     summaryEl.textContent =
-      `${pGen.badge} ${pGen.name} vs ${aiGen.badge} ${aiGen.name} • ${mapDef.name} (${selectedDifficulty})`;
+      `[${pMeta.serial}] ${pGen.name} VS [${aiMeta.serial}] ${aiGen.name} // SECTOR: ${mapDef.name} // ROE: ${selectedDifficulty}`;
   }
 
   function startNewMatch() {
@@ -671,7 +1378,10 @@
       if (!engine || !engine.running) return;
       const builders = engine.units.filter(u => u.team === 0 && u.def.isBuilder && u.hp > 0);
       if (builders.length > 0) {
-        const b = builders[0];
+        const idleBuilders = builders.filter(u => u.state === 'IDLE');
+        const pool = idleBuilders.length > 0 ? idleBuilders : builders;
+        const b = pool[lastBuilderCycleIdx % pool.length];
+        lastBuilderCycleIdx = (lastBuilderCycleIdx + 1) % Math.max(1, pool.length);
         engine.selectedIds.clear();
         engine.selectedIds.add(b.id);
         centerCameraOn(b.x, b.y);
@@ -959,26 +1669,31 @@
     const team = engine.teams[0];
     const powers = ZH_DATA.GENERALS_POWERS[team.factionId] || [];
     const unlockedList = powers.filter(p => team.unlockedPowers.has(p.id));
+    const activeId = engine.commandMode === 'POWER' ? (engine.pendingPowerId || '') : '';
 
-    const sig = unlockedList.map(p => `${p.id}:${Math.ceil(team.powerCooldowns[p.id] || 0)}`).join('|');
+    const sig = unlockedList.map(p => `${p.id}:${Math.ceil(team.powerCooldowns[p.id] || 0)}:${activeId === p.id ? 1 : 0}`).join('|');
     if (!force && sig === lastPowerStripSignature) return;
     lastPowerStripSignature = sig;
 
     strip.innerHTML = '';
     unlockedList.forEach(p => {
       const cd = Math.ceil(team.powerCooldowns[p.id] || 0);
+      const totalCd = p.cooldown || 120;
+      const cdPct = cd > 0 ? Math.min(100, Math.round((cd / totalCd) * 100)) : 0;
       const btn = document.createElement('button');
-      btn.className = `power-strip-btn ${cd > 0 ? 'cooldown' : 'ready'}`;
+      btn.className = `power-strip-btn ${cd > 0 ? 'cooldown' : 'ready'}${activeId === p.id ? ' active-mode' : ''}`;
       btn.title = `${p.name} — ${p.desc}`;
       btn.dataset.powerId = p.id;
       btn.innerHTML = `
-        <span class="power-icon">${p.icon || '⚡'}</span>
-        <span class="power-cd">${cd > 0 ? cd + 's' : 'RDY'}</span>
+        ${cdPct > 0 ? `<div class="power-strip-fill" style="height:${cdPct}%"></div>` : ''}
+        <span class="power-icon power-strip-icon">${p.icon || '⚡'}</span>
+        <span class="power-cd power-strip-cd">${cd > 0 ? cd + 's' : 'RDY'}</span>
       `;
       if (cd <= 0) {
         btn.addEventListener('click', () => {
           engine.commandMode = 'POWER';
           engine.pendingPowerId = p.id;
+          updatePowerStrip(true);
           showTacticalAlert(`TARGETING ${p.name.toUpperCase()} — Click on the battlefield!`, '#38bdf8');
         });
       }
@@ -1066,6 +1781,16 @@
       topBarCache.powerColor = pwrColor;
       pwrEl.textContent = pwrText;
       pwrEl.style.color = pwrColor;
+      if (pwrEl.style && pwrEl.style.setProperty) {
+        const pwrLoadPct = !pTeam.faction.usesPower
+          ? 100
+          : (pTeam.powerProduced > 0 ? Math.min(100, Math.round((pTeam.powerConsumed / pTeam.powerProduced) * 100)) : (pTeam.powerConsumed > 0 ? 100 : 0));
+        const barCol = !pTeam.faction.usesPower
+          ? '#eab308'
+          : (pTeam.isLowPower ? '#ef4444' : (pwrLoadPct >= 80 ? '#f59e0b' : '#22c55e'));
+        pwrEl.style.setProperty('--power-pct', `${pwrLoadPct}%`);
+        pwrEl.style.setProperty('--power-bar-color', barCol);
+      }
     }
 
     const rankObj = ZH_DATA.GENERAL_RANKS[pTeam.rank - 1];
@@ -1074,7 +1799,16 @@
     const rankStr = `★ Rank ${pTeam.rank} (${xpText})`;
     if (rankStr !== topBarCache.rank) {
       topBarCache.rank = rankStr;
-      document.getElementById('hud-rank').textContent = rankStr;
+      const rankEl = document.getElementById('hud-rank');
+      rankEl.textContent = rankStr;
+      if (rankEl && rankEl.style && rankEl.style.setProperty) {
+        const prevXp = rankObj ? (rankObj.xpReq || 0) : 0;
+        const nextXp = nextRankObj ? nextRankObj.xpReq : prevXp;
+        const xpPct = nextRankObj
+          ? Math.max(0, Math.min(100, Math.round(((pTeam.xp - prevXp) / Math.max(1, nextXp - prevXp)) * 100)))
+          : 100;
+        rankEl.style.setProperty('--rank-xp-pct', `${xpPct}%`);
+      }
     }
 
     const clockEl = document.getElementById('hud-match-clock');
@@ -1082,10 +1816,23 @@
       const totalSec = Math.floor(engine.matchTime || 0);
       const mm = String(Math.floor(totalSec / 60)).padStart(2, '0');
       const ss = String(totalSec % 60).padStart(2, '0');
-      const clockStr = `${mm}:${ss}`;
+      const clockStr = `⏱ ${mm}:${ss}`;
       if (clockStr !== topBarCache.clock) {
         topBarCache.clock = clockStr;
         clockEl.textContent = clockStr;
+      }
+    }
+
+    const bldBtn = document.getElementById('btn-select-builder');
+    if (bldBtn) {
+      const builders = engine.units.filter(u => u.team === 0 && u.def.isBuilder && u.hp > 0);
+      const idleCount = builders.filter(u => u.state === 'IDLE').length;
+      const bldText = builders.length === 0
+        ? '🚜 No Builder [B]'
+        : (idleCount > 0 ? `🚜 Dozer / Worker [B] (${idleCount} Idle)` : `🚜 Dozer / Worker [B] (${builders.length})`);
+      if (bldText !== topBarCache.builderBtn) {
+        topBarCache.builderBtn = bldText;
+        bldBtn.textContent = bldText;
       }
     }
 
@@ -1170,6 +1917,88 @@
     return `${sel}#${upg}#${unlockedBuildings}#${pTeam.rank}#${extra}`;
   }
 
+  function renderSingleUnitInspectorStats(inspectorStats, primary, forceRebuild = false) {
+    if (!inspectorStats || !primary) return;
+    const vet = ZH_DATA.VETERANCY_LEVELS[primary.vetLevel] || ZH_DATA.VETERANCY_LEVELS[0];
+    const addonLabel = primary.overlordAddon ||
+      (primary.hasGatlingCannon ? 'GATLING_CANNON' : primary.hasSpeakerTower ? 'SPEAKER_TOWER' : null);
+    const isDeepCad = Boolean(
+      window.ZH_UNIT_MODELS &&
+      ZH_UNIT_MODELS.isDeepEngineeredUnit &&
+      ZH_UNIT_MODELS.isDeepEngineeredUnit(primary.defId)
+    );
+    const cadEntry = isDeepCad ? ZH_UNIT_MODELS.getModelEntry(primary.defId) : null;
+    const activePresetKey = isDeepCad && ZH_UNIT_MODELS.getActivePresetKey
+      ? ZH_UNIT_MODELS.getActivePresetKey(primary.defId)
+      : 'DIORAMA_DEFAULT';
+    const activePresetObj = (cadEntry && cadEntry.presets && cadEntry.presets[activePresetKey]) || null;
+    const presetLabel = activePresetObj ? activePresetObj.label : 'Diorama Blueprint';
+    const hpCeil = Math.ceil(primary.hp);
+    const isLaserLocked = Boolean(primary.laserLockedTimer > 0 || primary.laserLockTimer > 0);
+    const isEmp = Boolean(primary.empTimer > 0);
+
+    const sig = [
+      primary.id,
+      primary.defId,
+      hpCeil,
+      primary.maxHp,
+      primary.vetLevel,
+      primary.salvageTier || 0,
+      addonLabel || '',
+      primary.stealthed ? 1 : 0,
+      isLaserLocked ? 1 : 0,
+      isEmp ? 1 : 0,
+      primary.inHorde ? 1 : 0,
+      primary.inPropaganda ? 1 : 0,
+      isDeepCad ? activePresetKey : 'LEGACY'
+    ].join('|');
+
+    if (!forceRebuild && inspectorStats.dataset && inspectorStats.dataset.sig === sig) {
+      return;
+    }
+    if (inspectorStats.dataset) {
+      inspectorStats.dataset.sig = sig;
+    }
+
+    inspectorStats.innerHTML = `
+      ${cadEntry && cadEntry.referenceImage ? `<span class="hud-cad-thumb-wrap"><img class="hud-cad-thumb" src="${cadEntry.referenceImage}" alt="${primary.def.name}" /> 3D CAD</span>` : `<span class="hud-cad-thumb-wrap">✨ 3D CAD</span>`}
+      <span>HP: ${hpCeil}/${primary.maxHp}</span>
+      <span>Rank: ${vet.name} ${'★'.repeat(primary.vetLevel)}</span>
+      ${primary.def.locomotor ? `<span style="color:#94a3b8">${primary.def.locomotor}</span>` : ''}
+      ${isDeepCad ? `<button type="button" id="btn-hud-cycle-preset" class="hud-cad-chip" title="Click or press [K] to cycle 5 Tactical 3D Presets">🎨 ${presetLabel} [K]</button>` : ''}
+      ${isDeepCad ? `<button type="button" id="btn-hud-open-unit-cad" class="hud-cad-chip hud-cad-chip-accent" title="Open in 3D Unit Design Studio [U]">🛠️ 3D Studio</button>` : ''}
+      ${primary.salvageTier > 0 ? `<span>Salvage: Tier ${primary.salvageTier}</span>` : ''}
+      ${addonLabel ? `<span style="color:#38bdf8">Addon: ${addonLabel}</span>` : ''}
+      ${primary.stealthed ? `<span style="color:#a855f7">🕵️ STEALTH</span>` : ''}
+      ${isLaserLocked ? `<span style="color:#ef4444">🎯 LASER LOCKED</span>` : ''}
+      ${isEmp ? `<span style="color:#38bdf8">⚡ EMP DISABLED</span>` : ''}
+      ${primary.inHorde ? '<span style="color:#fde047">★ HORDE BONUS (+ROF)</span>' : ''}
+      ${primary.inPropaganda ? '<span style="color:#22c55e">🔊 PROPAGANDA HEAL</span>' : ''}
+    `;
+
+    if (isDeepCad) {
+      const presetBtn = document.getElementById('btn-hud-cycle-preset');
+      if (presetBtn) {
+        presetBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          if (window.ZH_UNIT_MODELS && ZH_UNIT_MODELS.cyclePreset) {
+            ZH_UNIT_MODELS.cyclePreset(primary.defId, true);
+            refreshCommandBar();
+          }
+        });
+      }
+      const studioBtn = document.getElementById('btn-hud-open-unit-cad');
+      if (studioBtn) {
+        studioBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          if (window.ZH_UNIT_STUDIO && ZH_UNIT_STUDIO.openStudio) {
+            ZH_UNIT_STUDIO.openStudio(primary.defId);
+          }
+        });
+      }
+    }
+  }
+
   function updateHudLive() {
     if (!engine || !engine.running) return;
     updateTopBarAndTimers();
@@ -1191,6 +2020,7 @@
 
     // Live-update inspector stats & queue progress
     if (selectedBunkers.length > 0) {
+      if (inspectorStats && inspectorStats.dataset) inspectorStats.dataset.sig = '';
       const g = selectedBunkers[0];
       inspectorStats.innerHTML = `
         <span>Integrity: ${Math.ceil(g.hp)}/${g.maxHp}</span>
@@ -1198,28 +2028,15 @@
         ${g.occupants.map(u => `<span class="unit-chip">${u.def.shortName}</span>`).join('')}
       `;
     } else if (selectedUnits.length === 1) {
-      const primary = selectedUnits[0];
-      const vet = ZH_DATA.VETERANCY_LEVELS[primary.vetLevel] || ZH_DATA.VETERANCY_LEVELS[0];
-      const addonLabel = primary.overlordAddon ||
-        (primary.hasGatlingCannon ? 'GATLING_CANNON' : primary.hasSpeakerTower ? 'SPEAKER_TOWER' : null);
-      inspectorStats.innerHTML = `
-        <span>HP: ${Math.ceil(primary.hp)}/${primary.maxHp}</span>
-        <span>Rank: ${vet.name} ${'★'.repeat(primary.vetLevel)}</span>
-        ${primary.def.locomotor ? `<span style="color:#94a3b8">${primary.def.locomotor}</span>` : ''}
-        ${primary.salvageTier > 0 ? `<span>Salvage: Tier ${primary.salvageTier}</span>` : ''}
-        ${addonLabel ? `<span style="color:#38bdf8">Addon: ${addonLabel}</span>` : ''}
-        ${primary.stealthed ? `<span style="color:#a855f7">🕵️ STEALTH</span>` : ''}
-        ${(primary.laserLockedTimer > 0 || primary.laserLockTimer > 0) ? `<span style="color:#ef4444">🎯 LASER LOCKED</span>` : ''}
-        ${primary.empTimer > 0 ? `<span style="color:#38bdf8">⚡ EMP DISABLED</span>` : ''}
-        ${primary.inHorde ? '<span style="color:#fde047">★ HORDE BONUS (+ROF)</span>' : ''}
-        ${primary.inPropaganda ? '<span style="color:#22c55e">🔊 PROPAGANDA HEAL</span>' : ''}
-      `;
+      renderSingleUnitInspectorStats(inspectorStats, selectedUnits[0], false);
     } else if (selectedUnits.length > 1) {
+      if (inspectorStats && inspectorStats.dataset) inspectorStats.dataset.sig = '';
       inspectorStats.innerHTML = selectedUnits.slice(0, 8).map(u =>
         `<span class="unit-chip">${u.def.shortName} (${Math.round(u.hp / u.maxHp * 100)}%)</span>`
       ).join('');
       renderSelectionSummary(selectedUnits);
     } else if (selectedBuildings.length > 0) {
+      if (inspectorStats && inspectorStats.dataset) inspectorStats.dataset.sig = '';
       const b = selectedBuildings[0];
       inspectorStats.innerHTML = `
         <span>HP: ${Math.ceil(b.hp)}/${b.maxHp}</span>
@@ -1289,6 +2106,7 @@
     if (!selectedUnits || selectedUnits.length <= 1) {
       summaryEl.classList.add('hidden');
       summaryEl.innerHTML = '';
+      activeSubgroupDefId = selectedUnits && selectedUnits[0] ? selectedUnits[0].defId : null;
       return;
     }
 
@@ -1303,6 +2121,10 @@
       groups.get(u.defId).push(u);
     });
 
+    if (!activeSubgroupDefId || !groups.has(activeSubgroupDefId)) {
+      activeSubgroupDefId = selectedUnits[0].defId;
+    }
+
     groups.forEach((units, defId) => {
       const def = units[0].def;
       const icon = ZH_DATA.iconFor ? ZH_DATA.iconFor(def) : '🪖';
@@ -1310,16 +2132,17 @@
         (units.reduce((acc, u) => acc + u.hp / Math.max(1, u.maxHp), 0) / units.length) * 100
       );
       const hpColor = avgHpPct > 55 ? '#22c55e' : avgHpPct > 25 ? '#eab308' : '#ef4444';
+      const isSubgroupActive = groups.size > 1 && defId === activeSubgroupDefId;
 
       const chip = document.createElement('button');
-      chip.className = 'unit-group-chip';
+      chip.className = `unit-group-chip${isSubgroupActive ? ' active-subgroup' : ''}`;
       chip.dataset.defId = defId;
-      chip.title = `${def.name} (x${units.length}) — Click to isolate type, Shift+Click to remove type`;
+      chip.title = `${def.name} (x${units.length}) — Click to isolate type, Shift+Click to remove type, Tab to cycle active ability subgroup`;
       chip.innerHTML = `
         <span class="chip-icon">${icon}</span>
         <span class="chip-count">x${units.length}</span>
         <span class="chip-name">${def.shortName}</span>
-        <div class="chip-hp-bar"><div class="chip-hp-fill" style="width:${avgHpPct}%;background:${hpColor}"></div></div>
+        <div class="chip-hp-bar unit-group-hp"><div class="chip-hp-fill" style="width:${avgHpPct}%;background:${hpColor}"></div></div>
       `;
       chip.addEventListener('click', (e) => {
         if (e.shiftKey) {
@@ -1333,6 +2156,85 @@
       });
       summaryEl.appendChild(chip);
     });
+  }
+
+  let lastFacilityTabId = null;
+  let lastFacilityTabTime = 0;
+
+  function renderCommandCardTabs() {
+    const tabsEl = document.getElementById('command-card-tabs');
+    if (!tabsEl || !engine) return;
+
+    tabsEl.innerHTML = '<span class="cmd-tab active" id="cmd-tab-label">COMMANDS</span>';
+
+    const facilities = engine.buildings.filter(
+      b => b.team === 0 && b.constructed && b.hp > 0 &&
+           ((b.def.trains && b.def.trains.length > 0) || (b.def.upgrades && b.def.upgrades.length > 0) || b.def.isSuperweapon)
+    );
+    if (facilities.length === 0) return;
+
+    const byDef = new Map();
+    facilities.forEach(b => {
+      if (!byDef.has(b.defId) || engine.selectedIds.has(b.id)) {
+        byDef.set(b.defId, b);
+      }
+    });
+
+    byDef.forEach((b) => {
+      const isSelected = engine.selectedIds.has(b.id);
+      const qLen = b.queue ? b.queue.length : 0;
+      const bThumbSrc = `assets/diorama/buildings/${b.defId.toLowerCase()}.png`;
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = `cmd-tab-pill${isSelected ? ' active' : ''}`;
+      pill.dataset.buildingId = String(b.id);
+      pill.dataset.defId = b.defId;
+      pill.title = `${b.def.name} — Click to open production card anywhere on the map, Double-click to center camera`;
+      pill.innerHTML = `<img class="tab-building-thumb" src="${bThumbSrc}" alt="" /> ${b.def.shortName}${qLen > 0 ? `<span class="tab-q-badge">${qLen}</span>` : ''}`;
+      pill.addEventListener('click', () => {
+        const now = performance.now();
+        const isDouble = (lastFacilityTabId === b.id && now - lastFacilityTabTime < 340);
+        lastFacilityTabId = b.id;
+        lastFacilityTabTime = now;
+        engine.selectedIds.clear();
+        engine.selectedIds.add(b.id);
+        if (isDouble) {
+          centerCameraOn(b.x, b.y);
+        }
+        refreshCommandBar();
+        ZH_AUDIO.playSFX('click');
+      });
+      tabsEl.appendChild(pill);
+    });
+  }
+
+  function getRoleBadgeForDef(def) {
+    if (!def) return '';
+    // Building role tags
+    if (def.isSuperweapon) return 'SUPER';
+    if (def.isDefense) return 'DEF';
+    if (def.power !== undefined && def.type === undefined) {
+      if (def.power > 0) return 'PWR';
+      if (def.trains && def.trains.length > 0) return 'PROD';
+      if (def.isSupplyCenter || (def.name && /supply|stash/i.test(def.name))) return 'ECON';
+      return 'TECH';
+    }
+    // Unit role tags
+    if (def.isBuilder) return 'BUILD';
+    if (def.isHarvester) return 'ECON';
+    if (def.type === 'AIR') return 'AIR';
+    if (def.weapon) {
+      const wType = def.weapon.type || '';
+      if (def.weapon.antiAir && !def.weapon.antiGround) return 'AA';
+      if (def.weapon.antiAir && wType === 'GATLING') return 'AA/INF';
+      if (wType === 'MISSILE' || wType === 'LASER') return 'AT';
+      if (wType === 'ARTILLERY' || wType === 'NUKE' || wType === 'SCUD') return 'SIEGE';
+      if (wType === 'FLAME' || wType === 'TOXIN' || wType === 'SNIPER') return 'ANTI-INF';
+      if (wType === 'SHELL') return 'ARMOR';
+    }
+    if (def.type === 'INFANTRY') return 'INF';
+    if (def.type === 'VEHICLE') return 'VEH';
+    return '';
   }
 
   function padCommandCardTo12(cmdGrid) {
@@ -1374,6 +2276,7 @@
     }
 
     renderSelectionSummary(selectedUnits);
+    renderCommandCardTabs();
     lastCmdSignature = computeCommandSignature();
 
     if (selectedUnits.length === 0 && selectedBuildings.length === 0 && selectedBunkers.length === 0) {
@@ -1415,29 +2318,25 @@
 
     // CASE A: Single or Multiple Units Selected
     if (selectedUnits.length > 0) {
-      const primary = selectedUnits[0];
+      const primary = (selectedUnits.length > 1 && activeSubgroupDefId)
+        ? (selectedUnits.find(u => u.defId === activeSubgroupDefId) || selectedUnits[0])
+        : selectedUnits[0];
       const vet = ZH_DATA.VETERANCY_LEVELS[primary.vetLevel] || ZH_DATA.VETERANCY_LEVELS[0];
 
       if (selectedUnits.length === 1) {
-        const addonLabel = primary.overlordAddon ||
-          (primary.hasGatlingCannon ? 'GATLING_CANNON' : primary.hasSpeakerTower ? 'SPEAKER_TOWER' : null);
+        const isDeepCad = Boolean(
+          window.ZH_UNIT_MODELS &&
+          ZH_UNIT_MODELS.isDeepEngineeredUnit &&
+          ZH_UNIT_MODELS.isDeepEngineeredUnit(primary.defId)
+        );
+        const cadEntry = isDeepCad ? ZH_UNIT_MODELS.getModelEntry(primary.defId) : null;
         inspectorTitle.textContent = primary.def.name;
-        inspectorSub.textContent = primary.def.description;
-        inspectorStats.innerHTML = `
-          <span>HP: ${Math.ceil(primary.hp)}/${primary.maxHp}</span>
-          <span>Rank: ${vet.name} ${'★'.repeat(primary.vetLevel)}</span>
-          ${primary.def.locomotor ? `<span style="color:#94a3b8">${primary.def.locomotor}</span>` : ''}
-          ${primary.salvageTier > 0 ? `<span>Salvage: Tier ${primary.salvageTier}</span>` : ''}
-          ${addonLabel ? `<span style="color:#38bdf8">Addon: ${addonLabel}</span>` : ''}
-          ${primary.stealthed ? `<span style="color:#a855f7">🕵️ STEALTH</span>` : ''}
-          ${(primary.laserLockedTimer > 0 || primary.laserLockTimer > 0) ? `<span style="color:#ef4444">🎯 LASER LOCKED</span>` : ''}
-          ${primary.empTimer > 0 ? `<span style="color:#38bdf8">⚡ EMP DISABLED</span>` : ''}
-          ${primary.inHorde ? '<span style="color:#fde047">★ HORDE BONUS (+ROF)</span>' : ''}
-          ${primary.inPropaganda ? '<span style="color:#22c55e">🔊 PROPAGANDA HEAL</span>' : ''}
-        `;
+        inspectorSub.textContent = cadEntry && cadEntry.credits ? cadEntry.credits : primary.def.description;
+        renderSingleUnitInspectorStats(inspectorStats, primary, true);
       } else {
+        if (inspectorStats && inspectorStats.dataset) inspectorStats.dataset.sig = '';
         inspectorTitle.textContent = `Strike Group (${selectedUnits.length} Units Selected)`;
-        inspectorSub.textContent = `Primary: ${primary.def.name} • Right-click to move, garrison buildings, or engage targets.`;
+        inspectorSub.textContent = `Active Subgroup: ${primary.def.name} [Tab to cycle] • Right-click to move, garrison, or engage.`;
         inspectorStats.innerHTML = selectedUnits.slice(0, 8).map(u =>
           `<span class="unit-chip">${u.def.shortName} (${Math.round(u.hp / u.maxHp * 100)}%)</span>`
         ).join('');
@@ -1538,9 +2437,14 @@
 
     // CASE B: Building Selected
     const b = selectedBuildings[0];
+    const bPortraitSrc = `assets/diorama/buildings/${b.def.id.toLowerCase()}.png`;
     inspectorTitle.textContent = b.def.name;
     inspectorSub.textContent = b.def.description;
     inspectorStats.innerHTML = `
+      <span class="inspector-building-portrait-chip">
+        <img class="inspector-building-portrait" src="${bPortraitSrc}" alt="${b.def.name}" />
+        <strong>2:1 Ligne-Claire</strong>
+      </span>
       <span>HP: ${Math.ceil(b.hp)}/${b.maxHp}</span>
       <span>Power: ${b.def.power >= 0 ? '+' + b.def.power : b.def.power}</span>
       <span>Status: ${b.constructed ? 'ONLINE' : `BUILDING (${Math.round(b.buildProgress * 100)}%)`}</span>
@@ -1558,7 +2462,7 @@
     const hotkeys = ['Q', 'W', 'E', 'R', 'A', 'S', 'D', 'F', 'X', 'C', 'V'];
     let slotIdx = 0;
 
-    // 1. Trainable Units (Phase 3 SYS-20: Cameo queue badges + right-click cancel/refund)
+    // 1. Trainable Units (Phase 3 SYS-20: Cameo queue badges + Shift+Click 5x batch + right-click cancel/refund)
     if (b.def.trains) {
       b.def.trains.forEach(uId => {
         const uDef = ZH_DATA.UNITS[uId];
@@ -1579,19 +2483,28 @@
           icon: uDef.icon,
           cost: `$${cost}`,
           costNum: cost,
-          tooltip: `${uDef.name} ($${cost}) — ${uDef.description} [Right-Click to Cancel/Refund]`,
+          tooltip: `${uDef.name} ($${cost}) — ${uDef.description} [Shift+Click: Queue 5 • Right-Click: Cancel]`,
           disabled: !unlocked,
           prereqLocked: !unlocked,
           cantAfford,
           lockedText: !unlocked ? 'REQ TECH' : '',
           queueCount: qCount,
           progressPct: progPct,
-          onClick: () => {
-            engine.queueProduction(b, uId);
+          onClick: (e) => {
+            const count = (e && e.shiftKey) ? 5 : 1;
+            for (let i = 0; i < count; i++) {
+              if (!engine.queueProduction(b, uId)) break;
+            }
             refreshCommandBar();
           },
-          onRightClick: () => {
-            engine.cancelProduction(b, uId);
+          onRightClick: (e) => {
+            if (e && e.shiftKey) {
+              while (b.queue && b.queue.some(q => q.id === uId)) {
+                engine.cancelProduction(b, uId);
+              }
+            } else {
+              engine.cancelProduction(b, uId);
+            }
             refreshCommandBar();
           }
         });
@@ -1727,11 +2640,25 @@
     if (cfg.defId) btn.dataset.defId = cfg.defId;
     if (cfg.costNum !== undefined) btn.dataset.costNum = String(cfg.costNum);
 
-    const icon = cfg.icon || (cfg.def && ZH_DATA.iconFor ? ZH_DATA.iconFor(cfg.def) : '⚙️');
+    const isBuildingCameo = Boolean(cfg.defId && ZH_DATA.BUILDINGS && ZH_DATA.BUILDINGS[cfg.defId]);
+    const isDeepUnitCameo = Boolean(
+      cfg.defId &&
+      window.ZH_UNIT_MODELS &&
+      ZH_UNIT_MODELS.isDeepEngineeredUnit &&
+      ZH_UNIT_MODELS.isDeepEngineeredUnit(cfg.defId)
+    );
+    const deepUnitEntry = isDeepUnitCameo ? ZH_UNIT_MODELS.getModelEntry(cfg.defId) : null;
+    const hasThumbCameo = isBuildingCameo || Boolean(deepUnitEntry && deepUnitEntry.referenceImage);
+    const iconHtml = isBuildingCameo
+      ? `<img class="cmd-building-thumb" src="assets/diorama/buildings/${cfg.defId.toLowerCase()}.png" alt="${cfg.title || ''}" />`
+      : (deepUnitEntry && deepUnitEntry.referenceImage)
+        ? `<img class="cmd-building-thumb cmd-unit-thumb" src="${deepUnitEntry.referenceImage}" alt="${cfg.title || ''}" />`
+        : (cfg.icon || (cfg.def && ZH_DATA.iconFor ? ZH_DATA.iconFor(cfg.def) : '⚙️'));
+    const roleBadge = cfg.roleBadge !== undefined ? cfg.roleBadge : getRoleBadgeForDef(cfg.def);
     btn.innerHTML = `
       <span class="cmd-hotkey">${cfg.hotkey || ''}</span>
-      ${cfg.queueCount > 0 ? `<span class="cmd-queue-badge">x${cfg.queueCount}</span>` : ''}
-      <span class="cmd-icon" aria-hidden="true">${icon}</span>
+      ${cfg.queueCount > 0 ? `<span class="cmd-queue-badge">x${cfg.queueCount}</span>` : (roleBadge ? `<span class="cmd-role-badge">${roleBadge}</span>` : '')}
+      <span class="cmd-icon${hasThumbCameo ? ' cmd-icon-building' : ''}" aria-hidden="true">${iconHtml}</span>
       <span class="cmd-title">${cfg.title}</span>
       <span class="cmd-cost">${cfg.lockedText || cfg.cost || ''}</span>
       ${cfg.cooldownPct > 0 ? `<div class="cmd-cooldown-fill" style="height:${cfg.cooldownPct}%"></div>` : ''}
@@ -1744,7 +2671,7 @@
     if (cfg.onRightClick) {
       btn.addEventListener('contextmenu', e => {
         e.preventDefault();
-        cfg.onRightClick();
+        cfg.onRightClick(e);
       });
     }
 
@@ -1759,8 +2686,19 @@
     if (!tip) return;
 
     const def = cfg.def || (cfg.defId && (ZH_DATA.BUILDINGS[cfg.defId] || ZH_DATA.UNITS[cfg.defId] || ZH_DATA.UPGRADES[cfg.defId]));
+    const isBuildingDef = Boolean(cfg.defId && ZH_DATA.BUILDINGS && ZH_DATA.BUILDINGS[cfg.defId]);
+    const isDeepUnitDef = Boolean(
+      cfg.defId &&
+      window.ZH_UNIT_MODELS &&
+      ZH_UNIT_MODELS.isDeepEngineeredUnit &&
+      ZH_UNIT_MODELS.isDeepEngineeredUnit(cfg.defId)
+    );
+    const deepUnitEntry = isDeepUnitDef ? ZH_UNIT_MODELS.getModelEntry(cfg.defId) : null;
+    const bannerSrc = isBuildingDef
+      ? `assets/diorama/buildings/${cfg.defId.toLowerCase()}.png`
+      : (deepUnitEntry && deepUnitEntry.referenceImage ? deepUnitEntry.referenceImage : '');
     const name = (def && def.name) || cfg.title || 'Command';
-    const desc = (def && (def.description || def.desc)) || cfg.tooltip || '';
+    const desc = (deepUnitEntry && deepUnitEntry.credits) || (def && (def.description || def.desc)) || cfg.tooltip || '';
     const missing = (cfg.defId && engine && engine.getMissingPrereqs) ? engine.getMissingPrereqs(cfg.defId, 0) : [];
 
     const metaPills = [];
@@ -1768,6 +2706,9 @@
     if (def && def.buildTime) metaPills.push(`<span>Build: ${def.buildTime}s</span>`);
     if (def && def.power !== undefined && def.power !== 0) {
       metaPills.push(`<span>Power: ${def.power > 0 ? '+' + def.power : def.power}</span>`);
+    }
+    if (isDeepUnitDef) {
+      metaPills.push('<span style="color:#fde047">📐 3D CAD Flagship</span>');
     }
 
     const statItems = [];
@@ -1781,6 +2722,7 @@
     }
 
     tip.innerHTML = `
+      ${bannerSrc ? `<div class="tip-building-banner"><img class="tip-building-thumb" src="${bannerSrc}" alt="${name}" /></div>` : ''}
       <div class="tip-header">
         <span class="tip-title">${name}</span>
         ${cfg.hotkey ? `<span class="tip-hotkey">[${cfg.hotkey}]</span>` : ''}
@@ -1877,6 +2819,18 @@
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     minimap.addEventListener('contextmenu', e => e.preventDefault());
 
+    let isRightPanning = false;
+    let rightPanMoved = false;
+    let rightPanStart = { x: 0, y: 0 };
+    let rightPanLast = { x: 0, y: 0 };
+    let isDoubleTapPanning = false;
+    let doubleTapMoved = false;
+    let doubleTapLast = { x: 0, y: 0 };
+    let lastCanvasTapTime = 0;
+    let lastCanvasTapPos = { x: 0, y: 0 };
+    let twoFingerTouchLast = null;
+    let gestureStartZoom = 1;
+
     window.addEventListener('mousemove', e => {
       pointerClient.x = e.clientX;
       pointerClient.y = e.clientY;
@@ -1888,6 +2842,41 @@
         middlePanLast.y = e.clientY;
         engine.cam.x = Math.max(0, Math.min(engine.worldSize - engine.cam.w, engine.cam.x - dx));
         engine.cam.y = Math.max(0, Math.min(engine.worldSize - engine.cam.h, engine.cam.y - dy));
+      }
+      if (isRightPanning && engine) {
+        const totalDist = Math.hypot(e.clientX - rightPanStart.x, e.clientY - rightPanStart.y);
+        if (totalDist >= 6) rightPanMoved = true;
+        if (rightPanMoved) {
+          const dx = (e.clientX - rightPanLast.x) / (engine.cam.zoom || 1);
+          const dy = (e.clientY - rightPanLast.y) / (engine.cam.zoom || 1);
+          engine.cam.x = Math.max(0, Math.min(engine.worldSize - engine.cam.w, engine.cam.x - dx));
+          engine.cam.y = Math.max(0, Math.min(engine.worldSize - engine.cam.h, engine.cam.y - dy));
+        }
+        rightPanLast.x = e.clientX;
+        rightPanLast.y = e.clientY;
+      }
+      if (isDoubleTapPanning && engine) {
+        const totalDist = Math.hypot(e.clientX - lastCanvasTapPos.x, e.clientY - lastCanvasTapPos.y);
+        if (totalDist >= 6) {
+          doubleTapMoved = true;
+          isDraggingBox = false;
+        }
+        if (doubleTapMoved) {
+          const dx = (e.clientX - doubleTapLast.x) / (engine.cam.zoom || 1);
+          const dy = (e.clientY - doubleTapLast.y) / (engine.cam.zoom || 1);
+          engine.cam.x = Math.max(0, Math.min(engine.worldSize - engine.cam.w, engine.cam.x - dx));
+          engine.cam.y = Math.max(0, Math.min(engine.worldSize - engine.cam.h, engine.cam.y - dy));
+        }
+        doubleTapLast.x = e.clientX;
+        doubleTapLast.y = e.clientY;
+      }
+      if (isMinimapDragging && engine && minimap) {
+        const rect = minimap.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          const mx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+          const my = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+          centerCameraOn(mx * engine.worldSize, my * engine.worldSize);
+        }
       }
     });
 
@@ -1905,15 +2894,62 @@
       }
     });
 
+    // Two-Finger Trackpad Scroll across the map (and Pinch / Modifier + Wheel to Zoom)
     canvas.addEventListener('wheel', e => {
       if (!engine || !engine.running) return;
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
+
+      const isZoomGesture =
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey ||
+        (!e.isTrusted && !e.deltaX && Math.abs(e.deltaY) >= 100);
+
+      if (isZoomGesture) {
+        const before = engine.screenToWorld(sx, sy);
+        const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+        const nextZoom = Math.max(0.6, Math.min(1.4, (engine.cam.zoom || 1) * factor));
+        engine.cam.zoom = Number(nextZoom.toFixed(3));
+        const vw = engine.viewW || (rect.width || 1280);
+        const vh = engine.viewH || (rect.height || 600);
+        engine.cam.w = vw / engine.cam.zoom;
+        engine.cam.h = vh / engine.cam.zoom;
+        engine.cam.x = Math.max(0, Math.min(engine.worldSize - engine.cam.w, before.x - sx / engine.cam.zoom));
+        engine.cam.y = Math.max(0, Math.min(engine.worldSize - engine.cam.h, before.y - sy / engine.cam.zoom));
+      } else {
+        // Two-finger trackpad scroll pans the map across the screen
+        const zoom = engine.cam.zoom || 1;
+        const modeScale = e.deltaMode === 1 ? 28 : e.deltaMode === 2 ? 240 : 1.45;
+        const panScale = modeScale / zoom;
+        const dx = (e.deltaX || 0) * panScale;
+        const dy = (e.deltaY || 0) * panScale;
+        engine.cam.x = Math.max(0, Math.min(engine.worldSize - engine.cam.w, engine.cam.x + dx));
+        engine.cam.y = Math.max(0, Math.min(engine.worldSize - engine.cam.h, engine.cam.y + dy));
+      }
+
+      const wpt = engine.screenToWorld(sx, sy);
+      engine.mouseWorld.x = wpt.x;
+      engine.mouseWorld.y = wpt.y;
+    }, { passive: false });
+
+    // macOS WebKit Trackpad Pinch-to-Zoom Gesture Support
+    canvas.addEventListener('gesturestart', e => {
+      if (!engine || !engine.running) return;
+      e.preventDefault();
+      gestureStartZoom = engine.cam.zoom || 1;
+    }, { passive: false });
+
+    canvas.addEventListener('gesturechange', e => {
+      if (!engine || !engine.running) return;
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const sx = (e.clientX || rect.width / 2) - rect.left;
+      const sy = (e.clientY || rect.height / 2) - rect.top;
       const before = engine.screenToWorld(sx, sy);
-      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-      const nextZoom = Math.max(0.6, Math.min(1.4, (engine.cam.zoom || 1) * factor));
+      const nextZoom = Math.max(0.6, Math.min(1.4, gestureStartZoom * (e.scale || 1)));
       engine.cam.zoom = Number(nextZoom.toFixed(3));
       const vw = engine.viewW || (rect.width || 1280);
       const vh = engine.viewH || (rect.height || 600);
@@ -1922,6 +2958,39 @@
       engine.cam.x = Math.max(0, Math.min(engine.worldSize - engine.cam.w, before.x - sx / engine.cam.zoom));
       engine.cam.y = Math.max(0, Math.min(engine.worldSize - engine.cam.h, before.y - sy / engine.cam.zoom));
     }, { passive: false });
+
+    // Two-Finger Multi-Touch Drag Panning
+    canvas.addEventListener('touchstart', e => {
+      if (!engine || !engine.running) return;
+      if (e.touches && e.touches.length === 2) {
+        e.preventDefault();
+        twoFingerTouchLast = {
+          x: (e.touches[0].clientX + e.touches[1].clientX) * 0.5,
+          y: (e.touches[0].clientY + e.touches[1].clientY) * 0.5
+        };
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', e => {
+      if (!engine || !engine.running) return;
+      if (e.touches && e.touches.length === 2) {
+        e.preventDefault();
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) * 0.5;
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) * 0.5;
+        if (twoFingerTouchLast) {
+          const zoom = engine.cam.zoom || 1;
+          const dx = (midX - twoFingerTouchLast.x) / zoom;
+          const dy = (midY - twoFingerTouchLast.y) / zoom;
+          engine.cam.x = Math.max(0, Math.min(engine.worldSize - engine.cam.w, engine.cam.x - dx));
+          engine.cam.y = Math.max(0, Math.min(engine.worldSize - engine.cam.h, engine.cam.y - dy));
+        }
+        twoFingerTouchLast = { x: midX, y: midY };
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', () => {
+      twoFingerTouchLast = null;
+    });
 
     canvas.addEventListener('mousedown', e => {
       if (!engine || !engine.running) return;
@@ -1944,17 +3013,28 @@
       if (e.button === 0 && !(e.ctrlKey && !engine.commandMode)) {
         // 1. Handle active Command Mode (BUILD, POWER, SUPERWEAPON, ABILITY, ATTACK_MOVE, GUARD, RALLY)
         if (engine.commandMode === 'BUILD' && engine.pendingBuildId) {
-          const placed = engine.startBuildingPlacement(engine.pendingBuildId, 0, wx, wy);
-          if (placed) {
-            if (!e.shiftKey) {
-              engine.commandMode = null;
-              engine.pendingBuildId = null;
-              const alertEl = document.getElementById('tactical-alert');
-              if (alertEl) alertEl.classList.add('hidden');
+          const clickedFriendlyUnit = !e.shiftKey && engine.units.find(
+            u => u.team === 0 && u.hp > 0 && !(u.garrisonedIn || u.garrisonId) &&
+                 Math.hypot(u.x - wx, u.y - wy) <= (u.radius || 14) + 10
+          );
+          if (clickedFriendlyUnit) {
+            engine.commandMode = null;
+            engine.pendingBuildId = null;
+            const alertEl = document.getElementById('tactical-alert');
+            if (alertEl) alertEl.classList.add('hidden');
+          } else {
+            const placed = engine.startBuildingPlacement(engine.pendingBuildId, 0, wx, wy);
+            if (placed) {
+              if (!e.shiftKey) {
+                engine.commandMode = null;
+                engine.pendingBuildId = null;
+                const alertEl = document.getElementById('tactical-alert');
+                if (alertEl) alertEl.classList.add('hidden');
+              }
+              refreshCommandBar();
             }
-            refreshCommandBar();
+            return;
           }
-          return;
         }
         if (engine.commandMode === 'POWER' && engine.pendingPowerId) {
           engine.castGeneralsPower(0, engine.pendingPowerId, wx, wy);
@@ -2007,14 +3087,30 @@
           return;
         }
 
+        // Detect Double-Tap-and-Hold Drag on trackpad for map scrolling
+        const nowTap = performance.now();
+        const tapDist = Math.hypot(e.clientX - lastCanvasTapPos.x, e.clientY - lastCanvasTapPos.y);
+        if (nowTap - lastCanvasTapTime < 340 && tapDist < 28 && !e.shiftKey) {
+          isDoubleTapPanning = true;
+          doubleTapMoved = false;
+          doubleTapLast = { x: e.clientX, y: e.clientY };
+        }
+        lastCanvasTapTime = nowTap;
+        lastCanvasTapPos = { x: e.clientX, y: e.clientY };
+
         // Start Selection Box Drag
         isDraggingBox = true;
         dragStartScreen = { x: sx, y: sy };
         dragCurrentScreen = { x: sx, y: sy };
       }
 
-      // Right-Click (Button 2 or macOS Control+Click)
+      // Right-Click (Button 2 or macOS Control+Click) — also supports Two-Finger Click-and-Drag Panning
       if (e.button === 2 || (e.button === 0 && e.ctrlKey && !engine.commandMode)) {
+        isRightPanning = true;
+        rightPanMoved = false;
+        rightPanStart = { x: e.clientX, y: e.clientY };
+        rightPanLast = { x: e.clientX, y: e.clientY };
+
         if (engine.commandMode) {
           engine.commandMode = null;
           engine.pendingBuildId = null;
@@ -2043,6 +3139,22 @@
       if (e.button === 1) {
         isMiddlePanning = false;
       }
+      if (e.button === 2) {
+        isRightPanning = false;
+        rightPanMoved = false;
+      }
+      if (e.button === 0) {
+        isMinimapDragging = false;
+        if (isDoubleTapPanning) {
+          const wasPanning = doubleTapMoved;
+          isDoubleTapPanning = false;
+          doubleTapMoved = false;
+          if (wasPanning) {
+            isDraggingBox = false;
+            return;
+          }
+        }
+      }
       if (!isDraggingBox || e.button !== 0) return;
       isDraggingBox = false;
       if (!engine || !engine.running) return;
@@ -2058,20 +3170,29 @@
       }
     });
 
-    // Minimap Click (Left-click pan camera, Right-click move/attack-move)
+    // Minimap Click & Drag (Left-click/drag pan camera, Right-click move/attack-move)
     minimap.addEventListener('mousedown', e => {
       if (!engine || !engine.running) return;
       const rect = minimap.getBoundingClientRect();
-      const mx = (e.clientX - rect.left) / rect.width;
-      const my = (e.clientY - rect.top) / rect.height;
+      const mx = Math.max(0, Math.min(1, (e.clientX - rect.left) / (rect.width || 164)));
+      const my = Math.max(0, Math.min(1, (e.clientY - rect.top) / (rect.height || 164)));
       const wx = mx * engine.worldSize;
       const wy = my * engine.worldSize;
 
       if (e.button === 0) {
+        isMinimapDragging = true;
         centerCameraOn(wx, wy);
       } else if (e.button === 2) {
         issueRightClickOrder(wx, wy, true, e.shiftKey);
       }
+    });
+
+    minimap.addEventListener('mousemove', e => {
+      if (!isMinimapDragging || !engine || !engine.running) return;
+      const rect = minimap.getBoundingClientRect();
+      const mx = Math.max(0, Math.min(1, (e.clientX - rect.left) / (rect.width || 164)));
+      const my = Math.max(0, Math.min(1, (e.clientY - rect.top) / (rect.height || 164)));
+      centerCameraOn(mx * engine.worldSize, my * engine.worldSize);
     });
   }
 
@@ -2189,12 +3310,14 @@
     refreshCommandBar();
   }
 
-  function pushMoveMarker(wx, wy, color) {
+  function pushMoveMarker(wx, wy, color, kind = 'MOVE') {
     if (!engine || !engine.moveMarkers) return;
     engine.moveMarkers.push({
       x: wx,
       y: wy,
       color: color || '#22c55e',
+      kind: kind || (color === '#ef4444' ? 'ATTACK' : 'MOVE'),
+      t: 0,
       age: 0,
       maxAge: 0.55
     });
@@ -2211,7 +3334,7 @@
         b.rallyY = wy;
       }
       engine.spawnBurst(wx, wy, '#fde047', 6);
-      pushMoveMarker(wx, wy, '#fde047');
+      pushMoveMarker(wx, wy, '#fde047', 'RALLY');
       ZH_AUDIO.playSFX('click');
       return;
     }
@@ -2232,7 +3355,7 @@
         }
       });
       engine.spawnBurst(wx, wy, '#22c55e', 5);
-      pushMoveMarker(wx, wy, '#22c55e');
+      pushMoveMarker(wx, wy, '#22c55e', 'MOVE');
       ZH_AUDIO.playSFX('click');
       return;
     }
@@ -2304,7 +3427,7 @@
         }
       }
       engine.spawnBurst(enemyTarget.x, enemyTarget.y, '#ef4444', 8);
-      pushMoveMarker(enemyTarget.x, enemyTarget.y, '#ef4444');
+      pushMoveMarker(enemyTarget.x, enemyTarget.y, '#ef4444', 'ATTACK');
       ZH_AUDIO.playSFX('click');
       return;
     }
@@ -2395,14 +3518,14 @@
     }
     const markerCol = forceAttackMove ? '#ef4444' : '#22c55e';
     engine.spawnBurst(wx, wy, markerCol, 6);
-    pushMoveMarker(wx, wy, markerCol);
+    pushMoveMarker(wx, wy, markerCol, forceAttackMove ? 'ATTACK' : 'MOVE');
     ZH_AUDIO.playSFX('click');
   }
 
   function renderSelectionBox() {
     if (!isDraggingBox || !engine) return;
     const ctx = engine.ctx;
-    const dpr = engine.dpr || 1;
+    const dpr = engine.pixelRatio || engine.dpr || 1;
     const x = Math.min(dragStartScreen.x, dragCurrentScreen.x);
     const y = Math.min(dragStartScreen.y, dragCurrentScreen.y);
     const w = Math.abs(dragCurrentScreen.x - dragStartScreen.x);
@@ -2426,6 +3549,39 @@
 
   function setupKeyboardInput() {
     window.addEventListener('keydown', e => {
+      const tagName = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+      const inFormField = tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+      const studioModal = document.getElementById('unit-studio-modal');
+      const studioOpen = Boolean(
+        window.ZH_UNIT_STUDIO && typeof ZH_UNIT_STUDIO.isOpen === 'function'
+          ? ZH_UNIT_STUDIO.isOpen()
+          : (studioModal && studioModal.classList.contains('modal-backdrop') && !studioModal.classList.contains('hidden'))
+      );
+
+      if (e.key === 'Escape' && studioOpen) {
+        e.preventDefault();
+        if (window.ZH_UNIT_STUDIO) ZH_UNIT_STUDIO.closeStudio();
+        else studioModal.classList.add('hidden');
+        return;
+      }
+
+      if (!inFormField && e.key.toLowerCase() === 'u' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (window.ZH_UNIT_STUDIO) {
+          e.preventDefault();
+          if (studioOpen) {
+            ZH_UNIT_STUDIO.closeStudio();
+          } else {
+            const selUnit = engine && engine.units
+              ? engine.units.find(u => engine.selectedIds && engine.selectedIds.has(u.id))
+              : null;
+            ZH_UNIT_STUDIO.openStudio(selUnit ? selUnit.defId : undefined);
+          }
+          return;
+        }
+      }
+
+      if (studioOpen) return;
+
       keys[e.key.toLowerCase()] = true;
       if (e.key === 'Alt' && engine) {
         engine.showAllHealthBars = true;
@@ -2436,6 +3592,22 @@
         return;
       }
       if (!engine || !engine.running) return;
+
+      // Tab key cycles active ability subgroup in multi-type unit selections
+      if (e.key === 'Tab') {
+        const selUnits = engine.units.filter(u => engine.selectedIds.has(u.id) && u.team === 0);
+        const uniqueTypes = [...new Set(selUnits.map(u => u.defId))];
+        if (uniqueTypes.length > 1) {
+          e.preventDefault();
+          const curIdx = uniqueTypes.indexOf(activeSubgroupDefId);
+          const step = e.shiftKey ? -1 : 1;
+          const nextIdx = (curIdx + step + uniqueTypes.length) % uniqueTypes.length;
+          activeSubgroupDefId = uniqueTypes[nextIdx];
+          refreshCommandBar();
+          ZH_AUDIO.playSFX('click');
+        }
+        return;
+      }
 
       // Priority Escape Order:
       // 1. Cancel active commandMode
@@ -2532,8 +3704,23 @@
         return;
       }
 
-      // Phase 3 SYS-19: Combat unit tactical hotkeys (G = Guard, X = Scatter, S = Stop, A = Attack-Move)
+      // Phase 3 SYS-19: Combat unit tactical hotkeys (G = Guard, X = Scatter, S = Stop, A = Attack-Move, K = Cycle 3D Preset)
       const selectedUnits = engine.units.filter(u => engine.selectedIds.has(u.id) && u.team === 0);
+      if (k === 'K' && selectedUnits.length > 0 && window.ZH_UNIT_MODELS && ZH_UNIT_MODELS.cyclePreset) {
+        const primary = (selectedUnits.length > 1 && activeSubgroupDefId)
+          ? (selectedUnits.find(u => u.defId === activeSubgroupDefId) || selectedUnits[0])
+          : selectedUnits[0];
+        if (ZH_UNIT_MODELS.isDeepEngineeredUnit && ZH_UNIT_MODELS.isDeepEngineeredUnit(primary.defId)) {
+          const nextPresetKey = ZH_UNIT_MODELS.cyclePreset(primary.defId, true);
+          const entry = ZH_UNIT_MODELS.getModelEntry(primary.defId);
+          const presetObj = entry && entry.presets ? entry.presets[nextPresetKey] : null;
+          const presetLabel = presetObj ? presetObj.label : nextPresetKey;
+          refreshCommandBar();
+          showTacticalAlert(`3D CAD PRESET [K]: ${primary.def.shortName} → ${presetLabel}`, '#38bdf8');
+          if (window.ZH_AUDIO) ZH_AUDIO.playSFX('click');
+          return;
+        }
+      }
       const hasBuilder = selectedUnits.some(u => u.def.isBuilder);
       if (selectedUnits.length > 0 && !hasBuilder) {
         if (k === 'G') {
@@ -2588,10 +3775,16 @@
     }
 
     // Window-edge scrolling when enabled in settings
-    if (settings.edgeScroll && pointerClient.insideViewport && !isMiddlePanning) {
+    if (
+      settings.edgeScroll &&
+      pointerClient.insideViewport &&
+      !isMiddlePanning &&
+      !isDraggingBox &&
+      (pointerClient.x > 0 || pointerClient.y > 0)
+    ) {
       const vw = (typeof window !== 'undefined' && window.innerWidth) || 1280;
       const vh = (typeof window !== 'undefined' && window.innerHeight) || 800;
-      const margin = 18;
+      const margin = 22;
       if (pointerClient.x >= 0 && pointerClient.x <= margin) {
         engine.cam.x = Math.max(0, engine.cam.x - panSpeed);
       } else if (pointerClient.x >= vw - margin && pointerClient.x <= vw) {
@@ -2746,6 +3939,40 @@
     };
   }
 
+  function spawnStudioTestSquad(defId) {
+    const unitDefId = (defId && window.ZH_DATA && ZH_DATA.UNITS && ZH_DATA.UNITS[defId]) ? defId : 'USA_CRUSADER';
+    if (!engine || !engine.running) {
+      startNewMatch();
+    }
+    if (!engine) return;
+    const cc = engine.buildings.find(b => b.team === 0 && b.hp > 0);
+    const baseX = cc ? cc.x + 150 : 420;
+    const baseY = cc ? cc.y + 120 : 420;
+
+    engine.selectedIds.clear();
+    const offsets = [
+      { dx: -44, dy: -22 },
+      { dx: 44, dy: -22 },
+      { dx: 0, dy: 34 }
+    ];
+    offsets.forEach((off, idx) => {
+      const u = engine.spawnUnit(unitDefId, 0, baseX + off.dx, baseY + off.dy);
+      if (u) {
+        u.angle = 0.25;
+        u.turretAngle = 0.25;
+        if (idx === 0) u.veterancy = 2; // Show Elite star + chevron on lead tank
+        engine.selectedIds.add(u.id);
+      }
+    });
+    engine.cam.zoom = 1.45;
+    engine.cam.w = (engine.viewW || 1280) / engine.cam.zoom;
+    engine.cam.h = (engine.viewH || 600) / engine.cam.zoom;
+    centerCameraOn(baseX, baseY);
+    refreshCommandBar();
+    const uName = (ZH_DATA.UNITS[unitDefId] && ZH_DATA.UNITS[unitDefId].name) || unitDefId;
+    showTacticalAlert(`🛠️ UNIT DESIGN STUDIO: Deployed 3× ${uName} squad (1.45× close zoom)`, '#38bdf8', { x: baseX, y: baseY });
+  }
+
   window.ZH_UI = {
     init,
     startNewMatch,
@@ -2756,6 +3983,8 @@
     quickLoad,
     exportSaveFile,
     importSaveFile,
+    spawnStudioTestSquad,
+    isMatchRunning: () => Boolean(engine && engine.running),
     getEngine: () => engine
   };
 

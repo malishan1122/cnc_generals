@@ -4,6 +4,12 @@
 //             4-Stage Construction Scaffolding & Multi-Stage Superweapon VFX
 // ============================================================================
 
+if (typeof window !== 'undefined' && !window.ZH_UNIT_MODELS && typeof require === 'function') {
+  try {
+    require('./unit_models.js');
+  } catch (_) {}
+}
+
 window.ZH_VFX = (function () {
   'use strict';
 
@@ -81,9 +87,24 @@ window.ZH_VFX = (function () {
       if (u.recoilOffset && u.recoilOffset > 0) {
         u.recoilOffset = Math.max(0, u.recoilOffset - dt * 24);
       }
-      if (u.state === 'MOVE' || u.state === 'ATTACK_MOVE' || u.state === 'HARVEST' || u.state === 'RETURN_CARGO') {
+      const isAirOrDrone = Boolean(u.def.isAir || u.def.category === 'AIRCRAFT' || u.defId === 'USA_BATTLE_DRONE');
+      if (isAirOrDrone && !u.unmanned && (u.empTimer || 0) <= 0) {
+        u.treadPhase = ((u.treadPhase || 0) + dt * 3.2) % 1;
+      }
+      const isMovingState =
+        (u.currentSpeed && u.currentSpeed > 2) ||
+        u.state === 'MOVE' ||
+        u.state === 'ATTACK_MOVE' ||
+        u.state === 'BUILD' ||
+        u.state === 'HARVEST' ||
+        u.state === 'RETURN_SUPPLY' ||
+        u.state === 'RETURN_CARGO';
+      if (isMovingState) {
         const loco = u.def.locomotor || (u.def.category === 'TANK' ? 'TRACKED' : 'INFANTRY');
-        if (loco === 'TRACKED') {
+        if (!isAirOrDrone) {
+          u.treadPhase = ((u.treadPhase || 0) + dt * 2.4) % 1;
+        }
+        if (loco === 'TRACKED' || loco === 'WHEELED') {
           u.treadTimer = (u.treadTimer || 0) + dt;
           if (u.treadTimer >= 0.32) {
             u.treadTimer = 0;
@@ -184,53 +205,51 @@ window.ZH_VFX = (function () {
       ? Math.max(0, Math.min(1, rawProg))
       : Math.max(0, Math.min(1, rawProg / Math.max(1, b.def.buildTime || 10)));
     const stage = ratio < 0.25 ? 1 : ratio < 0.50 ? 2 : ratio < 0.75 ? 3 : 4;
+    const half = s / 2;
 
     ctx.save();
-    // Stage 1+: Excavated foundation pit
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    ctx.fillRect(-s / 2, -s / 2, s, s);
-    ctx.strokeStyle = '#64748b';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(-s / 2, -s / 2, s, s);
+    // Stage 1+: Isometric construction perimeter tape & corner pylons (translucent so Ligne-Claire sprite shines through)
+    ctx.strokeStyle = 'rgba(234, 179, 8, 0.75)';
+    ctx.lineWidth = 1.6;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(0, -half * 0.78);
+    ctx.lineTo(half * 1.12, 0);
+    ctx.lineTo(0, half * 0.78);
+    ctx.lineTo(-half * 1.12, 0);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-    // Stage 2+: Isometric steel girder cross-bracing
+    // Stage 2+: Open steel girder frame around the rising Ligne-Claire structure
     if (stage >= 2) {
-      ctx.strokeStyle = '#94a3b8';
-      ctx.lineWidth = 1.5;
-      const step = Math.max(12, Math.floor(s / 4));
-      for (let x = -s / 2; x <= s / 2; x += step) {
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+      ctx.lineWidth = 1.2;
+      const step = Math.max(16, Math.floor(s / 3));
+      for (let x = -half * 0.75; x <= half * 0.75; x += step) {
         ctx.beginPath();
-        ctx.moveTo(x, -s / 2);
-        ctx.lineTo(x, s / 2);
-        ctx.stroke();
-      }
-      for (let y = -s / 2; y <= s / 2; y += step) {
-        ctx.beginPath();
-        ctx.moveTo(-s / 2, y);
-        ctx.lineTo(s / 2, y);
+        ctx.moveTo(x, -half * 0.55);
+        ctx.lineTo(x, half * 0.45);
         ctx.stroke();
       }
     }
 
-    // Stage 3+: Partial concrete/armor superstructure rising from bottom
+    // Stage 3+: Yellow isometric construction crane boom
     if (stage >= 3) {
-      const fillH = s * ratio;
-      ctx.fillStyle = 'rgba(51, 65, 85, 0.82)';
-      ctx.fillRect(-s / 2 + 4, s / 2 - fillH + 4, s - 8, fillH - 8);
-      // Yellow construction crane arm
       ctx.strokeStyle = '#eab308';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.moveTo(-s * 0.35, s * 0.35);
-      ctx.lineTo(s * 0.38, -s * 0.38);
+      ctx.moveTo(-s * 0.38, s * 0.28);
+      ctx.lineTo(-s * 0.38, -s * 0.42);
+      ctx.lineTo(s * 0.32, -s * 0.52);
       ctx.stroke();
     }
 
     // Stage 4: Welding arc spark flash
-    if (stage === 4 && Math.random() < 0.5) {
+    if (stage >= 3 && Math.random() < 0.55) {
       ctx.fillStyle = '#38bdf8';
       ctx.beginPath();
-      ctx.arc((Math.random() - 0.5) * s * 0.6, (Math.random() - 0.5) * s * 0.6, 3.5, 0, Math.PI * 2);
+      ctx.arc((Math.random() - 0.5) * s * 0.55, (Math.random() - 0.5) * s * 0.45, 3.5, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -238,14 +257,20 @@ window.ZH_VFX = (function () {
     ctx.fillStyle = '#fde047';
     ctx.font = 'bold 9px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(`STAGE ${stage}/4 (${Math.round(ratio * 100)}%)`, 0, s / 2 - 5);
+    ctx.fillText(`STAGE ${stage}/4 (${Math.round(ratio * 100)}%)`, 0, half + 6);
     ctx.restore();
   }
 
   // ==========================================================================
   // 3. Articulated Multi-Part 2.5D Unit Rig (Chassis + Turret + Recoiling Barrels)
   // ==========================================================================
-  function renderArticulatedUnit(ctx, u, faction) {
+  function renderArticulatedUnit(ctx, u, faction, options) {
+    if ((!options || !options.forceLegacy) && window.ZH_UNIT_MODELS && window.ZH_UNIT_MODELS.renderUnitIfBespoke) {
+      if (window.ZH_UNIT_MODELS.renderUnitIfBespoke(ctx, u, faction, options)) {
+        return;
+      }
+    }
+
     const r = u.radius;
     const recoil = u.recoilOffset || 0;
     const hullColor = u.unmanned ? '#64748b' : faction.color;
@@ -553,6 +578,631 @@ window.ZH_VFX = (function () {
     }
   }
 
+  // =========================================================================
+  // 5. LIGNE-CLAIRE ISOMETRIC MILITARY BUILDING SPRITES & 60 FPS ANIMATIONS
+  //    Covers all 31 military structures: USA (10), China (12), GLA (9)
+  // =========================================================================
+  const LIGNE_CLAIRE_BUILDING_IDS = [
+    // USA (10)
+    'USA_COMMAND_CENTER', 'USA_REACTOR', 'USA_SUPPLY_CENTER', 'USA_BARRACKS', 'USA_WAR_FACTORY',
+    'USA_AIRFIELD', 'USA_STRATEGY_CENTER', 'USA_SUPPLY_DROP_ZONE', 'USA_PATRIOT', 'USA_PARTICLE_CANNON',
+    // China (12)
+    'CHINA_COMMAND_CENTER', 'CHINA_REACTOR', 'CHINA_SUPPLY_CENTER', 'CHINA_BARRACKS', 'CHINA_WAR_FACTORY',
+    'CHINA_AIRFIELD', 'CHINA_PROPAGANDA_CENTER', 'CHINA_INTERNET_CENTER', 'CHINA_GATTLING_CANNON',
+    'CHINA_BUNKER', 'CHINA_SPEAKER_TOWER', 'CHINA_NUCLEAR_SILO',
+    // GLA (9)
+    'GLA_COMMAND_CENTER', 'GLA_SUPPLY_STASH', 'GLA_BARRACKS', 'GLA_ARMS_DEALER', 'GLA_PALACE',
+    'GLA_BLACK_MARKET', 'GLA_TUNNEL_NETWORK', 'GLA_STINGER_SITE', 'GLA_SCUD_STORM'
+  ];
+
+  const buildingSpriteCache = {};
+  let buildingSpritesInitialized = false;
+
+  function ensureBuildingSpritesLoaded() {
+    if (buildingSpritesInitialized || typeof Image === 'undefined') return;
+    buildingSpritesInitialized = true;
+    for (const id of LIGNE_CLAIRE_BUILDING_IDS) {
+      const img = new Image();
+      img.src = `assets/diorama/buildings/${id.toLowerCase()}.png`;
+      buildingSpriteCache[id] = img;
+    }
+  }
+
+  function renderLigneClaireBuildingSubFX(ctx, b, s, t, col) {
+    const id = b.def.id;
+    const INK = '#2b241f';
+
+    switch (id) {
+      // ==================== USA (10) ====================
+      case 'USA_COMMAND_CENTER': {
+        // Rotating rooftop radar dish + mast beacon
+        const rx = -s * 0.16, ry = -s * 0.42;
+        ctx.save();
+        ctx.translate(rx, ry);
+        ctx.rotate(t * 1.9);
+        ctx.fillStyle = '#e2e8f0';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, s * 0.11, s * 0.055, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+        const blink = 0.5 + 0.5 * Math.sin(t * 7);
+        ctx.fillStyle = `rgba(239, 68, 68, ${0.4 + 0.6 * blink})`;
+        ctx.beginPath();
+        ctx.arc(s * 0.14, -s * 0.54, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'USA_REACTOR': {
+        // Rising cyan fusion plasma rings
+        for (let i = 0; i < 3; i++) {
+          const phase = (t * 1.3 + i * 0.33) % 1;
+          const ry = s * 0.08 - phase * s * 0.48;
+          const alpha = Math.sin(phase * Math.PI);
+          ctx.strokeStyle = `rgba(56, 189, 248, ${0.85 * alpha})`;
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          ctx.ellipse(0, ry, s * 0.18, s * 0.08, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'USA_SUPPLY_CENTER': {
+        // Spinning Chinook supply rotor disc above helipad
+        const hx = s * 0.24, hy = -s * 0.18 + Math.sin(t * 4) * 3;
+        ctx.save();
+        ctx.translate(hx, hy);
+        ctx.strokeStyle = 'rgba(226, 232, 240, 0.65)';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, s * 0.18, s * 0.09, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        for (let bIdx = 0; bIdx < 3; bIdx++) {
+          const ang = t * 18 + (bIdx * Math.PI * 2) / 3;
+          ctx.strokeStyle = INK;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(Math.cos(ang) * s * 0.17, Math.sin(ang) * s * 0.085);
+          ctx.stroke();
+        }
+        ctx.restore();
+        break;
+      }
+      case 'USA_BARRACKS': {
+        const pulse = 0.5 + 0.5 * Math.sin(t * 5);
+        ctx.fillStyle = `rgba(56, 189, 248, ${0.35 + 0.45 * pulse})`;
+        ctx.beginPath();
+        ctx.arc(-s * 0.08, -s * 0.12, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'USA_WAR_FACTORY': {
+        // Welding arc flashes + exhaust smoke puffs
+        if (Math.sin(t * 23) > 0.45) {
+          ctx.fillStyle = '#38bdf8';
+          ctx.beginPath();
+          ctx.arc(s * 0.1, s * 0.12, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        for (let i = 0; i < 2; i++) {
+          const p = (t * 0.9 + i * 0.5) % 1;
+          ctx.fillStyle = `rgba(226, 232, 240, ${(1 - p) * 0.55})`;
+          ctx.beginPath();
+          ctx.arc(-s * 0.18 + p * 8, -s * 0.42 - p * 18, 4 + p * 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+      case 'USA_AIRFIELD': {
+        // Rotating ATC radar bar
+        ctx.save();
+        ctx.translate(-s * 0.18, -s * 0.42);
+        ctx.rotate(t * 2.6);
+        ctx.fillStyle = '#f8fafc';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(-s * 0.1, -2, s * 0.2, 4);
+        ctx.strokeRect(-s * 0.1, -2, s * 0.2, 4);
+        ctx.restore();
+        break;
+      }
+      case 'USA_STRATEGY_CENTER': {
+        // Rotating satellite dish + Battle Plan aura ring
+        const modeCol = b.strategyMode === 'BOMBARDMENT' ? '#ef4444'
+          : (b.strategyMode === 'HOLD_THE_LINE' ? '#22c55e' : '#38bdf8');
+        const ringP = (t * 0.65) % 1;
+        ctx.strokeStyle = modeCol;
+        ctx.globalAlpha = (1 - ringP) * 0.65;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(0, s * 0.05, s * (0.35 + ringP * 0.45), s * (0.18 + ringP * 0.22), 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case 'USA_SUPPLY_DROP_ZONE': {
+        // Blinking drop-pad target strobes
+        for (let i = 0; i < 4; i++) {
+          const ang = (i * Math.PI) / 2 + Math.PI / 4;
+          const active = Math.floor(t * 6) % 4 === i;
+          ctx.fillStyle = active ? '#38bdf8' : '#fde047';
+          ctx.beginPath();
+          ctx.arc(Math.cos(ang) * s * 0.28, Math.sin(ang) * s * 0.14 + s * 0.08, active ? 3.5 : 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+      case 'USA_PATRIOT': {
+        // Rotating phased-array tracking radar + turret orientation indicator
+        ctx.save();
+        ctx.translate(0, -s * 0.12);
+        ctx.rotate(b.turretAngle || t * 1.2);
+        ctx.fillStyle = '#475569';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.6;
+        ctx.fillRect(0, -4, s * 0.34, 8);
+        ctx.strokeRect(0, -4, s * 0.34, 8);
+        ctx.restore();
+        break;
+      }
+      case 'USA_PARTICLE_CANNON': {
+        // Pulsing cyan core + capacitor energy rings
+        const glow = 0.5 + 0.5 * Math.sin(t * 6);
+        ctx.fillStyle = `rgba(56, 189, 248, ${0.45 + 0.45 * glow})`;
+        ctx.beginPath();
+        ctx.arc(0, -s * 0.24, 6 + glow * 4, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+
+      // ==================== CHINA (12) ====================
+      case 'CHINA_COMMAND_CENTER': {
+        // Rotating dual radar dish + glowing red/gold PLA star pulse
+        ctx.save();
+        ctx.translate(s * 0.16, -s * 0.38);
+        ctx.rotate(t * 2.0);
+        ctx.fillStyle = '#e2e8f0';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, s * 0.1, s * 0.05, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+        const starPulse = 0.5 + 0.5 * Math.sin(t * 5);
+        ctx.fillStyle = `rgba(250, 204, 21, ${0.5 + 0.5 * starPulse})`;
+        ctx.beginPath();
+        ctx.arc(0, -s * 0.16, 4, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'CHINA_REACTOR': {
+        // Rising cel-shaded cooling tower steam puffs + glowing nuclear green core
+        for (let i = 0; i < 3; i++) {
+          const p = (t * 0.75 + i * 0.33) % 1;
+          const sx = -s * 0.12 + Math.sin(t * 2 + i) * 4;
+          const sy = -s * 0.34 - p * s * 0.32;
+          const rad = (5 + p * 8);
+          ctx.fillStyle = `rgba(248, 250, 252, ${(1 - p) * 0.75})`;
+          ctx.strokeStyle = `rgba(43, 36, 31, ${(1 - p) * 0.5})`;
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.arc(sx, sy, rad, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+        const gPulse = 0.5 + 0.5 * Math.sin(t * 6);
+        ctx.fillStyle = `rgba(74, 222, 128, ${0.4 + 0.45 * gPulse})`;
+        ctx.beginPath();
+        ctx.arc(s * 0.16, -s * 0.04, 5 + gPulse * 3, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'CHINA_SUPPLY_CENTER': {
+        // Reciprocating gantry crane trolley + red dock strobe
+        const cx = Math.sin(t * 1.8) * s * 0.16;
+        ctx.fillStyle = '#facc15';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(cx - 5, -s * 0.18, 10, 6);
+        ctx.strokeRect(cx - 5, -s * 0.18, 10, 6);
+        break;
+      }
+      case 'CHINA_BARRACKS': {
+        const star = 0.5 + 0.5 * Math.sin(t * 4.5);
+        ctx.fillStyle = `rgba(250, 204, 21, ${0.45 + 0.5 * star})`;
+        ctx.beginPath();
+        ctx.arc(0, -s * 0.18, 3.8, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'CHINA_WAR_FACTORY': {
+        // Twin smokestack industrial smoke puffs + welding sparks
+        for (let i = 0; i < 2; i++) {
+          const p = (t * 0.85 + i * 0.5) % 1;
+          ctx.fillStyle = `rgba(203, 213, 225, ${(1 - p) * 0.65})`;
+          ctx.beginPath();
+          ctx.arc(-s * 0.2 + i * 8, -s * 0.42 - p * 20, 4.5 + p * 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (Math.sin(t * 21) > 0.4) {
+          ctx.fillStyle = '#fde047';
+          ctx.beginPath();
+          ctx.arc(s * 0.08, s * 0.14, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+      case 'CHINA_AIRFIELD': {
+        // Rotating ATC radar bar
+        ctx.save();
+        ctx.translate(s * 0.22, -s * 0.38);
+        ctx.rotate(t * 2.5);
+        ctx.fillStyle = '#ef4444';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.4;
+        ctx.fillRect(-s * 0.09, -2, s * 0.18, 4);
+        ctx.strokeRect(-s * 0.09, -2, s * 0.18, 4);
+        ctx.restore();
+        break;
+      }
+      case 'CHINA_PROPAGANDA_CENTER': {
+        // Expanding crimson/gold broadcast waves from rooftop antenna
+        for (let i = 0; i < 2; i++) {
+          const p = (t * 0.75 + i * 0.5) % 1;
+          ctx.strokeStyle = `rgba(239, 68, 68, ${(1 - p) * 0.75})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(0, -s * 0.44, 6 + p * s * 0.35, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'CHINA_INTERNET_CENTER': {
+        // Rotating oversized rooftop satellite dish + green cyber telemetry LEDs
+        ctx.save();
+        ctx.translate(0, -s * 0.34);
+        ctx.rotate(Math.sin(t * 1.1) * 0.65);
+        ctx.fillStyle = '#f8fafc';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, s * 0.18, s * 0.09, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+        break;
+      }
+      case 'CHINA_GATTLING_CANNON': {
+        // Swiveling dual 6-barrel Gatling barrels oriented to b.turretAngle
+        ctx.save();
+        ctx.translate(0, -s * 0.14);
+        ctx.rotate(b.turretAngle || 0);
+        ctx.fillStyle = '#475569';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(2, -7, s * 0.36, 4.5);
+        ctx.strokeRect(2, -7, s * 0.36, 4.5);
+        ctx.fillRect(2, 2.5, s * 0.36, 4.5);
+        ctx.strokeRect(2, 2.5, s * 0.36, 4.5);
+        ctx.restore();
+        break;
+      }
+      case 'CHINA_BUNKER': {
+        // Garrisoned muzzle flashes / periscope glint
+        const garCount = b.garrison ? b.garrison.length : 0;
+        if (garCount > 0) {
+          for (let i = 0; i < garCount; i++) {
+            ctx.fillStyle = '#facc15';
+            ctx.strokeStyle = INK;
+            ctx.lineWidth = 1;
+            ctx.fillRect(-s * 0.24 + i * 7, -s * 0.36, 5, 5);
+            ctx.strokeRect(-s * 0.24 + i * 7, -s * 0.36, 5, 5);
+          }
+        }
+        break;
+      }
+      case 'CHINA_SPEAKER_TOWER': {
+        // Concentric crimson & gold propaganda soundwave rings
+        for (let i = 0; i < 2; i++) {
+          const p = (t * 0.9 + i * 0.5) % 1;
+          ctx.strokeStyle = i % 2 === 0
+            ? `rgba(239, 68, 68, ${(1 - p) * 0.85})`
+            : `rgba(250, 204, 21, ${(1 - p) * 0.85})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(0, -s * 0.44, 5 + p * s * 0.45, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'CHINA_NUCLEAR_SILO': {
+        // Glowing green radiation core + flashing red/yellow ICBM hazard beacons
+        const radPulse = 0.5 + 0.5 * Math.sin(t * 5.5);
+        ctx.fillStyle = `rgba(74, 222, 128, ${0.35 + 0.45 * radPulse})`;
+        ctx.beginPath();
+        ctx.arc(0, -s * 0.08, 7 + radPulse * 5, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+
+      // ==================== GLA (9) ====================
+      case 'GLA_COMMAND_CENTER': {
+        // Rotating improvised radar dish + amber mast light
+        ctx.save();
+        ctx.translate(-s * 0.14, -s * 0.38);
+        ctx.rotate(t * 1.7);
+        ctx.fillStyle = '#d6d3d1';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, s * 0.1, s * 0.05, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+        break;
+      }
+      case 'GLA_SUPPLY_STASH': {
+        // Rising green toxin vapor bubbles from stash drums
+        for (let i = 0; i < 2; i++) {
+          const p = (t * 0.8 + i * 0.5) % 1;
+          ctx.fillStyle = `rgba(74, 222, 128, ${(1 - p) * 0.7})`;
+          ctx.beginPath();
+          ctx.arc(s * 0.22 + (i - 0.5) * 6, s * 0.05 - p * 16, 2.5 + p * 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+      case 'GLA_BARRACKS': {
+        // Watchtower spotlight sweep
+        const ang = Math.sin(t * 1.6) * 0.55 + Math.PI * 0.35;
+        ctx.save();
+        ctx.translate(-s * 0.18, -s * 0.36);
+        ctx.rotate(ang);
+        ctx.fillStyle = 'rgba(253, 224, 71, 0.22)';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(s * 0.38, -8);
+        ctx.lineTo(s * 0.38, 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        break;
+      }
+      case 'GLA_ARMS_DEALER': {
+        // Diesel exhaust puffs + welding arc flash
+        for (let i = 0; i < 2; i++) {
+          const p = (t * 0.95 + i * 0.5) % 1;
+          ctx.fillStyle = `rgba(168, 162, 158, ${(1 - p) * 0.6})`;
+          ctx.beginPath();
+          ctx.arc(s * 0.22, -s * 0.36 - p * 18, 4 + p * 4.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (Math.sin(t * 19) > 0.45) {
+          ctx.fillStyle = '#fde047';
+          ctx.beginPath();
+          ctx.arc(-s * 0.05, s * 0.12, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+      case 'GLA_PALACE': {
+        // Dome command beacon + garrison pips
+        const garCount = b.garrison ? b.garrison.length : 0;
+        if (garCount > 0) {
+          for (let i = 0; i < garCount; i++) {
+            ctx.fillStyle = '#4ade80';
+            ctx.strokeStyle = INK;
+            ctx.lineWidth = 1;
+            ctx.fillRect(-s * 0.22 + i * 7, -s * 0.44, 5, 5);
+            ctx.strokeRect(-s * 0.22 + i * 7, -s * 0.44, 5, 5);
+          }
+        }
+        break;
+      }
+      case 'GLA_BLACK_MARKET': {
+        // Rotating camouflaged satellite dish + green anthrax drum glow
+        ctx.save();
+        ctx.translate(-s * 0.15, -s * 0.34);
+        ctx.rotate(Math.sin(t * 1.4) * 0.6);
+        ctx.fillStyle = '#a3b18a';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, s * 0.11, s * 0.055, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+        break;
+      }
+      case 'GLA_TUNNEL_NETWORK': {
+        // Swiveling twin-barrel machine-gun turret
+        ctx.save();
+        ctx.translate(0, -s * 0.16);
+        ctx.rotate(b.turretAngle || 0);
+        ctx.fillStyle = '#57534e';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(0, -5, s * 0.34, 3.5);
+        ctx.strokeRect(0, -5, s * 0.34, 3.5);
+        ctx.fillRect(0, 1.5, s * 0.34, 3.5);
+        ctx.strokeRect(0, 1.5, s * 0.34, 3.5);
+        ctx.restore();
+        break;
+      }
+      case 'GLA_STINGER_SITE': {
+        // Swiveling Stinger missile launcher rails
+        ctx.save();
+        ctx.translate(0, -s * 0.12);
+        ctx.rotate(b.turretAngle || 0);
+        ctx.fillStyle = '#65a30d';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(-4, -6, s * 0.32, 12);
+        ctx.strokeRect(-4, -6, s * 0.32, 12);
+        ctx.restore();
+        break;
+      }
+      case 'GLA_SCUD_STORM': {
+        // Bubbling green anthrax warhead glow + toxic vapor puffs
+        for (let i = 0; i < 3; i++) {
+          const p = (t * 0.7 + i * 0.33) % 1;
+          ctx.fillStyle = `rgba(74, 222, 128, ${(1 - p) * 0.65})`;
+          ctx.beginPath();
+          ctx.arc((i - 1) * s * 0.16, -s * 0.28 - p * 18, 3.5 + p * 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+    }
+  }
+
+  function renderLigneClaireBuilding(ctx, b, team, gameTime) {
+    ensureBuildingSpritesLoaded();
+    const img = buildingSpriteCache[b.def.id];
+    if (!img || !img.complete || img.naturalWidth === 0) {
+      return false; // Let caller fall back while loading
+    }
+
+    const s = b.def.size;
+    const half = s / 2;
+    const col = team ? team.faction.color : '#38bdf8';
+    const t = gameTime || 0;
+    const INK = '#2b241f';
+
+    ctx.save();
+    ctx.translate(b.x, b.y);
+
+    // 1. Isometric Ligne-Claire ground shadow + warm concrete compound plinth
+    ctx.fillStyle = 'rgba(20, 17, 14, 0.42)';
+    ctx.beginPath();
+    ctx.ellipse(5, s * 0.14, s * 0.76, s * 0.40, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Isometric concrete compound foundation pad so #2b241f ink outlines pop crisply on dark terrain
+    const padW = half * 1.18;
+    const padH = half * 0.62;
+    ctx.fillStyle = '#bfb39c';
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(0, -padH);
+    ctx.lineTo(padW, 0);
+    ctx.lineTo(0, padH);
+    ctx.lineTo(-padW, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Crisp faction accent ring under the building footprint
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2.4;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.moveTo(0, -padH * 0.90);
+    ctx.lineTo(padW * 0.90, 0);
+    ctx.lineTo(0, padH * 0.90);
+    ctx.lineTo(-padW * 0.90, 0);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // 2. Compute sprite dimensions preserving aspect ratio
+    const drawW = s * 1.68;
+    const aspect = img.naturalHeight / img.naturalWidth;
+    const drawH = drawW * aspect;
+    const drawX = -drawW / 2;
+    const drawY = -drawH * 0.58;
+
+    if (!b.constructed) {
+      // Rising bottom-to-top construction reveal
+      const prog = Math.max(0.22, Math.min(1, b.buildProgress || 0));
+      const visH = drawH * prog;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(drawX - 6, drawY + (drawH - visH), drawW + 12, visH + 10);
+      ctx.clip();
+      ctx.globalAlpha = 0.92;
+      ctx.drawImage(img, drawX, drawY + (1 - prog) * 12, drawW, drawH);
+      ctx.restore();
+    } else {
+      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+      // 3. 60 FPS Ligne-Claire Procedural Sub-Animations (when powered & active)
+      const isDisabled = (b.disabledTimer > 0) || (b.empTimer > 0) || (team && team.isLowPower && !b.def.powerBonus);
+      if (!isDisabled) {
+        renderLigneClaireBuildingSubFX(ctx, b, s, t, col);
+      }
+
+      // 4. Cel-Shaded Damage Smoke & Fire if heavily damaged
+      const hpRatio = b.hp / b.maxHp;
+      if (hpRatio < 0.65) {
+        const smokeCount = hpRatio < 0.35 ? 3 : 2;
+        for (let i = 0; i < smokeCount; i++) {
+          const p = (t * 0.9 + i * 0.33) % 1;
+          const sx = (i - 0.5) * s * 0.22 + Math.sin(t * 3 + i) * 4;
+          const sy = -s * 0.1 - p * s * 0.42;
+          ctx.fillStyle = `rgba(43, 36, 31, ${(1 - p) * 0.7})`;
+          ctx.beginPath();
+          ctx.arc(sx, sy, 4 + p * 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (hpRatio < 0.35) {
+          const flick = 0.6 + 0.4 * Math.sin(t * 16);
+          ctx.fillStyle = '#f97316';
+          ctx.strokeStyle = INK;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.arc(-s * 0.08, -s * 0.05, 5 * flick, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+    }
+
+    ctx.restore();
+    return true;
+  }
+
+  function renderLigneClaireBuildingGhost(ctx, defId, x, y, s, valid) {
+    ensureBuildingSpritesLoaded();
+    const img = buildingSpriteCache[defId];
+    const half = s / 2;
+    const padW = half * 1.18;
+    const padH = half * 0.62;
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    // Isometric placement diamond footprint
+    ctx.fillStyle = valid ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.30)';
+    ctx.strokeStyle = valid ? '#22c55e' : '#ef4444';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(0, -padH);
+    ctx.lineTo(padW, 0);
+    ctx.lineTo(0, padH);
+    ctx.lineTo(-padW, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    if (img && img.complete && img.naturalWidth > 0) {
+      const drawW = s * 1.68;
+      const aspect = img.naturalHeight / img.naturalWidth;
+      const drawH = drawW * aspect;
+      const drawX = -drawW / 2;
+      const drawY = -drawH * 0.58;
+      ctx.globalAlpha = valid ? 0.82 : 0.55;
+      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+  }
+
   return {
     addDecal,
     addTreadMark,
@@ -561,6 +1211,9 @@ window.ZH_VFX = (function () {
     renderConstructionScaffolding,
     renderArticulatedUnit,
     triggerSuperweaponSpectacle,
-    renderSuperweaponSpectacle
+    renderSuperweaponSpectacle,
+    renderLigneClaireBuilding,
+    renderLigneClaireBuildingGhost
   };
 })();
+
