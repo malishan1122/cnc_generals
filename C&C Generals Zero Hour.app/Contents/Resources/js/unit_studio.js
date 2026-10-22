@@ -118,11 +118,37 @@ window.ZH_UNIT_STUDIO = (function () {
     requestAnimationFrame(studioLoop);
   }
 
+  function resolveStudioEntityDef(defId) {
+    if (!window.ZH_DATA || !defId) return null;
+    if (window.ZH_DATA.UNITS && window.ZH_DATA.UNITS[defId]) {
+      return window.ZH_DATA.UNITS[defId];
+    }
+    if (window.ZH_DATA.BUILDINGS && window.ZH_DATA.BUILDINGS[defId]) {
+      const b = window.ZH_DATA.BUILDINGS[defId];
+      return Object.assign({}, b, {
+        category: b.isSuperweapon ? 'SUPERWEAPON' : b.isDefense ? 'DEFENSE' : 'BUILDING',
+        radius: Math.round((b.size || 72) * 0.34),
+        speed: 0
+      });
+    }
+    if (window.ZH_DATA.TECH_BUILDINGS && window.ZH_DATA.TECH_BUILDINGS[defId]) {
+      const tb = window.ZH_DATA.TECH_BUILDINGS[defId];
+      return Object.assign({}, tb, {
+        faction: 'USA',
+        category: 'TECH_BUILDING',
+        cost: 0,
+        radius: Math.round((tb.size || 62) * 0.34),
+        speed: 0
+      });
+    }
+    return null;
+  }
+
   function openStudio(unitId) {
     const modal = document.getElementById('unit-studio-modal');
     if (!modal) return;
 
-    if (unitId && window.ZH_DATA && window.ZH_DATA.UNITS && window.ZH_DATA.UNITS[unitId]) {
+    if (unitId && resolveStudioEntityDef(unitId)) {
       selectedUnitId = unitId;
     }
 
@@ -178,11 +204,14 @@ window.ZH_UNIT_STUDIO = (function () {
   }
 
   // ==========================================================================
-  // 2. Unit Roster Sidebar (Unit-by-Unit Upgrade Workflow)
+  // 2. Unit & Building Roster Sidebar (Full 93-Asset Upgrade Workflow)
   // ==========================================================================
   function getAllUnitsList() {
-    if (!window.ZH_DATA || !window.ZH_DATA.UNITS) return [];
-    return Object.values(window.ZH_DATA.UNITS);
+    if (!window.ZH_DATA) return [];
+    const units = Object.values(window.ZH_DATA.UNITS || {});
+    const buildings = Object.values(window.ZH_DATA.BUILDINGS || {}).map((b) => resolveStudioEntityDef(b.id));
+    const techBuildings = Object.values(window.ZH_DATA.TECH_BUILDINGS || {}).map((tb) => resolveStudioEntityDef(tb.id));
+    return units.concat(buildings, techBuildings).filter(Boolean);
   }
 
   function getFilteredUnitsList() {
@@ -238,7 +267,7 @@ window.ZH_UNIT_STUDIO = (function () {
     ).length;
 
     if (progEl) {
-      progEl.textContent = `${bespokeCount} / ${allUnits.length} Units Upgraded (HD 3D)`;
+      progEl.textContent = `${bespokeCount} / ${allUnits.length} Assets Upgraded (HD 3D)`;
     }
     if (progBarEl && allUnits.length > 0) {
       const pct = Math.max(6, Math.round((bespokeCount / allUnits.length) * 100));
@@ -253,7 +282,7 @@ window.ZH_UNIT_STUDIO = (function () {
       const item = document.createElement('button');
       item.type = 'button';
       item.className = `studio-roster-item ${u.id === selectedUnitId ? 'active' : ''} ${isBespoke ? 'is-bespoke' : ''}`;
-      const icon = (window.ZH_DATA && window.ZH_DATA.CAMEO_ICONS && window.ZH_DATA.CAMEO_ICONS[u.id]) || '🛡️';
+      const icon = (window.ZH_DATA && window.ZH_DATA.CAMEO_ICONS && window.ZH_DATA.CAMEO_ICONS[u.id]) || '🏛️';
       const facBadge = u.faction === 'USA' ? '🦅 USA' : u.faction === 'CHINA' ? '🐉 CHN' : '🦂 GLA';
 
       item.innerHTML = `
@@ -277,7 +306,7 @@ window.ZH_UNIT_STUDIO = (function () {
     renderParameterInspector();
     updateReferenceCard();
 
-    const unitDef = window.ZH_DATA && window.ZH_DATA.UNITS && window.ZH_DATA.UNITS[defId];
+    const unitDef = resolveStudioEntityDef(defId);
     const entry = window.ZH_UNIT_MODELS && window.ZH_UNIT_MODELS.getModelEntry(defId);
     const titleEl = document.getElementById('studio-unit-header-title');
     const subEl = document.getElementById('studio-unit-header-sub');
@@ -287,7 +316,7 @@ window.ZH_UNIT_STUDIO = (function () {
     if (fireBtn) {
       if (defId.includes('DOZER')) {
         fireBtn.textContent = '🚜 Scoop Blade';
-      } else if (defId.includes('TOMAHAWK') || defId.includes('SCUD')) {
+      } else if (defId.includes('TOMAHAWK') || defId.includes('SCUD') || defId.includes('PATRIOT') || defId.includes('STINGER') || defId.includes('SILO')) {
         fireBtn.textContent = '🚀 Launch Missile';
       } else {
         fireBtn.textContent = '💥 Fire Weapon';
@@ -312,7 +341,7 @@ window.ZH_UNIT_STUDIO = (function () {
         <span class="studio-stat-pill">HP <strong>${unitDef.hp}</strong></span>
         <span class="studio-stat-pill">DMG <strong>${wpDmg}</strong></span>
         <span class="studio-stat-pill">RNG <strong>${wpRange}</strong></span>
-        <span class="studio-stat-pill">SPD <strong>${unitDef.speed}</strong></span>
+        <span class="studio-stat-pill">SPD <strong>${unitDef.speed || 0}</strong></span>
       `;
     }
   }
@@ -574,8 +603,11 @@ window.ZH_UNIT_STUDIO = (function () {
   // ==========================================================================
   function triggerFireCannon() {
     recoilOffset = 6.5;
-    const unitDef = (window.ZH_DATA && window.ZH_DATA.UNITS && window.ZH_DATA.UNITS[selectedUnitId]) || {};
-    const r = (unitDef.radius || 18) * zoomLevel;
+    const unitDef = resolveStudioEntityDef(selectedUnitId) || {};
+    const baseR = unitDef.isBuilding
+      ? Math.min(26, Math.max(20, Math.round((unitDef.radius || 32) * 0.58)))
+      : (unitDef.radius || 18);
+    const r = baseR * zoomLevel;
     const hullRad = (hullDeg * Math.PI) / 180;
     const totalTurretRad = ((hullDeg + turretRelDeg) * Math.PI) / 180;
 
@@ -605,8 +637,13 @@ window.ZH_UNIT_STUDIO = (function () {
       selectedUnitId.includes('TOMAHAWK') ||
       selectedUnitId.includes('SCUD') ||
       selectedUnitId.includes('PATRIOT') ||
+      selectedUnitId.includes('STINGER') ||
+      selectedUnitId.includes('NUCLEAR') ||
       selectedUnitId.includes('BUGGY');
-    const isLaser = selectedUnitId.includes('LASER') || selectedUnitId.includes('AVENGER');
+    const isLaser =
+      selectedUnitId.includes('LASER') ||
+      selectedUnitId.includes('AVENGER') ||
+      selectedUnitId.includes('PARTICLE');
 
     const muzzleDist = isMissile ? r * 1.15 : r * 2.15;
     const elevZ = isMissile ? r * 1.25 * cameraZScale : r * 0.65 * cameraZScale;
@@ -705,7 +742,7 @@ window.ZH_UNIT_STUDIO = (function () {
   // 5. Rendering Main Showroom Canvas & 1x/2x Live Squad Preview Canvas
   // ==========================================================================
   function getMockUnitState(defId, angleRad, turretAngleRad) {
-    const def = (window.ZH_DATA && window.ZH_DATA.UNITS && window.ZH_DATA.UNITS[defId]) || {
+    const def = resolveStudioEntityDef(defId) || {
       id: defId,
       faction: 'USA',
       name: 'Crusader Tank',
@@ -721,12 +758,15 @@ window.ZH_UNIT_STUDIO = (function () {
       : damageState === 'DAMAGED'
         ? maxHp * 0.42
         : maxHp;
+    const studioRadius = def.isBuilding
+      ? Math.min(26, Math.max(20, Math.round((def.radius || 32) * 0.58)))
+      : (def.radius || 18);
 
     return {
       id: 999,
       defId: def.id,
       def,
-      radius: def.radius || 18,
+      radius: studioRadius,
       angle: angleRad,
       turretAngle: turretAngleRad,
       recoilOffset,

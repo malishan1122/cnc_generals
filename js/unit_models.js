@@ -3834,6 +3834,104 @@ const ZH_UNIT_MODELS = (function () {
       }
     }
 
+    // ========================================================================
+    // 7B. Rear-Mounted Angled Engineering Crane Boom, Tension Cables & Hoist Hook
+    //     (Matches assets/refs/china_dozer_diorama_ref.png!)
+    // ========================================================================
+    const isChinaDozer = Boolean(u && u.defId === 'CHINA_DOZER');
+    if (p.showRearCrane === true || (isChinaDozer && p.showRearCrane !== false)) {
+      const crBaseX = -0.82 * r * L;
+      const crBaseZ = 0.56 * r * H;
+      const crTipX = -1.48 * r * L;
+      const crTipZ = 1.62 * r * H;
+      const hookZ = 0.88 * r * H;
+
+      // Rear winch pedestal housing behind cab
+      pushBox3D(
+        faces,
+        proj,
+        -0.98 * r * L,
+        -0.66 * r * L,
+        -0.28 * r * W,
+        0.28 * r * W,
+        0.42 * r * H,
+        0.68 * r * H,
+        yellowDark,
+        seamCol,
+        1.1,
+        0.95
+      );
+
+      // Angled tubular crane boom arm extending up and aft
+      pushTubeSegment3D(
+        faces,
+        proj,
+        crBaseX,
+        0,
+        crBaseZ,
+        Math.atan2(crTipZ - crBaseZ, crBaseX - crTipX),
+        Math.PI,
+        Math.hypot(crTipX - crBaseX, crTipZ - crBaseZ),
+        0.095 * r,
+        0.072 * r,
+        yellowHi,
+        seamCol,
+        1.15,
+        1.32
+      );
+
+      // Dual tension stay cables from cab roof to crane tip + pulley sheave + hanging hoist cable & hook
+      faces.push({
+        depth: proj.project(crTipX, 0, crTipZ).depth + 1.48,
+        customDraw(c) {
+          // Dual upper stay cables from rear of ROPS roof to boom tip
+          for (const side of [-1, 1]) {
+            drawLine3D(
+              c,
+              proj,
+              -0.58 * r * L,
+              side * 0.24 * r * W,
+              1.18 * r * H,
+              crTipX + 0.04 * r * L,
+              side * 0.05 * r * W,
+              crTipZ - 0.02 * r * H,
+              '#475569',
+              1.15
+            );
+          }
+
+          // Vertical hanging hoist cable from boom tip to hook block
+          drawLine3D(c, proj, crTipX, 0, crTipZ, crTipX, 0, hookZ, seamCol, 1.5);
+
+          // Boom-tip pulley sheave wheel
+          const tipPt = proj.project(crTipX, 0, crTipZ);
+          c.fillStyle = '#475569';
+          c.strokeStyle = seamCol;
+          c.lineWidth = 1.2;
+          c.beginPath();
+          c.arc(tipPt.x, tipPt.y, Math.max(2.4, 0.09 * r), 0, Math.PI * 2);
+          c.fill();
+          c.stroke();
+
+          // Hanging pulley block & curved steel crane hook
+          const hkPt = proj.project(crTipX, 0, hookZ);
+          c.fillStyle = yellowBase;
+          c.strokeStyle = seamCol;
+          c.lineWidth = 1.15;
+          c.beginPath();
+          c.arc(hkPt.x, hkPt.y, Math.max(2.2, 0.08 * r), 0, Math.PI * 2);
+          c.fill();
+          c.stroke();
+
+          c.strokeStyle = seamCol;
+          c.lineWidth = 2.0;
+          c.beginPath();
+          c.arc(hkPt.x + 1.0, hkPt.y + Math.max(3.5, 0.14 * r), Math.max(2.4, 0.09 * r), -Math.PI * 0.3, Math.PI * 1.1);
+          c.stroke();
+        }
+      });
+    }
+
     flushFaces(ctx, faces);
 
     // ========================================================================
@@ -5340,10 +5438,24 @@ const ZH_UNIT_MODELS = (function () {
     const pitchScale = opts.pitchScale !== undefined ? opts.pitchScale : 1.0;
     const zScale = opts.zScale !== undefined ? opts.zScale : 0.42;
     const seamCol = p.panelLineColor || '#26201b';
-    const helmetCol = isBurton ? '#881337' : isLotus ? '#0f172a' : isTerrorist ? '#dc2626' : (p.helmetColor || '#7c765a');
-    const uniformCol = isLotus ? '#1e293b' : (p.uniformColor || '#a89674');
-    const vestCol = isBurton ? '#3f4d34' : isTerrorist ? '#b91c1c' : (p.vestColor || '#6b6852');
-    const skinCol = p.skinColor || '#a87556';
+    const helmetCol = isBurton
+      ? '#881337'
+      : isLotus
+        ? '#27272a'
+        : isTerrorist
+          ? '#dc2626'
+          : (p.helmetColor || (isChina ? '#6e7b4f' : '#7c765a'));
+    const uniformCol = isLotus
+      ? (p.uniformColor || '#b91c1c')
+      : (p.uniformColor || (isChina ? '#6e7b4f' : '#a89674'));
+    const vestCol = isBurton
+      ? '#3f4d34'
+      : isLotus
+        ? (p.vestColor || '#dc2626')
+        : isTerrorist
+          ? '#b91c1c'
+          : (p.vestColor || (isChina ? '#4a5434' : '#6b6852'));
+    const skinCol = p.skinColor || (isLotus ? '#d6a586' : '#a87556');
 
     const proj = createProjector(angle, pitchScale, zScale, 0, 0, 0, 0);
     const upperProj = createProjector(turretAngle, pitchScale, zScale, 0, 0, 0, angle);
@@ -5369,57 +5481,92 @@ const ZH_UNIT_MODELS = (function () {
       }
     }
 
-    // 1. Boots & Knee-Padded Camo Legs (aligned with walking angle)
+    // 1. Boots & Knee-Padded Camo Legs (or Black Lotus dark leggings + crimson trench coat skirt)
     for (const side of [-1, 1]) {
       const stride = side * Math.sin(phase * Math.PI * 2) * 0.16 * r;
       const ly = side * 0.24 * r;
-      pushBox3D(faces, proj, stride - 0.16 * r, stride + 0.20 * r, ly - 0.14 * r, ly + 0.14 * r, 0, 0.18 * r, '#4a3b2c', seamCol, 1.05, 0.1);
-      pushBox3D(faces, proj, stride * 0.5 - 0.17 * r, stride * 0.5 + 0.17 * r, ly - 0.15 * r, ly + 0.15 * r, 0.18 * r, 0.56 * r + bob, uniformCol, seamCol, 1.05, 0.25);
+      const bootCol = isLotus ? '#18181b' : '#4a3b2c';
+      const legCol = isLotus ? '#27272a' : uniformCol;
+      pushBox3D(faces, proj, stride - 0.16 * r, stride + 0.20 * r, ly - 0.14 * r, ly + 0.14 * r, 0, 0.18 * r, bootCol, seamCol, 1.05, 0.1);
+      pushBox3D(faces, proj, stride * 0.5 - 0.17 * r, stride * 0.5 + 0.17 * r, ly - 0.15 * r, ly + 0.15 * r, 0.18 * r, 0.56 * r + bob, legCol, seamCol, 1.05, 0.25);
     }
 
-    // 2. Armored Tactical Torso + Plate Carrier Vest + Shoulder Pads (slews with turretAngle!)
-    pushBox3D(faces, upperProj, -0.26 * r, 0.26 * r, -0.38 * r, 0.38 * r, 0.52 * r + bob, 1.18 * r + bob, uniformCol, seamCol, 1.15, 0.55, 0.02 * r, 0.03 * r);
-    pushBox3D(faces, upperProj, -0.22 * r, 0.28 * r, -0.30 * r, 0.30 * r, 0.58 * r + bob, 1.10 * r + bob, vestCol, seamCol, 1.05, 0.65);
+    // 2. Armored Tactical Torso + Plate Carrier Vest (or Black Lotus Crimson Belted Trench Coat)
+    if (isLotus) {
+      // Flared lower trench coat hem + belted crimson upper coat + dark inner collar
+      pushBox3D(faces, upperProj, -0.28 * r, 0.28 * r, -0.38 * r, 0.38 * r, 0.36 * r + bob, 0.66 * r + bob, uniformCol, seamCol, 1.1, 0.45, 0.03 * r, 0.03 * r);
+      pushBox3D(faces, upperProj, -0.25 * r, 0.26 * r, -0.36 * r, 0.36 * r, 0.62 * r + bob, 1.18 * r + bob, vestCol, seamCol, 1.15, 0.55, 0.03 * r, 0.04 * r);
+      // Black waist belt + gold buckle
+      pushBox3D(faces, upperProj, -0.26 * r, 0.27 * r, -0.37 * r, 0.37 * r, 0.62 * r + bob, 0.70 * r + bob, '#18181b', seamCol, 1.0, 0.62);
+      // Flowing long dark charcoal hair cascades over shoulders
+      pushBox3D(faces, upperProj, -0.32 * r, 0.16 * r, -0.38 * r, 0.38 * r, 0.94 * r + bob, 1.46 * r + bob, '#27272a', seamCol, 1.05, 0.85, 0.04 * r, 0.04 * r);
+    } else {
+      pushBox3D(faces, upperProj, -0.26 * r, 0.26 * r, -0.38 * r, 0.38 * r, 0.52 * r + bob, 1.18 * r + bob, uniformCol, seamCol, 1.15, 0.55, 0.02 * r, 0.03 * r);
+      pushBox3D(faces, upperProj, -0.22 * r, 0.28 * r, -0.30 * r, 0.30 * r, 0.58 * r + bob, 1.10 * r + bob, vestCol, seamCol, 1.05, 0.65);
+    }
 
-    // Satchel Bag / C4 Pack / Terrorist Dynamite Straps / Hacker Backpack
+    // Satchel Bag / C4 Pack / Terrorist Dynamite Straps / Hacker Backpack / Black Lotus Hip Satchel
     if (isPathfinder || isBurton || isHacker || isLotus || isTerrorist || isWorker) {
-      const packCol = isTerrorist ? '#ef4444' : isHacker || isLotus ? '#334155' : isWorker ? '#b45309' : '#925e36';
-      pushBox3D(faces, upperProj, -0.34 * r, 0.12 * r, 0.28 * r, 0.48 * r, 0.48 * r + bob, 0.88 * r + bob, packCol, seamCol, 1.0, 0.72);
+      const packCol = isTerrorist ? '#ef4444' : isLotus ? '#18181b' : isHacker ? '#4a5434' : isWorker ? '#b45309' : '#925e36';
+      pushBox3D(faces, upperProj, -0.30 * r, 0.16 * r, 0.28 * r, 0.48 * r, (isLotus ? 0.38 : 0.48) * r + bob, (isLotus ? 0.80 : 0.88) * r + bob, packCol, seamCol, 1.05, 0.72);
     }
 
-    // 3. Chibi-Tactical Head & Rounded Kevlar Helmet / Maroon Beret / GLA Keffiyeh
+    // 3. Chibi-Tactical Head & Rounded Kevlar Helmet / Maroon Beret / Black Lotus Hair / GLA Keffiyeh
     const zHeadBot = 1.16 * r + bob;
     const zHeadMid = 1.54 * r * hScale + bob;
     const zHelmetTop = (isBurton || isLotus ? 1.82 : 1.92) * r * hScale + bob;
     pushCylinderZ3D(faces, upperProj, 0.04 * r, 0, zHeadBot, zHeadMid, 0.34 * r * hScale, 0.36 * r * hScale, 8, skinCol, seamCol, 1.1, 1.1);
-    pushCylinderZ3D(faces, upperProj, isBurton ? -0.04 * r : 0, isBurton ? 0.05 * r : 0, zHeadMid - 0.08 * r, zHelmetTop, 0.46 * r * hScale, (isBurton || isGla) ? 0.42 * r * hScale : 0.36 * r * hScale, 8, helmetCol, seamCol, 1.15, 1.25);
+    pushCylinderZ3D(faces, upperProj, isBurton ? -0.04 * r : 0, isBurton ? 0.05 * r : 0, zHeadMid - 0.08 * r, zHelmetTop, isLotus ? 0.42 * r * hScale : 0.46 * r * hScale, (isBurton || isGla) ? 0.42 * r * hScale : 0.36 * r * hScale, 8, helmetCol, seamCol, 1.15, 1.25);
 
-    // Facial eyes, tactical sunglasses, China Red Star badge, or Helmet Ballistic Goggles
+    // Facial eyes, tactical sunglasses, China Red Star badge, Hacker glasses, or Helmet Ballistic Goggles
     faces.push({
       depth: upperProj.project(0.38 * r * hScale, 0, zHeadMid).depth + 1.45,
       customDraw(c) {
-        for (const side of [-1, 1]) {
-          const eyePt = upperProj.project(0.34 * r * hScale, side * 0.13 * r * hScale, zHeadBot + 0.22 * r * hScale);
-          c.fillStyle = (isBurton || isLotus || isHijacker) ? '#0f172a' : seamCol;
-          c.beginPath();
-          c.arc(eyePt.x, eyePt.y, Math.max(1.2, (isBurton ? 0.065 : 0.04) * r), 0, Math.PI * 2);
-          c.fill();
+        if (isLotus) {
+          // Dark wrap-around agent sunglasses (matching china_black_lotus_diorama_ref.png!)
+          const sgQuad = [
+            [0.36 * r * hScale, -0.26 * r * hScale, zHeadBot + 0.16 * r * hScale],
+            [0.36 * r * hScale, 0.26 * r * hScale, zHeadBot + 0.16 * r * hScale],
+            [0.36 * r * hScale, 0.24 * r * hScale, zHeadBot + 0.30 * r * hScale],
+            [0.36 * r * hScale, -0.24 * r * hScale, zHeadBot + 0.30 * r * hScale]
+          ];
+          drawGlassPane3D(c, upperProj, sgQuad, '#18181b', seamCol, 1.15);
+        } else if (isHacker) {
+          // Round optical glasses for PLA Hacker (matching china_hacker_diorama_ref.png!)
+          for (const side of [-1, 1]) {
+            const eyePt = upperProj.project(0.35 * r * hScale, side * 0.14 * r * hScale, zHeadBot + 0.22 * r * hScale);
+            c.fillStyle = '#cbd5e1';
+            c.strokeStyle = seamCol;
+            c.lineWidth = 1.1;
+            c.beginPath();
+            c.arc(eyePt.x, eyePt.y, Math.max(1.8, 0.085 * r), 0, Math.PI * 2);
+            c.fill();
+            c.stroke();
+          }
+        } else {
+          for (const side of [-1, 1]) {
+            const eyePt = upperProj.project(0.34 * r * hScale, side * 0.13 * r * hScale, zHeadBot + 0.22 * r * hScale);
+            c.fillStyle = (isBurton || isHijacker) ? '#0f172a' : seamCol;
+            c.beginPath();
+            c.arc(eyePt.x, eyePt.y, Math.max(1.2, (isBurton ? 0.065 : 0.04) * r), 0, Math.PI * 2);
+            c.fill();
+          }
         }
-        if (isChina) {
+        if (isChina && !isLotus) {
           const starPt = upperProj.project(0.42 * r * hScale, 0, zHeadMid + 0.16 * r * hScale);
-          c.fillStyle = '#ef4444';
+          c.fillStyle = '#dc2626';
           c.beginPath();
-          c.arc(starPt.x, starPt.y, Math.max(1.6, 0.08 * r), 0, Math.PI * 2);
+          c.arc(starPt.x, starPt.y, Math.max(1.5, 0.075 * r), 0, Math.PI * 2);
           c.fill();
         }
-        if (p.showGoggles !== false && !isMissile && !isBurton && !isWorker) {
+        if (p.showGoggles !== false && !isMissile && !isBurton && !isWorker && !isLotus && !isHacker) {
           const gQuad = [
             [0.42 * r * hScale, -0.30 * r * hScale, zHeadMid - 0.02 * r],
             [0.42 * r * hScale, 0.30 * r * hScale, zHeadMid - 0.02 * r],
             [0.40 * r * hScale, 0.28 * r * hScale, zHeadMid + 0.16 * r * hScale],
             [0.40 * r * hScale, -0.28 * r * hScale, zHeadMid + 0.16 * r * hScale]
           ];
-          drawGlassPane3D(c, upperProj, gQuad, isLotus ? '#ec4899' : isMinigunner ? '#f59e0b' : '#78909c', seamCol, 1.05);
+          drawGlassPane3D(c, upperProj, gQuad, isMinigunner ? '#f59e0b' : '#94a3b8', seamCol, 1.05);
         }
       }
     });
@@ -5427,28 +5574,34 @@ const ZH_UNIT_MODELS = (function () {
     // 4. Oversized Readable Diorama Weapons / Tools with 3D Recoil & Muzzle Flash
     const recDist = clamp(recoil * 0.04 * r, 0, 0.18 * r);
     if (isMissile) {
+      // Heavy Shoulder-Fired Anti-Tank Rocket Tube with Flared Front & Rear Bell Collars (matching china_tank_hunter_diorama_ref.png!)
+      const tubeCol = isGla ? '#854d0e' : isChina ? '#5c6b43' : '#6b7a52';
+      const collarCol = isGla ? '#451a03' : '#3b4230';
       pushTubeSegment3D(
         faces,
         upperProj,
-        -0.58 * r * wScale - recDist,
+        -0.62 * r * wScale - recDist,
         0.34 * r,
-        1.12 * r + bob,
-        -0.10,
+        1.14 * r + bob,
+        -0.08,
         0,
-        1.42 * r * wScale,
-        0.18 * r * wScale,
+        1.48 * r * wScale,
+        0.19 * r * wScale,
         0.20 * r * wScale,
-        isGla ? '#854d0e' : '#6b7a52',
+        tubeCol,
         seamCol,
-        1.1,
+        1.15,
         1.65
       );
+      // Flared Front & Rear Launch Tube Collars
+      pushTubeSegment3D(faces, upperProj, -0.68 * r * wScale - recDist, 0.34 * r, 1.15 * r + bob, -0.08, 0, 0.20 * r * wScale, 0.24 * r * wScale, 0.22 * r * wScale, collarCol, seamCol, 1.1, 1.68);
+      pushTubeSegment3D(faces, upperProj, 0.72 * r * wScale - recDist, 0.34 * r, 1.03 * r + bob, -0.08, 0, 0.22 * r * wScale, 0.22 * r * wScale, 0.25 * r * wScale, collarCol, seamCol, 1.15, 1.72);
     } else if (isMinigunner) {
       pushTubeSegment3D(faces, upperProj, -0.10 * r, 0.32 * r, 0.78 * r + bob, 0, 0, 1.15 * r * wScale, 0.16 * r * wScale, 0.15 * r * wScale, '#334155', seamCol, 1.1, 1.65);
-    } else if (isHacker || isLotus) {
-      // Ruggedized Field Cyber Laptop with glowing green/magenta screen
-      pushBox3D(faces, upperProj, 0.18 * r, 0.64 * r * wScale, -0.24 * r, 0.24 * r, 0.72 * r + bob, 0.80 * r + bob, '#334155', seamCol, 1.0, 1.65);
-      pushBox3D(faces, upperProj, 0.56 * r * wScale, 0.64 * r * wScale, -0.22 * r, 0.22 * r, 0.80 * r + bob, 1.08 * r + bob, isLotus ? '#ec4899' : '#10b981', seamCol, 1.0, 1.72);
+    } else if (isHacker) {
+      // Open Silver-Grey Field Laptop held at waist (matching china_hacker_diorama_ref.png!)
+      pushBox3D(faces, upperProj, 0.16 * r, 0.58 * r * wScale, -0.26 * r, 0.26 * r, 0.70 * r + bob, 0.78 * r + bob, '#475569', seamCol, 1.05, 1.65);
+      pushBox3D(faces, upperProj, 0.50 * r * wScale, 0.60 * r * wScale, -0.26 * r, 0.26 * r, 0.78 * r + bob, 1.10 * r + bob, '#94a3b8', seamCol, 1.1, 1.72);
     }
 
     const wDepth = upperProj.project(0.45 * r, 0.28 * r, 0.95 * r + bob).depth + 1.75;
@@ -5457,15 +5610,22 @@ const ZH_UNIT_MODELS = (function () {
       customDraw(c) {
         let muzPt = null;
         if (isMissile) {
-          const mTip = upperProj.project(0.82 * r * wScale - recDist, 0.34 * r, 0.96 * r + bob);
-          c.fillStyle = isGla ? '#b91c1c' : '#3b4230';
+          const mTip = upperProj.project(0.90 * r * wScale - recDist, 0.34 * r, 1.01 * r + bob);
+          c.fillStyle = isGla ? '#b91c1c' : '#1e293b';
           c.strokeStyle = seamCol;
           c.lineWidth = 1.2;
           c.beginPath();
-          c.arc(mTip.x, mTip.y, Math.max(2.0, 0.18 * r * wScale), 0, Math.PI * 2);
+          c.arc(mTip.x, mTip.y, Math.max(2.0, 0.17 * r * wScale), 0, Math.PI * 2);
           c.fill();
           c.stroke();
           muzPt = mTip;
+        } else if (isHacker) {
+          // Small white emblem dot on the back of the Hacker's silver laptop lid
+          const lidLogo = upperProj.project(0.61 * r * wScale, 0, 0.94 * r + bob);
+          c.fillStyle = '#f8fafc';
+          c.beginPath();
+          c.arc(lidLogo.x, lidLogo.y, Math.max(1.4, 0.055 * r), 0, Math.PI * 2);
+          c.fill();
         } else if (isPathfinder) {
           drawLine3D(c, upperProj, -0.10 * r - recDist, 0.26 * r, 0.86 * r + bob, 1.28 * r * wScale - recDist, 0.12 * r, 0.82 * r + bob, seamCol, 2.8);
           drawLine3D(c, upperProj, 0.15 * r - recDist, 0.22 * r, 0.98 * r + bob, 0.62 * r * wScale - recDist, 0.18 * r, 0.96 * r + bob, '#475569', 2.2);
@@ -5484,13 +5644,13 @@ const ZH_UNIT_MODELS = (function () {
         } else if (isHijacker) {
           // Curved tactical blade
           drawLine3D(c, upperProj, 0.18 * r, 0.28 * r, 0.84 * r + bob, 0.78 * r * wScale, 0.16 * r, 0.92 * r + bob, '#cbd5e1', 2.6);
-        } else if (!isHacker && !isLotus) {
-          // M4A1 / Type-81 / AK-47 Assault Rifle held across chest
-          const gunCol = isGla || isChina ? '#78350f' : '#334155';
-          drawLine3D(c, upperProj, -0.14 * r - recDist, 0.26 * r, 0.88 * r + bob, 0.96 * r * wScale - recDist, 0.16 * r, 0.78 * r + bob, gunCol, 2.9);
-          drawLine3D(c, upperProj, -0.14 * r - recDist, 0.26 * r, 0.88 * r + bob, 0.96 * r * wScale - recDist, 0.16 * r, 0.78 * r + bob, seamCol, 1.1);
-          drawLine3D(c, upperProj, 0.32 * r - recDist, 0.22 * r, 0.82 * r + bob, 0.38 * r - recDist, 0.22 * r, 0.62 * r + bob, seamCol, 2.2);
-          muzPt = upperProj.project(0.96 * r * wScale - recDist, 0.16 * r, 0.78 * r + bob);
+        } else if (!isLotus) {
+          // M4A1 / Type-81 / AK-47 Assault Rifle held across chest (matching china_red_guard_diorama_ref.png!)
+          const gunCol = isGla ? '#78350f' : '#334155';
+          drawLine3D(c, upperProj, -0.14 * r - recDist, 0.26 * r, 0.88 * r + bob, 0.98 * r * wScale - recDist, 0.16 * r, 0.78 * r + bob, seamCol, 4.0);
+          drawLine3D(c, upperProj, -0.14 * r - recDist, 0.26 * r, 0.88 * r + bob, 0.98 * r * wScale - recDist, 0.16 * r, 0.78 * r + bob, gunCol, 2.5);
+          drawLine3D(c, upperProj, 0.32 * r - recDist, 0.22 * r, 0.82 * r + bob, 0.40 * r - recDist, 0.22 * r, 0.60 * r + bob, seamCol, 2.4);
+          muzPt = upperProj.project(0.98 * r * wScale - recDist, 0.16 * r, 0.78 * r + bob);
         }
         if (recoil > 0.8 && muzPt) {
           const fR = Math.max(2.5, (recoil / 6) * 0.38 * r);
@@ -5509,12 +5669,13 @@ const ZH_UNIT_MODELS = (function () {
     flushFaces(ctx, faces);
 
     // 5. Floating Ligne-Claire Comic Status Callout Bubble above Soldier
+    //    (Matches China & USA reference cards: Red Guard crosshair, Tank Hunter rocket, Hacker wifi, Black Lotus flower!)
     if (p.showStatusBubble !== false && (opts.pitchScale !== undefined && opts.pitchScale < 0.95)) {
       const bubbleTop = upperProj.project(0, 0, zHelmetTop + 0.85 * r);
       const bx = bubbleTop.x;
       const by = bubbleTop.y;
-      const bw = Math.max(16, r * 1.15);
-      const bh = Math.max(14, r * 0.98);
+      const bw = Math.max(16, r * 1.18);
+      const bh = Math.max(14, r * 1.00);
       ctx.save();
       ctx.fillStyle = '#faf8f5';
       ctx.strokeStyle = seamCol;
@@ -5532,11 +5693,68 @@ const ZH_UNIT_MODELS = (function () {
       ctx.fill();
       ctx.stroke();
 
-      ctx.font = `${Math.max(10, Math.round(r * 0.62))}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const icon = isMissile ? '🛡️' : isPathfinder ? '🔭' : isBurton ? '💣' : isHacker || isLotus ? '💻' : isWorker ? '⛏️' : isTerrorist ? '🧨' : isMob ? '🔥' : '🎯';
-      ctx.fillText(icon, bx, by - bh * 0.48);
+      const cx = bx;
+      const cy = by - bh * 0.5;
+      const ir = Math.max(4.5, r * 0.32);
+
+      if (defId === 'CHINA_TANK_HUNTER') {
+        // Diagonal grey finned anti-tank rocket icon (matching china_tank_hunter_diorama_ref.png!)
+        ctx.strokeStyle = '#475569';
+        ctx.fillStyle = '#64748b';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(cx - ir * 0.7, cy + ir * 0.7);
+        ctx.lineTo(cx + ir * 0.7, cy - ir * 0.7);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx + ir * 0.55, cy - ir * 0.55, ir * 0.28, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (isHacker) {
+        // Wireless signal arcs ((•)) (matching china_hacker_diorama_ref.png!)
+        ctx.fillStyle = '#475569';
+        ctx.strokeStyle = '#475569';
+        ctx.lineWidth = 1.35;
+        ctx.beginPath();
+        ctx.arc(cx, cy + ir * 0.45, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        for (const rad of [ir * 0.55, ir * 0.95]) {
+          ctx.beginPath();
+          ctx.arc(cx, cy + ir * 0.45, rad, -Math.PI * 0.78, -Math.PI * 0.22);
+          ctx.stroke();
+        }
+      } else if (isLotus) {
+        // 5-Petal Stylized Lotus Blossom Icon (matching china_black_lotus_diorama_ref.png!)
+        ctx.fillStyle = '#64748b';
+        ctx.strokeStyle = seamCol;
+        ctx.lineWidth = 0.9;
+        for (const ang of [-0.9, -0.45, 0, 0.45, 0.9]) {
+          ctx.save();
+          ctx.translate(cx, cy + ir * 0.35);
+          ctx.rotate(ang);
+          ctx.beginPath();
+          ctx.ellipse(0, -ir * 0.55, ir * 0.24, ir * 0.52, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        }
+      } else if (defId === 'CHINA_RED_GUARD' || defId === 'USA_RANGER') {
+        // Red Crosshair Reticle Icon (matching china_red_guard_diorama_ref.png!)
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 1.35;
+        ctx.beginPath();
+        ctx.arc(cx, cy, ir * 0.72, 0, Math.PI * 2);
+        ctx.moveTo(cx - ir, cy);
+        ctx.lineTo(cx + ir, cy);
+        ctx.moveTo(cx, cy - ir);
+        ctx.lineTo(cx, cy + ir);
+        ctx.stroke();
+      } else {
+        ctx.font = `${Math.max(10, Math.round(r * 0.62))}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const icon = isMissile ? '🛡️' : isPathfinder ? '🔭' : isBurton ? '💣' : isWorker ? '⛏️' : isTerrorist ? '🧨' : isMob ? '🔥' : '🎯';
+        ctx.fillText(icon, cx, cy);
+      }
       ctx.restore();
     }
   }
@@ -5648,6 +5866,8 @@ const ZH_UNIT_MODELS = (function () {
   function renderOverlordModel(ctx, u, faction, customParams, options) {
     const p = Object.assign({}, OVERLORD_DEFAULT_PARAMS, customParams || {});
     const opts = options || {};
+    const defId = String((u && u.defId) || 'CHINA_OVERLORD');
+    const isEmperor = defId === 'CHINA_EMPEROR_OVERLORD';
 
     const rawR = (u && u.radius) || 23;
     const r = rawR * (p.hullScale || 1.0);
@@ -5665,44 +5885,77 @@ const ZH_UNIT_MODELS = (function () {
     const armorBase = p.armorBaseColor || '#738256';
     const armorHi = p.armorHighlightColor || '#8fa06d';
     const armorDark = p.armorShadowColor || '#4f5b3a';
+    const crimson = p.houseColor || '#dc2626';
     const seamCol = p.panelLineColor || '#26201b';
 
     const hullProj = createProjector(hullAngle, pitchScale, zScale, 0, 0, 0, 0);
 
     const shadowPts = [
-      hullProj.project(-1.22 * r * L, -0.94 * r * W, 0),
-      hullProj.project(1.22 * r * L, -0.94 * r * W, 0),
-      hullProj.project(1.22 * r * L, 0.94 * r * W, 0),
-      hullProj.project(-1.22 * r * L, 0.94 * r * W, 0)
+      hullProj.project(-1.24 * r * L, -0.96 * r * W, 0),
+      hullProj.project(1.24 * r * L, -0.96 * r * W, 0),
+      hullProj.project(1.24 * r * L, 0.96 * r * W, 0),
+      hullProj.project(-1.24 * r * L, 0.96 * r * W, 0)
     ].map((pt) => ({ x: pt.x + 4.0, y: pt.y + 5.0 }));
     drawPolyPts(ctx, shadowPts, 'rgba(65, 50, 40, 0.38)', null, 0);
 
     const hullFaces = [];
-    pushTrackedSuspension3D(hullFaces, hullProj, r, -1.16 * r * L, 1.16 * r * L, 0.50 * r * W, 0.88 * r * W, 0.28 * r * H, 6, armorDark, seamCol, treadPhase, p.showRoadWheels !== false, -2.0);
+    pushTrackedSuspension3D(hullFaces, hullProj, r, -1.16 * r * L, 1.16 * r * L, 0.50 * r * W, 0.90 * r * W, 0.28 * r * H, 6, armorDark, seamCol, treadPhase, p.showRoadWheels !== false, -2.0);
 
-    pushBox3D(hullFaces, hullProj, -1.14 * r * L, 1.12 * r * L, -0.90 * r * W, 0.90 * r * W, 0.18 * r * H, 0.48 * r * H, armorBase, seamCol, 1.2, 0, 0.08 * r * L, 0.06 * r * W);
+    // Super-Heavy Hull with Sloped Glacis, Side Skirts & Rear Engine Louver Deck
+    pushBox3D(hullFaces, hullProj, -1.16 * r * L, 1.14 * r * L, -0.92 * r * W, 0.92 * r * W, 0.18 * r * H, 0.50 * r * H, armorBase, seamCol, 1.2, 0, 0.10 * r * L, 0.06 * r * W);
+    // Raised Center Engine Deck & Front Glacis Hatch Block
+    pushBox3D(hullFaces, hullProj, -1.08 * r * L, -0.52 * r * L, -0.64 * r * W, 0.64 * r * W, 0.50 * r * H, 0.58 * r * H, armorDark, seamCol, 1.05, 0.25);
+    pushBox3D(hullFaces, hullProj, 0.68 * r * L, 1.06 * r * L, -0.32 * r * W, 0.32 * r * W, 0.48 * r * H, 0.56 * r * H, armorHi, seamCol, 1.05, 0.3);
     flushFaces(ctx, hullFaces);
 
-    const turProj = createProjector(turretAngle, pitchScale, zScale, -0.05 * r * L, 0, 0, hullAngle);
+    const turProj = createProjector(turretAngle, pitchScale, zScale, -0.04 * r * L, 0, 0, hullAngle);
     const turFaces = [];
-    const zTurBot = 0.48 * r * H;
-    const zTurTop = 0.94 * r * H;
-    pushBox3D(turFaces, turProj, -0.92 * r * L, 0.58 * r * L, -0.68 * r * W, 0.68 * r * W, zTurBot, zTurTop, armorBase, seamCol, 1.2, 1.0, 0.14 * r * L, 0.12 * r * W);
+    const zTurBot = 0.50 * r * H;
+    const zTurTop = 0.96 * r * H;
 
-    // Twin 125mm Heavy Cannons (matching china_overlord_diorama_ref.png!)
+    // Massive Cast/Welded Turret with Sloped Composite Cheek Blocks
+    pushBox3D(turFaces, turProj, -0.88 * r * L, 0.58 * r * L, -0.70 * r * W, 0.70 * r * W, zTurBot, zTurTop, armorBase, seamCol, 1.2, 1.0, 0.16 * r * L, 0.14 * r * W);
+    // Red Insignia Cheek Stripes & Rear Stowage Bustle Basket
+    for (const side of [-1, 1]) {
+      pushBox3D(turFaces, turProj, -0.18 * r * L, 0.32 * r * L, side * 0.65 * r * W, side * 0.72 * r * W, zTurBot + 0.12 * r * H, zTurTop - 0.10 * r * H, crimson, seamCol, 1.0, 1.15);
+    }
+    pushBox3D(turFaces, turProj, -1.12 * r * L, -0.86 * r * L, -0.52 * r * W, 0.52 * r * W, zTurBot + 0.08 * r * H, zTurTop - 0.06 * r * H, armorDark, seamCol, 1.05, 1.1);
+
+    // Armored Twin-Gun Mantlet Box
+    pushBox3D(turFaces, turProj, 0.44 * r * L, 0.70 * r * L, -0.42 * r * W, 0.42 * r * W, zTurBot + 0.08 * r * H, zTurTop - 0.06 * r * H, armorDark, seamCol, 1.15, 1.28);
+
+    // Twin 125mm Heavy Cannons with Bore Evacuators & Muzzle Brakes (matching china_overlord_diorama_ref.png!)
     const bLen = p.barrelLength || 1.0;
     const recDist = clamp(recoil * 0.05 * r, 0, 0.30 * r);
+    const zGun = (zTurBot + zTurTop) * 0.52;
     for (const side of [-1, 1]) {
-      const by = side * 0.22 * r * W;
-      pushTubeSegment3D(turFaces, turProj, 0.44 * r * L - recDist, by, (zTurBot + zTurTop) * 0.52, 0, 0, 1.65 * r * bLen, 0.105 * r, 0.088 * r, armorHi, seamCol, 1.05, 1.55);
+      const by = side * 0.24 * r * W;
+      pushTubeSegment3D(turFaces, turProj, 0.54 * r * L - recDist, by, zGun, 0, 0, 1.58 * r * bLen, 0.105 * r, 0.088 * r, armorHi, seamCol, 1.1, 1.50);
+      // Mid-barrel fume extractor (bore evacuator)
+      pushTubeSegment3D(turFaces, turProj, (0.54 + 0.62 * bLen) * r * L - recDist, by, zGun, 0, 0, 0.32 * r * bLen, 0.138 * r, 0.135 * r, armorBase, seamCol, 1.1, 1.56);
+      // Dark gunmetal muzzle brake collar
+      pushTubeSegment3D(turFaces, turProj, (0.54 + 1.44 * bLen) * r * L - recDist, by, zGun, 0, 0, 0.20 * r * bLen, 0.125 * r, 0.125 * r, '#334155', seamCol, 1.1, 1.62);
     }
 
-    // Roof Gatling Turret Box
+    // Dorsal Gattling Cannon / Propaganda Speaker Tower & Dual Whip Antennas
     if (p.showRoofGatling !== false) {
-      pushCylinderZ3D(turFaces, turProj, -0.10 * r * L, 0.14 * r * W, zTurTop, zTurTop + 0.12 * r * H, 0.24 * r, 0.20 * r, 8, armorDark, seamCol, 1.05, 1.75);
-      pushBox3D(turFaces, turProj, -0.24 * r * L, 0.08 * r * L, 0.02 * r * W, 0.26 * r * W, zTurTop + 0.12 * r * H, zTurTop + 0.34 * r * H, armorHi, seamCol, 1.05, 1.85);
-      pushTubeSegment3D(turFaces, turProj, 0.08 * r * L, 0.14 * r * W, zTurTop + 0.23 * r * H, 0, 0, 0.48 * r, 0.065 * r, 0.065 * r, '#334155', seamCol, 1.0, 1.95);
+      pushCylinderZ3D(turFaces, turProj, -0.14 * r * L, 0.12 * r * W, zTurTop, zTurTop + 0.14 * r * H, 0.26 * r, 0.22 * r, 8, armorDark, seamCol, 1.05, 1.75);
+      pushBox3D(turFaces, turProj, -0.32 * r * L, 0.08 * r * L, -0.06 * r * W, 0.30 * r * W, zTurTop + 0.14 * r * H, zTurTop + 0.38 * r * H, armorHi, seamCol, 1.1, 1.85);
+      pushTubeSegment3D(turFaces, turProj, 0.06 * r * L, 0.12 * r * W, zTurTop + 0.26 * r * H, 0, 0, 0.54 * r, 0.075 * r, 0.070 * r, '#334155', seamCol, 1.05, 1.95);
+      if (isEmperor) {
+        // Emperor Overlord Propaganda Speaker Array Mast behind cupola
+        pushBox3D(turFaces, turProj, -0.68 * r * L, -0.42 * r * L, -0.32 * r * W, 0.32 * r * W, zTurTop, zTurTop + 0.52 * r * H, crimson, seamCol, 1.1, 1.92);
+      }
     }
+
+    turFaces.push({
+      depth: turProj.project(-0.98 * r * L, 0, zTurTop + 0.55 * r * H).depth + 2.05,
+      customDraw(c) {
+        for (const side of [-1, 1]) {
+          drawLine3D(c, turProj, -0.96 * r * L, side * 0.44 * r * W, zTurTop, -1.04 * r * L, side * 0.48 * r * W, zTurTop + 0.72 * r * H, seamCol, 1.2);
+        }
+      }
+    });
 
     flushFaces(ctx, turFaces);
   }
@@ -6258,9 +6511,9 @@ const ZH_UNIT_MODELS = (function () {
       {
         group: '5. Surface & Ligne-Claire Palette',
         fields: norm([
-          { key: 'armorBaseColor',      label: 'Primary Armor Tone', type: 'color', default: '#9c6e4e' },
-          { key: 'armorHighlightColor', label: 'Sunlit Deck Tone',   type: 'color', default: '#b88662' },
-          { key: 'armorShadowColor',    label: 'Shadow Flank Tone',  type: 'color', default: '#6e4a32' },
+          { key: 'armorBaseColor',      label: 'Primary Armor Tone', type: 'color', default: '#6e7b4f' },
+          { key: 'armorHighlightColor', label: 'Sunlit Deck Tone',   type: 'color', default: '#879663' },
+          { key: 'armorShadowColor',    label: 'Shadow Flank Tone',  type: 'color', default: '#4a5434' },
           { key: 'houseColor',          label: 'Faction Trim Color', type: 'color', default: '#dc2626' }
         ])
       }
@@ -6281,29 +6534,29 @@ const ZH_UNIT_MODELS = (function () {
   const CHINA_TANK_PARAM_SCHEMA = createFactionSchema('Turret & Primary Weapon System', [
     { key: 'turretScale',  label: 'Turret / Mount Scale', min: 0.80, max: 1.30, step: 0.01, default: 1.00 },
     { key: 'barrelLength', label: 'Weapon Barrel Length', min: 0.75, max: 1.35, step: 0.01, default: 1.00 },
-    { key: 'ShowAutoloader', label: 'Autoloader / Drum Pod', type: 'toggle', default: true }
+    { key: 'ShowAutoloader', label: 'Bustle Rack / Rear Stowage', type: 'toggle', default: true }
   ]);
-  const CHINA_TANK_PRESETS = createFactionPresets('PLA Armored Tank',
+  const CHINA_TANK_PRESETS = createFactionPresets('PLA Olive Armor',
     { name: 'Red Army Breakthrough', params: { turretScale: 1.08, barrelLength: 1.15, ShowAutoloader: true } },
     { name: 'Nationalism Horde Spec', params: { hullWidth: 1.08, ShowFactionEmblem: true, ShowUpgradeKit: true } },
-    { name: 'Depleted Uranium Spec', params: { barrelLength: 1.22, armorBaseColor: '#7c8464', houseColor: '#84cc16' } },
+    { name: 'Depleted Uranium Spec', params: { barrelLength: 1.22, armorBaseColor: '#5c6b43', houseColor: '#84cc16' } },
     { name: 'General Kwai Red Guard Division', params: { hullScale: 1.08, turretScale: 1.12, extrusionDepth: 1.12 } }
   );
 
   const CHINA_ARTILLERY_PARAM_SCHEMA = createFactionSchema('Ordnance & Stabilizer System', [
     { key: 'barrelLength',  label: 'Ordnance Tube Length', min: 0.80, max: 1.40, step: 0.01, default: 1.00 },
-    { key: 'gunElevation',  label: 'Firing Elevation (rad)', min: 0.15, max: 0.85, step: 0.01, default: 0.45 },
+    { key: 'gunElevation',  label: 'Firing Elevation (rad)', min: 0.15, max: 0.85, step: 0.01, default: 0.48 },
     { key: 'DeployOutriggers', label: 'Deploy Stabilizer Spades', type: 'toggle', default: true }
   ]);
   const CHINA_ARTILLERY_PRESETS = createFactionPresets('PLA Siege Artillery',
     { name: 'Black Napalm Firestorm', params: { barrelLength: 1.15, gunElevation: 0.54, houseColor: '#f97316' } },
     { name: 'Deployed Siege Battery', params: { DeployOutriggers: true, hullWidth: 1.10, gunElevation: 0.62 } },
-    { name: 'Neutron Shell Spec', params: { barrelLength: 1.25, armorBaseColor: '#7a8262', houseColor: '#84cc16' } },
+    { name: 'Neutron Shell Spec', params: { barrelLength: 1.25, armorBaseColor: '#5c6b43', houseColor: '#eab308' } },
     { name: 'General Tao Tactical Nuke', params: { hullScale: 1.10, barrelLength: 1.28, extrusionDepth: 1.15 } }
   );
 
   const CHINA_WHEELED_PARAM_SCHEMA = createFactionSchema('Superstructure & Payload Bay', [
-    { key: 'cargoScale',   label: 'Payload / Bay Volume', min: 0.80, max: 1.30, step: 0.01, default: 1.00 },
+    { key: 'cargoScale',   label: 'Canvas Canopy / Bay Volume', min: 0.80, max: 1.30, step: 0.01, default: 1.00 },
     { key: 'antennaScale', label: 'Mast / Dish Height',   min: 0.75, max: 1.40, step: 0.01, default: 1.00 }
   ]);
   const CHINA_WHEELED_PRESETS = createFactionPresets('PLA Tactical Transport',
@@ -6328,13 +6581,13 @@ const ZH_UNIT_MODELS = (function () {
   const MIG_PARAM_SCHEMA = createFactionSchema('Delta Wing & Afterburner Array', [
     { key: 'wingSpan',    label: 'Delta Wing Span',   min: 0.80, max: 1.30, step: 0.01, default: 1.00 },
     { key: 'canardScale', label: 'Forward Canard Size', min: 0.75, max: 1.35, step: 0.01, default: 1.00 },
-    { key: 'ShowNapalmPods', label: 'Underwing Napalm Pods', type: 'toggle', default: true }
+    { key: 'ShowNapalmPods', label: 'Underwing Missiles', type: 'toggle', default: true }
   ]);
   const MIG_PRESETS = createFactionPresets('MiG-1.44 Strike Fighter',
     { name: 'Black Napalm Firestorm', params: { ShowNapalmPods: true, houseColor: '#f97316' } },
     { name: 'MiG Armor Plating Upgrade', params: { hullWidth: 1.12, wingSpan: 1.10, extrusionDepth: 1.12 } },
-    { name: 'Supersonic Interceptor', params: { hullLength: 1.14, canardScale: 1.18 } },
-    { name: 'General Tao Tactical Nuke MiG', params: { armorBaseColor: '#7c8464', houseColor: '#84cc16', ShowNapalmPods: true } }
+    { name: 'Supersonic Air Superiority Grey', params: { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569' } },
+    { name: 'General Tao Tactical Nuke MiG', params: { armorBaseColor: '#6e7b4f', armorHighlightColor: '#879663', houseColor: '#84cc16', ShowNapalmPods: true } }
   );
 
   const GLA_TANK_PARAM_SCHEMA = createFactionSchema('Salvage Turret & Ordnance', [
@@ -6365,11 +6618,14 @@ const ZH_UNIT_MODELS = (function () {
       hullScale: 1.0, hullLength: 1.0, hullWidth: 1.0, extrusionDepth: 1.0,
       turretScale: 1.0, barrelLength: 1.0, trackWidth: 1.0, skirtHeight: 1.0,
       ShowFactionEmblem: true, ShowUpgradeKit: true, ShowAutoloader: true,
-      armorBaseColor: '#9c6e4e', armorHighlightColor: '#b88662', armorShadowColor: '#6e4a32', houseColor: '#dc2626'
+      armorBaseColor: '#6e7b4f', armorHighlightColor: '#879663', armorShadowColor: '#4a5434', houseColor: '#dc2626'
     }, customParams || {});
     const opts = options || {};
     const defId = String((u && u.defId) || 'CHINA_BATTLEMASTER');
     const isNuke = defId.includes('NUKE');
+    const isDragon = defId === 'CHINA_DRAGON_TANK';
+    const isGattling = defId === 'CHINA_GATTLING_TANK';
+    const isEcm = defId === 'CHINA_ECM_TANK';
     const rawR = (u && u.radius) || 18;
     const r = rawR * (p.hullScale || 1.0);
     const L = p.hullLength || 1.0, W = p.hullWidth || 1.0, H = p.extrusionDepth || 1.0;
@@ -6382,67 +6638,274 @@ const ZH_UNIT_MODELS = (function () {
     const pitchScale = opts.pitchScale !== undefined ? opts.pitchScale : 1.0;
     const zScale = opts.zScale !== undefined ? opts.zScale : 0.42;
 
-    const armorBase = isNuke ? '#848c6a' : (p.armorBaseColor || '#9c6e4e');
-    const armorHi   = isNuke ? '#9ea882' : (p.armorHighlightColor || '#b88662');
-    const armorDark = isNuke ? '#586046' : (p.armorShadowColor || '#6e4a32');
+    const armorBase = isNuke ? '#657351' : (p.armorBaseColor || '#6e7b4f');
+    const armorHi   = isNuke ? '#84946b' : (p.armorHighlightColor || '#879663');
+    const armorDark = isNuke ? '#434d34' : (p.armorShadowColor || '#4a5434');
     const crimson   = isNuke ? '#84cc16' : (p.houseColor || '#dc2626');
-    const seamCol   = '#241a14';
+    const seamCol   = '#241f1a';
 
     const hullProj = createProjector(hullAngle, pitchScale, zScale, 0, 0, 0, 0);
     const shadowPts = [
-      hullProj.project(-1.12 * r * L, -0.86 * r * W, 0),
-      hullProj.project( 1.12 * r * L, -0.86 * r * W, 0),
-      hullProj.project( 1.12 * r * L,  0.86 * r * W, 0),
-      hullProj.project(-1.12 * r * L,  0.86 * r * W, 0)
+      hullProj.project(-1.14 * r * L, -0.88 * r * W, 0),
+      hullProj.project( 1.14 * r * L, -0.88 * r * W, 0),
+      hullProj.project( 1.14 * r * L,  0.88 * r * W, 0),
+      hullProj.project(-1.14 * r * L,  0.88 * r * W, 0)
     ].map((pt) => ({ x: pt.x + 3.0, y: pt.y + 4.0 }));
-    drawPolyPts(ctx, shadowPts, 'rgba(60, 44, 34, 0.36)', null, 0);
+    drawPolyPts(ctx, shadowPts, 'rgba(60, 48, 36, 0.36)', null, 0);
 
     const hullFaces = [];
-    pushTrackedSuspension3D(hullFaces, hullProj, r, -1.06 * r * L, 1.06 * r * L, 0.46 * r * W, 0.82 * r * W, 0.25 * r * H, 6, armorDark, seamCol, treadPhase, true, -2.0);
-    pushBox3D(hullFaces, hullProj, -1.06 * r * L, 1.04 * r * L, -0.78 * r * W, 0.78 * r * W, 0.16 * r * H, 0.46 * r * H, armorBase, seamCol, 1.15, 0, 0.10 * r * L, 0.06 * r * W);
-    // Rear Twin External Fuel Drums / Engine Deck
-    pushBox3D(hullFaces, hullProj, -1.16 * r * L, -0.88 * r * L, -0.62 * r * W, 0.62 * r * W, 0.26 * r * H, 0.50 * r * H, armorDark, seamCol, 1.05, 0.3);
+    const wheelCount = (isDragon || isGattling) ? 5 : 6;
+    pushTrackedSuspension3D(
+      hullFaces,
+      hullProj,
+      r,
+      -1.06 * r * L,
+      1.06 * r * L,
+      0.46 * r * W,
+      0.84 * r * W,
+      0.26 * r * H,
+      wheelCount,
+      isDragon ? '#b91c1c' : armorDark,
+      seamCol,
+      treadPhase,
+      true,
+      -2.0
+    );
 
-    if (defId === 'CHINA_DRAGON_TANK') {
-      // Twin pressurized crimson napalm tanks mounted on rear deck
-      for (const side of [-1, 1]) {
-        pushBox3D(hullFaces, hullProj, -0.96 * r * L, -0.24 * r * L, side * 0.16 * r * W, side * 0.68 * r * W, 0.46 * r * H, 0.76 * r * H, '#dc2626', seamCol, 1.1, 0.55);
+    // Main Olive-Green Armored Hull with Beveled Glacis & Side Skirts
+    pushBox3D(hullFaces, hullProj, -1.06 * r * L, 1.06 * r * L, -0.80 * r * W, 0.80 * r * W, 0.16 * r * H, 0.46 * r * H, armorBase, seamCol, 1.18, 0, 0.12 * r * L, 0.06 * r * W);
+    // Rear Engine Louver Deck
+    pushBox3D(hullFaces, hullProj, -1.02 * r * L, -0.48 * r * L, -0.60 * r * W, 0.60 * r * W, 0.46 * r * H, 0.52 * r * H, armorDark, seamCol, 1.05, 0.25);
+
+    // Glacis Details: Dragon Tank Flame Nose Paint OR Gattling Tank 3 Lower Glacis Blocks + Driver Hatch
+    hullFaces.push({
+      depth: hullProj.project(0.96 * r * L, 0, 0.36 * r * H).depth + 0.42,
+      customDraw(c) {
+        if (isDragon) {
+          // Fiery Orange & Yellow Dragon Flame Stripes across the front glacis nose (matching china_dragon_tank_diorama_ref.png!)
+          for (const fy of [-0.46, 0, 0.46]) {
+            const flamePoly = [
+              hullProj.project(1.06 * r * L, (fy - 0.22) * r * W, 0.24 * r * H),
+              hullProj.project(1.06 * r * L, (fy + 0.22) * r * W, 0.24 * r * H),
+              hullProj.project(0.64 * r * L, fy * r * W, 0.46 * r * H)
+            ];
+            drawPolyPts(c, flamePoly, '#ea580c', seamCol, 0.85);
+            const innerFlame = [
+              hullProj.project(1.06 * r * L, (fy - 0.11) * r * W, 0.23 * r * H),
+              hullProj.project(1.06 * r * L, (fy + 0.11) * r * W, 0.23 * r * H),
+              hullProj.project(0.78 * r * L, fy * r * W, 0.44 * r * H)
+            ];
+            drawPolyPts(c, innerFlame, '#facc15', null, 0);
+          }
+        } else {
+          // 3 Recessed Lower-Glacis ERA/Tow Blocks + Upper Glacis Driver Hatch (matching china_gattling_tank & china_battlemaster!)
+          for (const bx of [-0.42, 0, 0.42]) {
+            const blk = [
+              hullProj.project(1.05 * r * L, (bx - 0.14) * r * W, 0.20 * r * H),
+              hullProj.project(1.05 * r * L, (bx + 0.14) * r * W, 0.20 * r * H),
+              hullProj.project(0.96 * r * L, (bx + 0.14) * r * W, 0.34 * r * H),
+              hullProj.project(0.96 * r * L, (bx - 0.14) * r * W, 0.34 * r * H)
+            ];
+            drawPolyPts(c, blk, armorDark, seamCol, 0.9);
+          }
+          // Upper glacis driver periscope hatch
+          const hatch = [
+            hullProj.project(0.68 * r * L, -0.20 * r * W, 0.465 * r * H),
+            hullProj.project(0.68 * r * L,  0.20 * r * W, 0.465 * r * H),
+            hullProj.project(0.90 * r * L,  0.18 * r * W, 0.455 * r * H),
+            hullProj.project(0.90 * r * L, -0.18 * r * W, 0.455 * r * H)
+          ];
+          drawPolyPts(c, hatch, armorDark, seamCol, 0.95);
+        }
+      }
+    });
+
+    if (isDragon) {
+      // Transverse Horizontal Crimson-Red Cylindrical Napalm Fuel Drum strapped across the rear deck
+      // with two grey metallic clamp bands (matching china_dragon_tank_diorama_ref.png!)
+      const drumX = -0.68 * r * L;
+      const drumZ = 0.66 * r * H;
+      pushTubeSegment3D(
+        hullFaces,
+        hullProj,
+        drumX,
+        -0.68 * r * W,
+        drumZ,
+        0,
+        Math.PI * 0.5,
+        1.36 * r * W,
+        0.22 * r * H,
+        0.22 * r * H,
+        '#dc2626',
+        seamCol,
+        1.15,
+        0.65
+      );
+      // Two grey metallic mounting straps around the crimson napalm cylinder
+      for (const sy of [-0.36 * r * W, 0.36 * r * W]) {
+        pushTubeSegment3D(
+          hullFaces,
+          hullProj,
+          drumX,
+          sy - 0.05 * r * W,
+          drumZ,
+          0,
+          Math.PI * 0.5,
+          0.10 * r * W,
+          0.235 * r * H,
+          0.235 * r * H,
+          '#64748b',
+          seamCol,
+          1.05,
+          0.72
+        );
       }
     }
     flushFaces(ctx, hullFaces);
 
-    const turProj = createProjector(turretAngle, pitchScale, zScale, 0.06 * r * L, 0, 0, hullAngle);
+    const turProj = createProjector(turretAngle, pitchScale, zScale, (isDragon ? 0.16 : 0.06) * r * L, 0, 0, hullAngle);
     const turFaces = [];
     const zTurBot = 0.46 * r * H;
-    const zTurTop = 0.80 * r * H;
+    const zTurTop = 0.82 * r * H;
     const recDist = clamp(recoil * 0.04 * r, 0, 0.22 * r);
 
-    if (defId === 'CHINA_DRAGON_TANK') {
-      pushCylinderZ3D(turFaces, turProj, 0.10 * r * L, 0, zTurBot, zTurTop, 0.44 * r * TS, 0.36 * r * TS, 10, armorHi, seamCol, 1.15, 1.0);
-      pushTubeSegment3D(turFaces, turProj, 0.32 * r * TS, 0, (zTurBot + zTurTop) * 0.52, 0.04, 0, 0.92 * r * BL, 0.12 * r, 0.16 * r, '#dc2626', seamCol, 1.15, 1.4);
-      if (recoil > 0.4) {
-        pushTubeSegment3D(turFaces, turProj, (0.32 + 0.92 * BL) * r, 0, (zTurBot + zTurTop) * 0.54, 0.04, 0, 0.65 * r, 0.18 * r, 0.36 * r, '#f97316', '#ea580c', 0.8, 1.8);
-      }
-    } else if (defId === 'CHINA_GATTLING_TANK') {
-      pushBox3D(turFaces, turProj, -0.44 * r * TS, 0.42 * r * TS, -0.48 * r * TS, 0.48 * r * TS, zTurBot, zTurTop, armorHi, seamCol, 1.15, 1.0, 0.06 * r, 0.06 * r);
+    if (isDragon) {
+      // ======================================================================
+      // CHINA DRAGON TANK: Sculpted Crimson-Orange Chinese Dragon Head Turret Cowl
+      // with Swept Horns, Glowing Yellow Eyes, Open Jaws & Erupting Fireball!
+      // (Matches assets/refs/china_dragon_tank_diorama_ref.png!)
+      // ======================================================================
+      // Olive armored turret collar base
+      pushCylinderZ3D(turFaces, turProj, -0.06 * r * TS, 0, zTurBot, zTurBot + 0.18 * r * H, 0.46 * r * TS, 0.42 * r * TS, 10, armorBase, seamCol, 1.1, 0.95);
+      // Crimson-red sculpted Dragon Head upper cranium & snout
+      pushBox3D(turFaces, turProj, -0.34 * r * TS, 0.48 * r * TS, -0.44 * r * TS, 0.44 * r * TS, zTurBot + 0.08 * r * H, zTurTop + 0.08 * r * H, '#dc2626', seamCol, 1.18, 1.1, 0.14 * r * TS, 0.10 * r * TS);
+      // Swept-back orange-gold Dragon Horns / Mane Spikes on left & right temples
       for (const side of [-1, 1]) {
-        const gy = side * 0.54 * r * TS;
-        pushBox3D(turFaces, turProj, -0.18 * r * TS, 0.28 * r * TS, gy - 0.12 * r, gy + 0.12 * r, zTurBot + 0.04 * r * H, zTurTop - 0.02 * r * H, crimson, seamCol, 1.05, 1.2);
-        pushTubeSegment3D(turFaces, turProj, 0.24 * r * TS - recDist, gy, (zTurBot + zTurTop) * 0.52, 0.08, 0, 0.96 * r * BL, 0.10 * r, 0.09 * r, '#475569', seamCol, 1.1, 1.45);
+        pushTubeSegment3D(
+          turFaces,
+          turProj,
+          -0.06 * r * TS,
+          side * 0.36 * r * TS,
+          zTurTop + 0.02 * r * H,
+          0.32,
+          Math.PI + side * 0.28,
+          0.56 * r * TS,
+          0.11 * r * TS,
+          0.03 * r * TS,
+          '#f59e0b',
+          seamCol,
+          1.1,
+          1.35
+        );
+        // Secondary lower cheek horn fin
+        pushTubeSegment3D(
+          turFaces,
+          turProj,
+          -0.12 * r * TS,
+          side * 0.42 * r * TS,
+          zTurBot + 0.22 * r * H,
+          0.12,
+          Math.PI + side * 0.38,
+          0.42 * r * TS,
+          0.09 * r * TS,
+          0.025 * r * TS,
+          '#ea580c',
+          seamCol,
+          1.05,
+          1.25
+        );
       }
-      // Roof Spinning Radar Dish
-      pushBox3D(turFaces, turProj, -0.32 * r * TS, -0.14 * r * TS, -0.34 * r * TS, 0.34 * r * TS, zTurTop, zTurTop + 0.22 * r * H, '#e2e8f0', seamCol, 1.05, 1.6);
-    } else if (defId === 'CHINA_ECM_TANK') {
+      // Slanted glowing yellow Dragon Eyes & Brow Ridge
+      turFaces.push({
+        depth: turProj.project(0.38 * r * TS, 0, zTurTop).depth + 1.48,
+        customDraw(c) {
+          for (const side of [-1, 1]) {
+            const eyePts = [
+              turProj.project(0.36 * r * TS, side * 0.14 * r * TS, zTurTop - 0.06 * r * H),
+              turProj.project(0.20 * r * TS, side * 0.38 * r * TS, zTurTop + 0.02 * r * H),
+              turProj.project(0.14 * r * TS, side * 0.34 * r * TS, zTurTop - 0.10 * r * H)
+            ];
+            drawPolyPts(c, eyePts, '#fef08a', seamCol, 1.05);
+          }
+        }
+      });
+      // Central High-Pressure Igniter Nozzle emerging from the Dragon's open jaws
+      const zNoz = (zTurBot + zTurTop) * 0.54;
+      pushTubeSegment3D(turFaces, turProj, 0.38 * r * TS, 0, zNoz, 0.05, 0, 0.62 * r * BL, 0.14 * r, 0.16 * r, '#334155', seamCol, 1.15, 1.42);
+      // Pilot flame / Erupting Napalm Fireball Plume at the Dragon Muzzle (matching china_dragon_tank_diorama_ref.png!)
+      const fbLen = (recoil > 0.2 ? 0.85 : 0.48) * r * BL;
+      const fbRad = (recoil > 0.2 ? 0.34 : 0.22) * r;
+      pushTubeSegment3D(turFaces, turProj, (0.38 * TS + 0.56 * BL) * r, 0, zNoz + 0.03 * r * H, 0.06, 0, fbLen, 0.14 * r, fbRad, '#f97316', '#ea580c', 1.0, 1.75);
+      pushTubeSegment3D(turFaces, turProj, (0.38 * TS + 0.68 * BL) * r, 0, zNoz + 0.04 * r * H, 0.06, 0, fbLen * 0.65, 0.09 * r, fbRad * 0.68, '#fde047', '#f59e0b', 0.85, 1.85);
+    } else if (isGattling) {
+      // ======================================================================
+      // CHINA GATTLING TANK: Rounded Cast Olive Turret, Sloped Mantlet Shroud
+      // & Central 6-Barrel Gunmetal Rotary Gattling Cannon Bundle!
+      // (Matches assets/refs/china_gattling_tank_diorama_ref.png!)
+      // ======================================================================
+      pushCylinderZ3D(turFaces, turProj, -0.06 * r * TS, 0, zTurBot, zTurTop, 0.52 * r * TS, 0.44 * r * TS, 12, armorBase, seamCol, 1.18, 1.0);
+      // Roof Commander Cupola Hatch
+      pushCylinderZ3D(turFaces, turProj, -0.14 * r * TS, -0.10 * r * TS, zTurTop, zTurTop + 0.10 * r * H, 0.20 * r * TS, 0.18 * r * TS, 8, armorHi, seamCol, 1.05, 1.35);
+      // Sloped Front Armored Mantlet Shroud
+      pushBox3D(turFaces, turProj, 0.22 * r * TS, 0.54 * r * TS, -0.28 * r * TS, 0.28 * r * TS, zTurBot + 0.04 * r * H, zTurTop - 0.04 * r * H, armorHi, seamCol, 1.15, 1.25, 0.08 * r, 0.06 * r);
+
+      // Central 6-Barrel Gunmetal Rotary Gattling Bundle with Mid-Barrel Clamp Collar & Muzzle Disk
+      const zGun = (zTurBot + zTurTop) * 0.52;
+      const gStart = 0.48 * r * TS - recDist;
+      const gLen = 1.08 * r * BL;
+      // Core bundle shaft
+      pushTubeSegment3D(turFaces, turProj, gStart, 0, zGun, 0.04, 0, gLen, 0.145 * r, 0.145 * r, '#334155', seamCol, 1.15, 1.48);
+      // Individual 6 outer rotary barrels drawn around circumference
+      for (let b = 0; b < 6; b++) {
+        const bAng = (b / 6) * Math.PI * 2 + treadPhase * Math.PI * 4;
+        const by = Math.cos(bAng) * 0.095 * r;
+        const bz = zGun + Math.sin(bAng) * 0.095 * r;
+        pushTubeSegment3D(turFaces, turProj, gStart, by, bz, 0.04, 0, gLen, 0.042 * r, 0.042 * r, '#64748b', seamCol, 0.95, 1.52);
+      }
+      // Mid-barrel support clamp ring & perforated muzzle cap disk
+      pushTubeSegment3D(turFaces, turProj, gStart + gLen * 0.52, 0, zGun + 0.02 * r, 0.04, 0, 0.12 * r, 0.175 * r, 0.175 * r, '#475569', seamCol, 1.1, 1.58);
+      pushTubeSegment3D(turFaces, turProj, gStart + gLen * 0.90, 0, zGun + 0.035 * r, 0.04, 0, 0.12 * r, 0.18 * r, 0.18 * r, '#1e293b', seamCol, 1.15, 1.62);
+    } else if (isEcm) {
+      // CHINA ECM TANK: Olive Turret + Curved Phased-Array Electronic Warfare Jamming Dish
       pushCylinderZ3D(turFaces, turProj, 0, 0, zTurBot, zTurTop - 0.06 * r * H, 0.48 * r * TS, 0.40 * r * TS, 10, armorHi, seamCol, 1.15, 1.0);
-      pushBox3D(turFaces, turProj, -0.14 * r * TS, 0.22 * r * TS, -0.58 * r * TS, 0.58 * r * TS, zTurTop - 0.04 * r * H, zTurTop + 0.38 * r * H, '#10b981', seamCol, 1.15, 1.45, 0.04 * r, 0.08 * r);
+      pushBox3D(turFaces, turProj, -0.14 * r * TS, 0.22 * r * TS, -0.58 * r * TS, 0.58 * r * TS, zTurTop - 0.04 * r * H, zTurTop + 0.40 * r * H, '#10b981', seamCol, 1.15, 1.45, 0.04 * r, 0.08 * r);
+      pushTubeSegment3D(turFaces, turProj, 0.18 * r * TS, 0, zTurTop + 0.18 * r * H, 0, 0, 0.34 * r * TS, 0.08 * r, 0.12 * r, armorDark, seamCol, 1.1, 1.55);
     } else {
-      // Type-98 Battlemaster / Nuclear Battlemaster Rounded Cast Turret + 125mm Cannon
-      pushCylinderZ3D(turFaces, turProj, 0, 0, zTurBot, zTurTop, 0.54 * r * TS, 0.44 * r * TS, 12, armorHi, seamCol, 1.18, 1.0);
+      // ======================================================================
+      // CHINA TYPE-98 BATTLEMASTER / NUCLEAR BATTLEMASTER:
+      // Angular Welded/Cast Turret with Sloped Cheek Armor, Rear Bustle Basket,
+      // Dual Whip Antennas, Roof Cupola + Pintle MG & 125mm Bore-Evacuated Cannon!
+      // (Matches assets/refs/china_battlemaster_diorama_ref.png!)
+      // ======================================================================
+      pushBox3D(turFaces, turProj, -0.56 * r * TS, 0.48 * r * TS, -0.54 * r * TS, 0.54 * r * TS, zTurBot, zTurTop, armorBase, seamCol, 1.2, 1.0, 0.16 * r * TS, 0.12 * r * TS);
+      // Raised Turret Roof Plate & Commander Cupola Hatch
+      pushBox3D(turFaces, turProj, -0.42 * r * TS, 0.30 * r * TS, -0.38 * r * TS, 0.38 * r * TS, zTurTop, zTurTop + 0.06 * r * H, armorHi, seamCol, 1.05, 1.18);
+      pushCylinderZ3D(turFaces, turProj, -0.12 * r * TS, -0.16 * r * TS, zTurTop + 0.04 * r * H, zTurTop + 0.16 * r * H, 0.18 * r * TS, 0.16 * r * TS, 8, armorDark, seamCol, 1.05, 1.32);
+
+      // Rear Turret Bustle Stowage Rack Basket
       if (p.ShowAutoloader !== false) {
-        pushBox3D(turFaces, turProj, -0.68 * r * TS, -0.28 * r * TS, -0.36 * r * TS, 0.36 * r * TS, zTurBot + 0.04 * r * H, zTurTop - 0.02 * r * H, crimson, seamCol, 1.1, 1.15);
+        pushBox3D(turFaces, turProj, -0.86 * r * TS, -0.54 * r * TS, -0.42 * r * TS, 0.42 * r * TS, zTurBot + 0.06 * r * H, zTurTop - 0.04 * r * H, armorDark, seamCol, 1.1, 1.15);
       }
-      pushTubeSegment3D(turFaces, turProj, 0.36 * r * TS - recDist, 0, (zTurBot + zTurTop) * 0.52, 0.03, 0, 1.18 * r * BL, 0.10 * r, 0.085 * r, armorBase, seamCol, 1.15, 1.45);
-      pushTubeSegment3D(turFaces, turProj, 0.64 * r * TS - recDist, 0, (zTurBot + zTurTop) * 0.53, 0.03, 0, 0.28 * r * BL, 0.135 * r, 0.135 * r, crimson, seamCol, 1.1, 1.55);
+
+      // Roof Pintle Heavy Machine Gun + Dual Rear Whip Antennas
+      pushTubeSegment3D(turFaces, turProj, -0.06 * r * TS, -0.16 * r * TS, zTurTop + 0.20 * r * H, 0.04, 0, 0.46 * r, 0.045 * r, 0.038 * r, '#334155', seamCol, 1.0, 1.65);
+      turFaces.push({
+        depth: turProj.project(-0.78 * r * TS, 0, zTurTop + 0.45 * r * H).depth + 1.75,
+        customDraw(c) {
+          for (const side of [-1, 1]) {
+            drawLine3D(c, turProj, -0.78 * r * TS, side * 0.36 * r * TS, zTurTop, -0.86 * r * TS, side * 0.40 * r * TS, zTurTop + 0.68 * r * H, seamCol, 1.15);
+          }
+        }
+      });
+
+      // Armored Gun Mantlet & Long 125mm Smoothbore Cannon with Bore Evacuator & Muzzle Brake
+      const zGun = (zTurBot + zTurTop) * 0.52;
+      pushBox3D(turFaces, turProj, 0.38 * r * TS, 0.60 * r * TS, -0.20 * r * TS, 0.20 * r * TS, zTurBot + 0.08 * r * H, zTurTop - 0.06 * r * H, armorDark, seamCol, 1.1, 1.35);
+      pushTubeSegment3D(turFaces, turProj, 0.48 * r * TS - recDist, 0, zGun, 0.02, 0, 1.34 * r * BL, 0.098 * r, 0.082 * r, armorHi, seamCol, 1.15, 1.48);
+      // Mid-barrel Bore Evacuator (Fume Extractor)
+      pushTubeSegment3D(turFaces, turProj, (0.48 * TS + 0.54 * BL) * r - recDist, 0, zGun + 0.01 * r, 0.02, 0, 0.30 * r * BL, 0.132 * r, 0.128 * r, armorBase, seamCol, 1.12, 1.56);
+      // Reinforced Muzzle Collar
+      pushTubeSegment3D(turFaces, turProj, (0.48 * TS + 1.20 * BL) * r - recDist, 0, zGun + 0.025 * r, 0.02, 0, 0.18 * r * BL, 0.115 * r, 0.115 * r, '#334155', seamCol, 1.12, 1.62);
     }
     flushFaces(ctx, turFaces);
   }
@@ -6450,15 +6913,15 @@ const ZH_UNIT_MODELS = (function () {
   function renderChinaArtilleryModel(ctx, u, faction, customParams, options) {
     const p = Object.assign({
       hullScale: 1.0, hullLength: 1.0, hullWidth: 1.0, extrusionDepth: 1.0,
-      barrelLength: 1.0, gunElevation: 0.45, DeployOutriggers: true,
-      armorBaseColor: '#9c6e4e', armorHighlightColor: '#b88662', armorShadowColor: '#6e4a32', houseColor: '#dc2626'
+      barrelLength: 1.0, gunElevation: 0.48, DeployOutriggers: true,
+      armorBaseColor: '#6e7b4f', armorHighlightColor: '#879663', armorShadowColor: '#4a5434', houseColor: '#dc2626'
     }, customParams || {});
     const opts = options || {};
     const defId = String((u && u.defId) || 'CHINA_INFERNO_CANNON');
     const isNuke = defId === 'CHINA_NUKE_CANNON';
     const rawR = (u && u.radius) || (isNuke ? 22 : 18);
     const r = rawR * (p.hullScale || 1.0);
-    const L = (p.hullLength || 1.0) * (isNuke ? 1.15 : 1.0);
+    const L = (p.hullLength || 1.0) * (isNuke ? 1.18 : 1.0);
     const W = p.hullWidth || 1.0, H = p.extrusionDepth || 1.0, BL = p.barrelLength || 1.0;
 
     const hullAngle = (u && u.angle !== undefined) ? u.angle : 0;
@@ -6468,49 +6931,193 @@ const ZH_UNIT_MODELS = (function () {
     const pitchScale = opts.pitchScale !== undefined ? opts.pitchScale : 1.0;
     const zScale = opts.zScale !== undefined ? opts.zScale : 0.42;
 
-    const armorBase = isNuke ? '#84886c' : (p.armorBaseColor || '#9c6e4e');
-    const armorHi   = isNuke ? '#a0a686' : (p.armorHighlightColor || '#b88662');
-    const armorDark = isNuke ? '#565a46' : (p.armorShadowColor || '#6e4a32');
-    const crimson   = p.houseColor || '#dc2626';
-    const seamCol   = '#241a14';
+    const armorBase = p.armorBaseColor || '#6e7b4f';
+    const armorHi   = p.armorHighlightColor || '#879663';
+    const armorDark = p.armorShadowColor || '#4a5434';
+    const seamCol   = '#241f1a';
 
     const hullProj = createProjector(hullAngle, pitchScale, zScale, 0, 0, 0, 0);
     const shadowPts = [
-      hullProj.project(-1.18 * r * L, -0.88 * r * W, 0),
-      hullProj.project( 1.18 * r * L, -0.88 * r * W, 0),
-      hullProj.project( 1.18 * r * L,  0.88 * r * W, 0),
-      hullProj.project(-1.18 * r * L,  0.88 * r * W, 0)
+      hullProj.project(-1.20 * r * L, -0.90 * r * W, 0),
+      hullProj.project( 1.20 * r * L, -0.90 * r * W, 0),
+      hullProj.project( 1.20 * r * L,  0.90 * r * W, 0),
+      hullProj.project(-1.20 * r * L,  0.90 * r * W, 0)
     ].map((pt) => ({ x: pt.x + 3.2, y: pt.y + 4.2 }));
-    drawPolyPts(ctx, shadowPts, 'rgba(60, 44, 34, 0.36)', null, 0);
+    drawPolyPts(ctx, shadowPts, 'rgba(60, 48, 36, 0.36)', null, 0);
 
     const hullFaces = [];
-    pushTrackedSuspension3D(hullFaces, hullProj, r, -1.10 * r * L, 1.10 * r * L, 0.48 * r * W, 0.84 * r * W, 0.25 * r * H, isNuke ? 7 : 6, armorDark, seamCol, treadPhase, true, -2.0);
+    if (isNuke) {
+      // ======================================================================
+      // CHINA NUKE CANNON: Articulated Twin-Bogie Tracked Carrier
+      // (Separate Front 4-Wheel Track Bogie + Rear 4-Wheel Track Bogie!)
+      // (Matches assets/refs/china_nuke_cannon_diorama_ref.png!)
+      // ======================================================================
+      pushTrackedSuspension3D(hullFaces, hullProj, r, -1.14 * r * L, -0.18 * r * L, 0.48 * r * W, 0.86 * r * W, 0.25 * r * H, 4, armorDark, seamCol, treadPhase, true, -2.0);
+      pushTrackedSuspension3D(hullFaces, hullProj, r,  0.18 * r * L,  1.14 * r * L, 0.48 * r * W, 0.86 * r * W, 0.25 * r * H, 4, armorDark, seamCol, treadPhase, true, -2.0);
 
-    if (isNuke || p.DeployOutriggers) {
-      for (const sx of [-0.72 * r * L, 0.72 * r * L]) {
-        for (const sy of [-1, 1]) {
-          pushBox3D(hullFaces, hullProj, sx - 0.14 * r, sx + 0.14 * r, sy * 0.82 * r * W, sy * 1.12 * r * W, 0.04 * r * H, 0.16 * r * H, crimson, seamCol, 1.05, -1.2);
+      // Center Hydraulic Outrigger Bay & Deployed Stabilizer Spades
+      if (p.DeployOutriggers !== false) {
+        for (const side of [-1, 1]) {
+          pushBox3D(hullFaces, hullProj, -0.16 * r * L, 0.16 * r * L, side * 0.76 * r * W, side * 1.12 * r * W, 0.04 * r * H, 0.22 * r * H, '#eab308', seamCol, 1.05, -1.2);
         }
       }
-    }
+      // Heavy Rear Recoil Stabilizer Spade Dozer Blade
+      pushBox3D(hullFaces, hullProj, -1.26 * r * L, -1.08 * r * L, -0.68 * r * W, 0.68 * r * W, 0.04 * r * H, 0.28 * r * H, armorDark, seamCol, 1.1, -1.0);
 
-    pushBox3D(hullFaces, hullProj, -1.08 * r * L, 1.08 * r * L, -0.80 * r * W, 0.80 * r * W, 0.16 * r * H, 0.44 * r * H, armorBase, seamCol, 1.15, 0, 0.08 * r * L, 0.05 * r * W);
-    // Forward Armored Crew Cab
-    pushBox3D(hullFaces, hullProj, 0.36 * r * L, 1.02 * r * L, -0.72 * r * W, 0.72 * r * W, 0.44 * r * H, 0.72 * r * H, armorHi, seamCol, 1.15, 0.35, 0.08 * r * L, 0.04 * r * W);
+      // Flatbed Carrier Deck + Boxy Forward Crew/Engine Cab with Front Radiator Louvers
+      pushBox3D(hullFaces, hullProj, -1.10 * r * L, 1.10 * r * L, -0.80 * r * W, 0.80 * r * W, 0.18 * r * H, 0.42 * r * H, armorBase, seamCol, 1.18, 0, 0.06 * r * L, 0.04 * r * W);
+      pushBox3D(hullFaces, hullProj,  0.34 * r * L, 1.12 * r * L, -0.76 * r * W, 0.76 * r * W, 0.42 * r * H, 0.74 * r * H, armorHi, seamCol, 1.18, 0.35, 0.08 * r * L, 0.04 * r * W);
+      // Front vertical radiator grille block on Nuke Cannon cab nose
+      pushBox3D(hullFaces, hullProj,  1.04 * r * L, 1.14 * r * L, -0.52 * r * W, 0.52 * r * W, 0.44 * r * H, 0.68 * r * H, '#27272a', seamCol, 1.05, 0.45);
+    } else {
+      // ======================================================================
+      // CHINA INFERNO CANNON: Compact Olive Tracked Artillery Hull with
+      // Sloped Glacis, Circular Front Hatch, Louvers & Rear Recoil Spade!
+      // (Matches assets/refs/china_inferno_cannon_diorama_ref.png!)
+      // ======================================================================
+      pushTrackedSuspension3D(hullFaces, hullProj, r, -1.04 * r * L, 1.04 * r * L, 0.46 * r * W, 0.84 * r * W, 0.25 * r * H, 5, armorDark, seamCol, treadPhase, true, -2.0);
+      // Rear upturned recoil spade
+      pushBox3D(hullFaces, hullProj, -1.18 * r * L, -0.98 * r * L, -0.64 * r * W, 0.64 * r * W, 0.08 * r * H, 0.34 * r * H, armorDark, seamCol, 1.1, -1.0);
+      // Main Tracked Hull
+      pushBox3D(hullFaces, hullProj, -1.04 * r * L, 1.04 * r * L, -0.78 * r * W, 0.78 * r * W, 0.16 * r * H, 0.48 * r * H, armorBase, seamCol, 1.18, 0, 0.14 * r * L, 0.06 * r * W);
+      // Front Glacis Circular Crew Hatch & Louver Grille
+      hullFaces.push({
+        depth: hullProj.project(0.72 * r * L, 0, 0.48 * r * H).depth + 0.40,
+        customDraw(c) {
+          const hPt = hullProj.project(0.68 * r * L, 0.24 * r * W, 0.48 * r * H);
+          c.fillStyle = armorHi;
+          c.strokeStyle = seamCol;
+          c.lineWidth = 1.1;
+          c.beginPath();
+          c.arc(hPt.x, hPt.y, Math.max(2.5, 0.16 * r), 0, Math.PI * 2);
+          c.fill();
+          c.stroke();
+
+          const grille = [
+            hullProj.project(0.54 * r * L, -0.52 * r * W, 0.48 * r * H),
+            hullProj.project(0.54 * r * L, -0.06 * r * W, 0.48 * r * H),
+            hullProj.project(0.84 * r * L, -0.06 * r * W, 0.44 * r * H),
+            hullProj.project(0.84 * r * L, -0.52 * r * W, 0.44 * r * H)
+          ];
+          drawPolyPts(c, grille, armorDark, seamCol, 0.95);
+        }
+      });
+    }
     flushFaces(ctx, hullFaces);
 
-    const turProj = createProjector(turretAngle, pitchScale, zScale, -0.22 * r * L, 0, 0, hullAngle);
+    const turProj = createProjector(turretAngle, pitchScale, zScale, (isNuke ? -0.28 : -0.16) * r * L, 0, 0, hullAngle);
     const turFaces = [];
-    const zBase = 0.44 * r * H;
+    const zBase = (isNuke ? 0.42 : 0.48) * r * H;
     const recDist = clamp(recoil * 0.05 * r, 0, 0.28 * r);
-    const elev = p.gunElevation || (isNuke ? 0.52 : 0.44);
+    const elev = p.gunElevation || (isNuke ? 0.48 : 0.44);
 
-    pushBox3D(turFaces, turProj, -0.46 * r, 0.38 * r, -0.48 * r * W, 0.48 * r * W, zBase, zBase + 0.42 * r * H, armorHi, seamCol, 1.15, 1.0, 0.06 * r, 0.06 * r);
-    // Heavy Breech Sleeve + Long Siege Barrel
-    pushTubeSegment3D(turFaces, turProj, -0.18 * r - recDist, 0, zBase + 0.28 * r * H, elev, 0, (isNuke ? 0.68 : 0.52) * r * BL, isNuke ? 0.20 * r : 0.15 * r, isNuke ? 0.18 * r : 0.14 * r, crimson, seamCol, 1.15, 1.35);
-    pushTubeSegment3D(turFaces, turProj,  0.12 * r - recDist, 0, zBase + 0.36 * r * H, elev, 0, (isNuke ? 1.65 : 1.28) * r * BL, isNuke ? 0.13 * r : 0.095 * r, isNuke ? 0.12 * r : 0.085 * r, armorBase, seamCol, 1.2, 1.55);
     if (isNuke) {
-      pushTubeSegment3D(turFaces, turProj, 0.68 * r - recDist, 0, zBase + 0.66 * r * H, elev, 0, 0.32 * r * BL, 0.16 * r, 0.16 * r, '#84cc16', seamCol, 1.1, 1.7);
+      // ======================================================================
+      // CHINA NUKE CANNON ORDNANCE: Angled Trunnion A-Frame Cheek Supports,
+      // Massive Bulbous Conical Olive Breech Housing with Yellow Warning Band,
+      // Radiation Trefoil Badge (☢), Dorsal Fin & Long Heavy Nuclear Barrel!
+      // (Matches assets/refs/china_nuke_cannon_diorama_ref.png!)
+      // ======================================================================
+      // Twin A-frame trunnion cheek supports
+      for (const side of [-1, 1]) {
+        pushBox3D(turFaces, turProj, -0.38 * r, 0.24 * r, side * 0.34 * r * W, side * 0.52 * r * W, zBase, zBase + 0.56 * r * H, armorDark, seamCol, 1.15, 0.95, 0.10 * r, 0.02 * r);
+      }
+      // Massive Bulbous Conical Olive-Green Breech Shroud Housing
+      const zPivot = zBase + 0.48 * r * H;
+      pushTubeSegment3D(turFaces, turProj, -0.54 * r - recDist * 0.6, 0, zPivot - 0.18 * r, elev, 0, 0.92 * r * BL, 0.36 * r, 0.24 * r, armorBase, seamCol, 1.22, 1.25);
+      // Yellow Circumferential Warning Band at front of conical breech shroud
+      pushTubeSegment3D(turFaces, turProj, (-0.54 + 0.78 * BL * Math.cos(elev)) * r - recDist * 0.6, 0, zPivot - 0.18 * r + 0.78 * BL * Math.sin(elev) * r, elev, 0, 0.16 * r * BL, 0.25 * r, 0.23 * r, '#eab308', seamCol, 1.15, 1.32);
+      // Dorsal Recoil Recuperator Fin on top of conical breech housing
+      pushTubeSegment3D(turFaces, turProj, -0.32 * r - recDist * 0.6, 0, zPivot + 0.14 * r, elev, 0, 0.68 * r * BL, 0.12 * r, 0.09 * r, armorHi, seamCol, 1.1, 1.38);
+
+      // Circular Yellow Radiation Trefoil Emblem (☢) on side of conical breech housing!
+      turFaces.push({
+        depth: turProj.project(-0.10 * r, 0.36 * r, zPivot).depth + 1.45,
+        customDraw(c) {
+          for (const side of [-1, 1]) {
+            const radPt = turProj.project(-0.12 * r - recDist * 0.6, side * 0.32 * r, zPivot + 0.02 * r);
+            const badgeR = Math.max(3.2, 0.16 * r);
+            c.fillStyle = '#facc15';
+            c.strokeStyle = seamCol;
+            c.lineWidth = 1.1;
+            c.beginPath();
+            c.arc(radPt.x, radPt.y, badgeR, 0, Math.PI * 2);
+            c.fill();
+            c.stroke();
+            // 3 black radiation trefoil sectors
+            c.fillStyle = '#1c1917';
+            for (let s = 0; s < 3; s++) {
+              const a0 = s * (Math.PI * 2 / 3) - Math.PI * 0.5;
+              c.beginPath();
+              c.moveTo(radPt.x, radPt.y);
+              c.arc(radPt.x, radPt.y, badgeR * 0.78, a0 - 0.35, a0 + 0.35);
+              c.closePath();
+              c.fill();
+            }
+          }
+        }
+      });
+
+      // Long Heavy Nuclear Siege Barrel + Mid-Collar + Perforated Muzzle Brake
+      const bStartX = (-0.54 + 0.88 * BL * Math.cos(elev)) * r - recDist;
+      const bStartZ = zPivot - 0.18 * r + 0.88 * BL * Math.sin(elev) * r;
+      pushTubeSegment3D(turFaces, turProj, bStartX, 0, bStartZ, elev, 0, 1.56 * r * BL, 0.135 * r, 0.115 * r, '#64748b', seamCol, 1.2, 1.55);
+      // Mid-barrel reinforcement sleeve
+      pushTubeSegment3D(turFaces, turProj, bStartX + 0.52 * BL * Math.cos(elev) * r, 0, bStartZ + 0.52 * BL * Math.sin(elev) * r, elev, 0, 0.26 * r * BL, 0.165 * r, 0.160 * r, armorDark, seamCol, 1.12, 1.62);
+      // Heavy Perforated Muzzle Brake at tip
+      pushTubeSegment3D(turFaces, turProj, bStartX + 1.40 * BL * Math.cos(elev) * r, 0, bStartZ + 1.40 * BL * Math.sin(elev) * r, elev, 0, 0.24 * r * BL, 0.175 * r, 0.175 * r, '#334155', seamCol, 1.18, 1.70);
+    } else {
+      // ======================================================================
+      // CHINA INFERNO CANNON ORDNANCE: Tall Open-Top Twin-Cheek Armored Trunnion
+      // Pedestal, Circular Pivot Bearings, Dorsal Recuperator & Stepped Howitzer!
+      // (Matches assets/refs/china_inferno_cannon_diorama_ref.png!)
+      // ======================================================================
+      // Tall open-top twin-cheek gun mount walls
+      for (const side of [-1, 1]) {
+        pushBox3D(turFaces, turProj, -0.44 * r, 0.32 * r, side * 0.26 * r * W, side * 0.44 * r * W, zBase, zBase + 0.56 * r * H, armorHi, seamCol, 1.18, 1.0, 0.08 * r, 0.02 * r);
+      }
+      // Rear Breech Block between cheek walls
+      const zPivot = zBase + 0.42 * r * H;
+      pushBox3D(turFaces, turProj, -0.58 * r - recDist, 0.16 * r - recDist, -0.26 * r * W, 0.26 * r * W, zBase + 0.16 * r * H, zBase + 0.54 * r * H, armorDark, seamCol, 1.15, 1.15);
+
+      // Circular Trunnion Pivot Bearings on outer cheek walls
+      turFaces.push({
+        depth: turProj.project(-0.04 * r, 0.44 * r * W, zPivot).depth + 1.22,
+        customDraw(c) {
+          for (const side of [-1, 1]) {
+            const pPt = turProj.project(-0.04 * r, side * 0.45 * r * W, zPivot);
+            c.fillStyle = armorDark;
+            c.strokeStyle = seamCol;
+            c.lineWidth = 1.15;
+            c.beginPath();
+            c.arc(pPt.x, pPt.y, Math.max(2.6, 0.14 * r), 0, Math.PI * 2);
+            c.fill();
+            c.stroke();
+          }
+        }
+      });
+
+      // Dorsal Hydropneumatic Recuperator Cylinder above breech + Stepped Recoil Sleeve + Main Barrel + Muzzle Collar
+      pushTubeSegment3D(turFaces, turProj, -0.22 * r - recDist, 0, zPivot + 0.16 * r, elev, 0, 0.56 * r * BL, 0.11 * r, 0.095 * r, armorDark, seamCol, 1.1, 1.38);
+      pushTubeSegment3D(turFaces, turProj, -0.18 * r - recDist, 0, zPivot, elev, 0, 0.54 * r * BL, 0.185 * r, 0.155 * r, armorHi, seamCol, 1.18, 1.35);
+      pushTubeSegment3D(turFaces, turProj,  0.14 * r - recDist, 0, zPivot + 0.14 * r, elev, 0, 1.24 * r * BL, 0.115 * r, 0.105 * r, armorBase, seamCol, 1.2, 1.55);
+      // Thick Muzzle Collar Ring
+      pushTubeSegment3D(
+        turFaces,
+        turProj,
+        (0.14 + 1.08 * BL * Math.cos(elev)) * r - recDist,
+        0,
+        zPivot + (0.14 + 1.08 * BL * Math.sin(elev)) * r,
+        elev,
+        0,
+        0.20 * r * BL,
+        0.145 * r,
+        0.145 * r,
+        armorDark,
+        seamCol,
+        1.15,
+        1.65
+      );
     }
     flushFaces(ctx, turFaces);
   }
@@ -6519,10 +7126,11 @@ const ZH_UNIT_MODELS = (function () {
     const p = Object.assign({
       hullScale: 1.0, hullLength: 1.0, hullWidth: 1.0, extrusionDepth: 1.0,
       cargoScale: 1.0, antennaScale: 1.0,
-      armorBaseColor: '#9c6e4e', armorHighlightColor: '#b88662', armorShadowColor: '#6e4a32', houseColor: '#dc2626'
+      armorBaseColor: '#6e7b4f', armorHighlightColor: '#879663', armorShadowColor: '#4a5434', houseColor: '#dc2626'
     }, customParams || {});
     const opts = options || {};
     const defId = String((u && u.defId) || 'CHINA_TROOP_CRAWLER');
+    const isSupplyTruck = defId === 'CHINA_SUPPLY_TRUCK';
     const rawR = (u && u.radius) || 17;
     const r = rawR * (p.hullScale || 1.0);
     const L = p.hullLength || 1.0, W = p.hullWidth || 1.0, H = p.extrusionDepth || 1.0;
@@ -6533,31 +7141,116 @@ const ZH_UNIT_MODELS = (function () {
     const pitchScale = opts.pitchScale !== undefined ? opts.pitchScale : 1.0;
     const zScale = opts.zScale !== undefined ? opts.zScale : 0.42;
 
-    const armorBase = p.armorBaseColor || '#9c6e4e';
-    const armorHi   = p.armorHighlightColor || '#b88662';
+    const armorBase = p.armorBaseColor || '#6e7b4f';
+    const armorHi   = p.armorHighlightColor || '#879663';
+    const armorDark = p.armorShadowColor || '#4a5434';
     const crimson   = p.houseColor || '#dc2626';
-    const seamCol   = '#241a14';
+    const seamCol   = '#241f1a';
 
     const hullProj = createProjector(hullAngle, pitchScale, zScale, 0, 0, 0, 0);
     const shadowPts = [
-      hullProj.project(-1.14 * r * L, -0.82 * r * W, 0),
-      hullProj.project( 1.14 * r * L, -0.82 * r * W, 0),
-      hullProj.project( 1.14 * r * L,  0.82 * r * W, 0),
-      hullProj.project(-1.14 * r * L,  0.82 * r * W, 0)
+      hullProj.project(-1.16 * r * L, -0.84 * r * W, 0),
+      hullProj.project( 1.16 * r * L, -0.84 * r * W, 0),
+      hullProj.project( 1.16 * r * L,  0.84 * r * W, 0),
+      hullProj.project(-1.16 * r * L,  0.84 * r * W, 0)
     ].map((pt) => ({ x: pt.x + 3.0, y: pt.y + 4.0 }));
-    drawPolyPts(ctx, shadowPts, 'rgba(60, 44, 34, 0.35)', null, 0);
+    drawPolyPts(ctx, shadowPts, 'rgba(60, 48, 36, 0.35)', null, 0);
 
     const faces = [];
-    const axles = defId.includes('CRAWLER') ? [-0.78, -0.26, 0.26, 0.78] : [-0.66, 0.68];
+    // CHINA_SUPPLY_TRUCK has 3 axles (6x6: 1 front steering axle, 2 rear tandem axles) matching china_supply_truck_diorama_ref.png!
+    const axles = defId.includes('CRAWLER')
+      ? [-0.78, -0.26, 0.26, 0.78]
+      : isSupplyTruck
+        ? [-0.78, -0.34, 0.68]
+        : [-0.66, 0.68];
     for (const ax of axles) {
-      pushWheelAxle3D(faces, hullProj, ax * r * L, 0.64 * r * W, 0.30 * r, 0.22 * r * W, '#262320', '#7c543a', seamCol, treadPhase, -1.5);
+      pushWheelAxle3D(faces, hullProj, ax * r * L, 0.64 * r * W, 0.30 * r, 0.22 * r * W, '#262320', armorDark, seamCol, treadPhase, -1.5);
     }
 
-    if (defId === 'CHINA_SUPPLY_TRUCK') {
-      // Forward Red/Tan Cab + Covered Olive Canvas Cargo Bed
-      pushBox3D(faces, hullProj, -1.04 * r * L, 1.04 * r * L, -0.68 * r * W, 0.68 * r * W, 0.16 * r * H, 0.42 * r * H, armorBase, seamCol, 1.15, 0);
-      pushBox3D(faces, hullProj, 0.28 * r * L, 1.02 * r * L, -0.64 * r * W, 0.64 * r * W, 0.42 * r * H, 0.92 * r * H, crimson, seamCol, 1.15, 0.35, 0.08 * r * L, 0.04 * r * W);
-      pushBox3D(faces, hullProj, -1.04 * r * L, 0.22 * r * L, -0.72 * r * W, 0.72 * r * W, 0.42 * r * H, 1.06 * r * H * (p.cargoScale || 1.0), '#8c7a5b', seamCol, 1.15, 0.55, 0.04 * r * L, 0.04 * r * W);
+    if (isSupplyTruck) {
+      // ======================================================================
+      // CHINA SUPPLY TRUCK: 6x6 Olive-Green Military Cargo Truck with Short
+      // Nose Hood, Radiator Grille & Headlights, Split 2-Pane Blue Windshield,
+      // Side Fuel Tank, Olive Drop-Side Bed & Arched Khaki-Tan Canvas Tarp!
+      // (Matches assets/refs/china_supply_truck_diorama_ref.png!)
+      // ======================================================================
+      const CS = p.cargoScale || 1.0;
+      // Chassis frame & front bumper
+      pushBox3D(faces, hullProj, -1.08 * r * L, 1.08 * r * L, -0.66 * r * W, 0.66 * r * W, 0.18 * r * H, 0.38 * r * H, armorDark, seamCol, 1.12, 0);
+      // Side cylindrical diesel fuel tank between front & rear tandem wheels
+      for (const side of [-1, 1]) {
+        pushBox3D(faces, hullProj, 0.02 * r * L, 0.34 * r * L, side * 0.52 * r * W, side * 0.72 * r * W, 0.20 * r * H, 0.38 * r * H, '#475569', seamCol, 1.0, 0.12);
+      }
+      // Forward Engine Nose Hood (x: 0.66..1.08)
+      pushBox3D(faces, hullProj, 0.64 * r * L, 1.08 * r * L, -0.60 * r * W, 0.60 * r * W, 0.38 * r * H, 0.68 * r * H, armorHi, seamCol, 1.15, 0.30, 0.06 * r * L, 0.04 * r * W);
+      // Olive Driver Cab (x: 0.22..0.66)
+      pushBox3D(faces, hullProj, 0.20 * r * L, 0.66 * r * L, -0.64 * r * W, 0.64 * r * W, 0.38 * r * H, 0.96 * r * H, armorBase, seamCol, 1.18, 0.42, 0.06 * r * L, 0.04 * r * W);
+
+      // Front Radiator Grille, Twin Headlights, Split 2-Pane Blue Windshield & Side Windows
+      faces.push({
+        depth: hullProj.project(0.82 * r * L, 0, 0.72 * r * H).depth + 0.65,
+        customDraw(c) {
+          // Dark front radiator grille
+          const grille = [
+            hullProj.project(1.09 * r * L, -0.34 * r * W, 0.40 * r * H),
+            hullProj.project(1.09 * r * L,  0.34 * r * W, 0.40 * r * H),
+            hullProj.project(1.09 * r * L,  0.34 * r * W, 0.64 * r * H),
+            hullProj.project(1.09 * r * L, -0.34 * r * W, 0.64 * r * H)
+          ];
+          drawPolyPts(c, grille, '#1e293b', seamCol, 1.0);
+          // Twin circular yellow headlights
+          for (const side of [-1, 1]) {
+            const hlPt = hullProj.project(1.09 * r * L, side * 0.46 * r * W, 0.50 * r * H);
+            c.fillStyle = '#fef08a';
+            c.strokeStyle = seamCol;
+            c.lineWidth = 0.95;
+            c.beginPath();
+            c.arc(hlPt.x, hlPt.y, Math.max(1.6, 0.075 * r), 0, Math.PI * 2);
+            c.fill();
+            c.stroke();
+          }
+          // Split 2-Pane Blue Front Windshield
+          for (const side of [-1, 1]) {
+            const y0 = side > 0 ? 0.04 * r * W : -0.56 * r * W;
+            const y1 = side > 0 ? 0.56 * r * W : -0.04 * r * W;
+            const wPane = [
+              [0.66 * r * L, y0, 0.68 * r * H],
+              [0.66 * r * L, y1, 0.68 * r * H],
+              [0.61 * r * L, y1 * 0.94, 0.91 * r * H],
+              [0.61 * r * L, y0 * 0.94, 0.91 * r * H]
+            ];
+            drawGlassPane3D(c, hullProj, wPane, '#7dd3fc', seamCol, 1.0);
+          }
+          // Side cab door windows
+          for (const side of [-1, 1]) {
+            const sy = side * 0.645 * r * W;
+            const sWin = [
+              [0.28 * r * L, sy, 0.66 * r * H],
+              [0.58 * r * L, sy, 0.66 * r * H],
+              [0.55 * r * L, sy * 0.95, 0.90 * r * H],
+              [0.28 * r * L, sy * 0.95, 0.90 * r * H]
+            ];
+            drawGlassPane3D(c, hullProj, sWin, '#7dd3fc', seamCol, 0.95);
+          }
+        }
+      });
+
+      // Olive Drop-Side Cargo Bed Walls (x: -1.08..0.18, z: 0.38..0.64)
+      pushBox3D(faces, hullProj, -1.08 * r * L, 0.18 * r * L, -0.72 * r * W, 0.72 * r * W, 0.38 * r * H, 0.64 * r * H, armorBase, seamCol, 1.15, 0.50);
+      // Tall Arched Khaki-Tan Canvas Tarpaulin Cover with Rib Seams (matching china_supply_truck_diorama_ref.png!)
+      const zTarpTop = 1.18 * r * H * CS;
+      pushBox3D(faces, hullProj, -1.06 * r * L, 0.16 * r * L, -0.70 * r * W, 0.70 * r * W, 0.64 * r * H, zTarpTop, '#a69776', seamCol, 1.18, 0.62, 0.04 * r * L, 0.14 * r * W);
+      faces.push({
+        depth: hullProj.project(-0.45 * r * L, 0, zTarpTop).depth + 0.78,
+        customDraw(c) {
+          // 4 Canvas Hoop Rib Seams across the khaki tarpaulin cover
+          for (const rx of [-0.82, -0.52, -0.22, 0.04]) {
+            drawLine3D(c, hullProj, rx * r * L, -0.70 * r * W, 0.64 * r * H, rx * r * L, -0.56 * r * W, zTarpTop, seamCol, 1.0);
+            drawLine3D(c, hullProj, rx * r * L, -0.56 * r * W, zTarpTop, rx * r * L,  0.56 * r * W, zTarpTop, seamCol, 1.0);
+            drawLine3D(c, hullProj, rx * r * L,  0.56 * r * W, zTarpTop, rx * r * L,  0.70 * r * W, 0.64 * r * H, seamCol, 1.0);
+          }
+        }
+      });
     } else if (defId.includes('OUTPOST')) {
       // Stealth Reconnaissance Van + Rotating Roof Telemetry Dish
       pushBox3D(faces, hullProj, -1.04 * r * L, 1.04 * r * L, -0.70 * r * W, 0.70 * r * W, 0.18 * r * H, 0.88 * r * H, armorBase, seamCol, 1.15, 0, 0.10 * r * L, 0.06 * r * W);
@@ -6582,7 +7275,7 @@ const ZH_UNIT_MODELS = (function () {
     const p = Object.assign({
       hullScale: 1.0, hullLength: 1.0, hullWidth: 1.0, extrusionDepth: 1.0,
       rotorScale: 1.0, podScale: 1.0, ShowChinGun: true,
-      armorBaseColor: '#9c6e4e', armorHighlightColor: '#b88662', armorShadowColor: '#6e4a32', houseColor: '#dc2626'
+      armorBaseColor: '#6e7b4f', armorHighlightColor: '#879663', armorShadowColor: '#4a5434', houseColor: '#dc2626'
     }, customParams || {});
     const opts = options || {};
     const rawR = (u && u.radius) || 22;
@@ -6596,11 +7289,11 @@ const ZH_UNIT_MODELS = (function () {
     const pitchScale = opts.pitchScale !== undefined ? opts.pitchScale : 1.0;
     const zScale = opts.zScale !== undefined ? opts.zScale : 0.42;
 
-    const armorBase = p.armorBaseColor || '#9c6e4e';
-    const armorHi   = p.armorHighlightColor || '#b88662';
-    const armorDark = p.armorShadowColor || '#6e4a32';
+    const armorBase = p.armorBaseColor || '#6e7b4f';
+    const armorHi   = p.armorHighlightColor || '#879663';
+    const armorDark = p.armorShadowColor || '#4a5434';
     const crimson   = p.houseColor || '#dc2626';
-    const seamCol   = '#241a14';
+    const seamCol   = '#241f1a';
 
     const proj = createProjector(hullAngle, pitchScale, zScale, 0, 0, 0, 0);
     const shadowPts = [
@@ -6616,10 +7309,15 @@ const ZH_UNIT_MODELS = (function () {
 
     // 1. Underbelly Modular Bunker / Gattling / Napalm Pod
     pushBox3D(faces, proj, -0.46 * r * L * PS, 0.52 * r * L * PS, -0.56 * r * W * PS, 0.56 * r * W * PS, zAir - 0.24 * r * H, zAir + 0.04 * r * H, armorDark, seamCol, 1.15, -0.3, 0.06 * r, 0.06 * r);
-    // 2. Main Heavy Gunship Fuselage & Stub Wings
-    pushBox3D(faces, proj, -0.82 * r * L, 0.96 * r * L, -0.64 * r * W, 0.64 * r * W, zAir + 0.02 * r * H, zAir + 0.56 * r * H, armorBase, seamCol, 1.2, 0.2, 0.18 * r * L, 0.08 * r * W);
-    pushBox3D(faces, proj, -0.24 * r * L, 0.32 * r * L, -1.24 * r * W, 1.24 * r * W, zAir + 0.18 * r * H, zAir + 0.32 * r * H, crimson, seamCol, 1.1, 0.35);
-    // Tail Boom & Twin Fins
+    // 2. Main Heavy Gunship Fuselage, Stepped Blue Glass Cockpit & Stub Wings
+    pushBox3D(faces, proj, -0.82 * r * L, 0.98 * r * L, -0.64 * r * W, 0.64 * r * W, zAir + 0.02 * r * H, zAir + 0.56 * r * H, armorBase, seamCol, 1.2, 0.2, 0.18 * r * L, 0.08 * r * W);
+    pushBox3D(faces, proj,  0.42 * r * L, 0.94 * r * L, -0.44 * r * W, 0.44 * r * W, zAir + 0.26 * r * H, zAir + 0.54 * r * H, '#38bdf8', seamCol, 1.1, 0.48, 0.12 * r * L, 0.06 * r * W);
+    pushBox3D(faces, proj, -0.24 * r * L, 0.32 * r * L, -1.24 * r * W, 1.24 * r * W, zAir + 0.18 * r * H, zAir + 0.32 * r * H, armorHi, seamCol, 1.1, 0.35);
+    // Twin Turbine Engine Nacelles on Roof
+    for (const side of [-1, 1]) {
+      pushBox3D(faces, proj, -0.44 * r * L, 0.34 * r * L, side * 0.20 * r * W, side * 0.48 * r * W, zAir + 0.54 * r * H, zAir + 0.72 * r * H, armorDark, seamCol, 1.05, 0.52);
+    }
+    // Tail Boom & Twin Fins with Crimson PLA Trim
     pushBox3D(faces, proj, -1.48 * r * L, -0.78 * r * L, -0.24 * r * W, 0.24 * r * W, zAir + 0.20 * r * H, zAir + 0.46 * r * H, armorHi, seamCol, 1.15, 0.4);
     for (const side of [-1, 1]) {
       pushBox3D(faces, proj, -1.48 * r * L, -1.16 * r * L, side * 0.24 * r * W, side * 0.34 * r * W, zAir + 0.26 * r * H, zAir + 0.72 * r * H, crimson, seamCol, 1.05, 0.65);
@@ -6629,10 +7327,10 @@ const ZH_UNIT_MODELS = (function () {
     }
 
     // 3. Coaxial Counter-Rotating Mast & Dual 4-Blade Rotors
-    pushCylinderZ3D(faces, proj, 0.08 * r * L, 0, zAir + 0.56 * r * H, zAir + 0.98 * r * H, 0.16 * r, 0.12 * r, 8, '#334155', seamCol, 1.1, 1.1);
+    pushCylinderZ3D(faces, proj, 0.08 * r * L, 0, zAir + 0.56 * r * H, zAir + 1.02 * r * H, 0.16 * r, 0.12 * r, 8, '#334155', seamCol, 1.1, 1.1);
     flushFaces(ctx, faces);
 
-    for (const [zOff, dir] of [[0.78, 1], [0.96, -1]]) {
+    for (const [zOff, dir] of [[0.80, 1], [0.98, -1]]) {
       const rProj = createProjector(hullAngle + dir * phase * Math.PI * 4, pitchScale, zScale, 0.08 * r * L, 0, 0, hullAngle);
       const rFaces = [];
       pushBox3D(rFaces, rProj, -1.42 * r * RS, 1.42 * r * RS, -0.09 * r, 0.09 * r, zAir + zOff * r * H, zAir + (zOff + 0.04) * r * H, '#1e293b', seamCol, 1.0, 1.5);
@@ -6645,7 +7343,7 @@ const ZH_UNIT_MODELS = (function () {
     const p = Object.assign({
       hullScale: 1.0, hullLength: 1.0, hullWidth: 1.0, extrusionDepth: 1.0,
       wingSpan: 1.0, canardScale: 1.0, ShowNapalmPods: true,
-      armorBaseColor: '#a67b5b', armorHighlightColor: '#c29674', armorShadowColor: '#6e4e36', houseColor: '#dc2626'
+      armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626'
     }, customParams || {});
     const opts = options || {};
     const defId = String((u && u.defId) || 'CHINA_MIG');
@@ -6660,49 +7358,142 @@ const ZH_UNIT_MODELS = (function () {
     const pitchScale = opts.pitchScale !== undefined ? opts.pitchScale : 1.0;
     const zScale = opts.zScale !== undefined ? opts.zScale : 0.42;
 
-    const armorBase = isNuke ? '#848c6a' : (p.armorBaseColor || '#a67b5b');
-    const armorHi   = isNuke ? '#a2ab84' : (p.armorHighlightColor || '#c29674');
+    const armorBase = isNuke ? '#6e7b4f' : (p.armorBaseColor || '#94a3b8');
+    const armorHi   = isNuke ? '#879663' : (p.armorHighlightColor || '#cbd5e1');
+    const armorDark = isNuke ? '#4a5434' : (p.armorShadowColor || '#475569');
     const crimson   = isNuke ? '#84cc16' : (p.houseColor || '#dc2626');
-    const seamCol   = '#241a14';
+    const seamCol   = '#1e293b';
 
     const proj = createProjector(hullAngle, pitchScale, zScale, 0, 0, 0, 0);
     const shadowPts = [
-      proj.project(-1.05 * r * L, -1.25 * r * W, 0),
-      proj.project( 1.35 * r * L, 0, 0),
-      proj.project(-1.05 * r * L,  1.25 * r * W, 0)
+      proj.project(-1.08 * r * L, -1.28 * r * W, 0),
+      proj.project( 1.42 * r * L, 0, 0),
+      proj.project(-1.08 * r * L,  1.28 * r * W, 0)
     ].map((pt) => ({ x: pt.x + 5.0, y: pt.y + 7.0 }));
-    drawPolyPts(ctx, shadowPts, 'rgba(45, 34, 26, 0.30)', null, 0);
+    drawPolyPts(ctx, shadowPts, 'rgba(35, 42, 52, 0.30)', null, 0);
 
     const faces = [];
     const zAir = 0.32 * r * H + hoverZ;
 
-    // 1. Swept Delta Wings + Forward Canards + Underwing Napalm/Nuke Missiles
-    const wingBot = [
-      [-0.92 * r * L, -1.28 * r * W, zAir],
-      [ 0.24 * r * L, -0.32 * r * W, zAir],
-      [ 1.38 * r * L,  0,            zAir],
-      [ 0.24 * r * L,  0.32 * r * W, zAir],
-      [-0.92 * r * L,  1.28 * r * W, zAir]
-    ];
-    const wingTop = wingBot.map((pt) => [pt[0], pt[1], zAir + 0.10 * r * H]);
-    pushFrustumFaces(faces, proj, wingBot, wingTop, armorBase, seamCol, 1.18, 0.2);
-
-    const CS = p.canardScale || 1.0;
-    pushBox3D(faces, proj, 0.36 * r * L, 0.72 * r * L, -0.68 * r * W * CS, 0.68 * r * W * CS, zAir + 0.04 * r * H, zAir + 0.12 * r * H, crimson, seamCol, 1.05, 0.35);
+    // 0. Tricycle Landing Gear & 4 Underwing White/Grey Missiles (matching china_mig_diorama_ref.png!)
+    for (const [gx, gy] of [[0.68 * r * L, 0], [-0.42 * r * L, -0.38 * r * W], [-0.42 * r * L, 0.38 * r * W]]) {
+      faces.push({
+        depth: proj.project(gx, gy, zAir - 0.14 * r * H).depth - 0.25,
+        customDraw(c) {
+          drawLine3D(c, proj, gx, gy, zAir, gx, gy, zAir - 0.18 * r * H, '#64748b', 1.6);
+          const wPt = proj.project(gx, gy, zAir - 0.20 * r * H);
+          c.fillStyle = '#0f172a';
+          c.strokeStyle = seamCol;
+          c.lineWidth = 1.0;
+          c.beginPath();
+          c.arc(wPt.x, wPt.y, Math.max(2.0, 0.095 * r), 0, Math.PI * 2);
+          c.fill();
+          c.stroke();
+        }
+      });
+    }
 
     if (p.ShowNapalmPods !== false) {
       for (const side of [-1, 1]) {
-        pushTubeSegment3D(faces, proj, -0.58 * r * L, side * 0.68 * r * W, zAir - 0.06 * r * H, 0, 0, 0.72 * r * L, 0.085 * r, 0.055 * r, crimson, seamCol, 1.0, 0.1);
+        for (const myOff of [0.54, 0.86]) {
+          const my = side * myOff * r * W;
+          pushTubeSegment3D(faces, proj, -0.62 * r * L, my, zAir - 0.06 * r * H, 0, 0, 0.74 * r * L, 0.068 * r, 0.060 * r, '#f8fafc', seamCol, 1.0, 0.08);
+          pushTubeSegment3D(faces, proj,  0.08 * r * L, my, zAir - 0.06 * r * H, 0, 0, 0.16 * r * L, 0.060 * r, 0.020 * r, crimson, seamCol, 0.95, 0.10);
+        }
       }
     }
 
-    // 2. Central Supersonic Spine, Canopy & Twin Canted Tails
-    pushBox3D(faces, proj, -1.04 * r * L, 0.92 * r * L, -0.26 * r * W, 0.26 * r * W, zAir + 0.10 * r * H, zAir + 0.38 * r * H, armorHi, seamCol, 1.15, 0.55, 0.24 * r * L, 0.06 * r * W);
-    pushBox3D(faces, proj,  0.14 * r * L, 0.76 * r * L, -0.16 * r * W, 0.16 * r * W, zAir + 0.36 * r * H, zAir + 0.50 * r * H, '#38bdf8', seamCol, 1.1, 0.75, 0.12 * r * L, 0.04 * r * W);
+    // 1. Wide Cropped Delta Wings + Forward Swept Canards
+    const wingBot = [
+      [-0.94 * r * L, -0.34 * r * W, zAir],
+      [-0.86 * r * L, -1.32 * r * W, zAir],
+      [-0.58 * r * L, -1.32 * r * W, zAir],
+      [ 0.26 * r * L, -0.34 * r * W, zAir],
+      [ 1.38 * r * L,  0,            zAir],
+      [ 0.26 * r * L,  0.34 * r * W, zAir],
+      [-0.58 * r * L,  1.32 * r * W, zAir],
+      [-0.86 * r * L,  1.32 * r * W, zAir],
+      [-0.94 * r * L,  0.34 * r * W, zAir]
+    ];
+    const wingTop = wingBot.map((pt) => [pt[0], pt[1], zAir + 0.10 * r * H]);
+    pushFrustumFaces(faces, proj, wingBot, wingTop, armorBase, seamCol, 1.18, 0.22);
 
+    // Forward Swept Canards (matching MiG-1.44 silhouette in china_mig_diorama_ref.png!)
+    const CS = p.canardScale || 1.0;
     for (const side of [-1, 1]) {
-      pushBox3D(faces, proj, -1.02 * r * L, -0.52 * r * L, side * 0.24 * r * W, side * 0.32 * r * W, zAir + 0.22 * r * H, zAir + 0.72 * r * H, crimson, seamCol, 1.1, 0.85);
-      pushTubeSegment3D(faces, proj, -1.18 * r * L, side * 0.13 * r * W, zAir + 0.16 * r * H, 0, 0, 0.24 * r * L, 0.10 * r, 0.12 * r, isNuke ? '#84cc16' : '#f97316', seamCol, 1.0, 0.45);
+      const canBot = [
+        [0.30 * r * L, side * 0.24 * r * W, zAir + 0.10 * r * H],
+        [0.24 * r * L, side * 0.66 * r * W * CS, zAir + 0.10 * r * H],
+        [0.44 * r * L, side * 0.56 * r * W * CS, zAir + 0.10 * r * H],
+        [0.68 * r * L, side * 0.22 * r * W, zAir + 0.10 * r * H]
+      ];
+      const canTop = canBot.map((pt) => [pt[0], pt[1], zAir + 0.15 * r * H]);
+      pushFrustumFaces(faces, proj, canBot, canTop, armorHi, seamCol, 1.1, 0.35);
+    }
+
+    // 2. Central Supersonic Fuselage Spine, Twin Dorsal Engine Nacelles & Dark Gunmetal Vectoring Nozzles
+    pushBox3D(faces, proj, -1.02 * r * L, 0.92 * r * L, -0.28 * r * W, 0.28 * r * W, zAir + 0.10 * r * H, zAir + 0.36 * r * H, armorHi, seamCol, 1.18, 0.52, 0.26 * r * L, 0.06 * r * W);
+    // Pointed Dark Charcoal Radome Nose Cone & Pitot Sting
+    pushTubeSegment3D(faces, proj, 0.86 * r * L, 0, zAir + 0.18 * r * H, -0.04, 0, 0.56 * r * L, 0.18 * r, 0.025 * r, '#334155', seamCol, 1.15, 0.62);
+
+    // Twin Engine Nacelles & Dark Gunmetal Afterburner Nozzles
+    for (const side of [-1, 1]) {
+      pushBox3D(faces, proj, -1.04 * r * L, -0.18 * r * L, side * 0.04 * r * W, side * 0.28 * r * W, zAir + 0.12 * r * H, zAir + 0.34 * r * H, armorBase, seamCol, 1.1, 0.56);
+      pushTubeSegment3D(faces, proj, -1.24 * r * L, side * 0.16 * r * W, zAir + 0.20 * r * H, 0, 0, 0.24 * r * L, 0.115 * r, 0.135 * r, '#1e293b', seamCol, 1.15, 0.48);
+    }
+
+    // 3. Blue Bubble Canopy, PLA Red Star Wing Roundels & Twin Outward-Canted Vertical Tail Fins
+    pushBox3D(faces, proj, 0.18 * r * L, 0.82 * r * L, -0.17 * r * W, 0.17 * r * W, zAir + 0.34 * r * H, zAir + 0.52 * r * H, '#38bdf8', seamCol, 1.12, 0.78, 0.16 * r * L, 0.05 * r * W);
+
+    faces.push({
+      depth: proj.project(-0.42 * r * L, 0, zAir + 0.15 * r * H).depth + 0.42,
+      customDraw(c) {
+        // Forward Pitot Sting at nose apex
+        drawLine3D(c, proj, 1.40 * r * L, 0, zAir + 0.16 * r * H, 1.62 * r * L, 0, zAir + 0.16 * r * H, seamCol, 1.3);
+        // PLA Red Star Roundels on upper delta wings (matching china_mig_diorama_ref.png!)
+        if (p.ShowFactionEmblem !== false) {
+          for (const side of [-1, 1]) {
+            const starPt = proj.project(-0.48 * r * L, side * 0.78 * r * W, zAir + 0.11 * r * H);
+            c.fillStyle = crimson;
+            c.strokeStyle = '#fef08a';
+            c.lineWidth = 0.8;
+            c.beginPath();
+            c.arc(starPt.x, starPt.y, Math.max(2.6, 0.14 * r), 0, Math.PI * 2);
+            c.fill();
+            c.stroke();
+          }
+        }
+      }
+    });
+
+    // Twin Outward-Canted Vertical Tail Fins with Dark Slate Fin-Caps & Red Star Markings
+    for (const side of [-1, 1]) {
+      const yBase = side * 0.26 * r * W;
+      const yTip  = side * 0.44 * r * W;
+      const finPts = [
+        proj.project(-1.02 * r * L, yBase, zAir + 0.24 * r * H),
+        proj.project(-0.44 * r * L, yBase, zAir + 0.28 * r * H),
+        proj.project(-0.66 * r * L, yTip,  zAir + 0.80 * r * H),
+        proj.project(-1.04 * r * L, yTip,  zAir + 0.78 * r * H)
+      ];
+      const capPts = [
+        proj.project(-1.03 * r * L, yTip * 0.92, zAir + 0.68 * r * H),
+        proj.project(-0.62 * r * L, yTip * 0.92, zAir + 0.70 * r * H),
+        proj.project(-0.66 * r * L, yTip,        zAir + 0.80 * r * H),
+        proj.project(-1.04 * r * L, yTip,        zAir + 0.78 * r * H)
+      ];
+      faces.push({
+        depth: proj.project(-0.78 * r * L, yTip, zAir + 0.56 * r * H).depth + 0.88,
+        customDraw(c) {
+          drawPolyPts(c, finPts, armorHi, seamCol, 1.15);
+          drawPolyPts(c, capPts, armorDark, seamCol, 1.0);
+          const fStar = proj.project(-0.80 * r * L, (yBase + yTip) * 0.5, zAir + 0.52 * r * H);
+          c.fillStyle = crimson;
+          c.beginPath();
+          c.arc(fStar.x, fStar.y, Math.max(1.8, 0.085 * r), 0, Math.PI * 2);
+          c.fill();
+        }
+      });
     }
 
     flushFaces(ctx, faces);
@@ -6890,9 +7681,1558 @@ const ZH_UNIT_MODELS = (function () {
     flushFaces(ctx, turFaces);
   }
 
+  // ==========================================================================
+  // 12B. Deep-Engineered 3D Ligne-Claire Building Schemas, Presets & Renderers
+  //      (31 Military Structures: 10 USA, 12 China, 9 GLA + 4 Tech Buildings)
+  // ==========================================================================
+  const BUILDING_DEFAULT_PARAMS = {
+    footprintScale: 1.0,
+    plinthHeight: 1.0,
+    structureHeight: 1.0,
+    extrusionDepth: 1.0,
+    turretScale: 1.0,
+    barrelLength: 1.0,
+    radarScale: 1.0,
+    superstructureScale: 1.0,
+    ShowUpgradeKit: true,
+    ShowHazardBeacons: true,
+    ShowGantryCrane: true,
+    ShowPerimeterWall: true,
+    ShowFactionEmblem: true,
+    armorBaseColor: '#cbd5e1',
+    armorHighlightColor: '#f1f5f9',
+    armorShadowColor: '#64748b',
+    houseColor: '#2563eb'
+  };
+
+  const USA_BUILDING_PARAM_SCHEMA = [
+    {
+      group: 'Plinth & Foundation',
+      fields: [
+        { key: 'footprintScale', label: 'Compound Footprint Scale', type: 'range', min: 0.80, max: 1.25, step: 0.02 },
+        { key: 'plinthHeight', label: 'Concrete Plinth Elevation', type: 'range', min: 0.65, max: 1.50, step: 0.05 },
+        { key: 'ShowPerimeterWall', label: 'Perimeter Blast Bollards', type: 'checkbox' }
+      ]
+    },
+    {
+      group: 'Superstructure & Halls',
+      fields: [
+        { key: 'structureHeight', label: 'Main Hall Elevation', type: 'range', min: 0.75, max: 1.40, step: 0.02 },
+        { key: 'superstructureScale', label: 'Command Bridge / Bay Mass', type: 'range', min: 0.80, max: 1.35, step: 0.02 },
+        { key: 'extrusionDepth', label: '3D Isometric Relief Depth', type: 'range', min: 0.70, max: 1.40, step: 0.05 }
+      ]
+    },
+    {
+      group: 'Turrets, Emitters & Gantries',
+      fields: [
+        { key: 'turretScale', label: 'Patriot / Emitter / Crane Scale', type: 'range', min: 0.75, max: 1.35, step: 0.02 },
+        { key: 'barrelLength', label: 'Launcher / Array Extension', type: 'range', min: 0.75, max: 1.45, step: 0.02 },
+        { key: 'ShowGantryCrane', label: 'Deploy Service Gantries', type: 'checkbox' }
+      ]
+    },
+    {
+      group: 'Radar, Reactor & Upgrades',
+      fields: [
+        { key: 'radarScale', label: 'Radar / Telemetry Array Scale', type: 'range', min: 0.70, max: 1.45, step: 0.05 },
+        { key: 'ShowUpgradeKit', label: 'Control Rods / Strategy Upgrade', type: 'checkbox' },
+        { key: 'ShowHazardBeacons', label: 'Runway & Helipad Strobe Lights', type: 'checkbox' },
+        { key: 'ShowFactionEmblem', label: 'Allied Star Marking', type: 'checkbox' }
+      ]
+    },
+    {
+      group: 'Materials & Livery',
+      fields: [
+        { key: 'armorBaseColor', label: 'Composite Wall Cladding', type: 'color' },
+        { key: 'armorHighlightColor', label: 'Sunlit Roof & Trim Cladding', type: 'color' },
+        { key: 'armorShadowColor', label: 'Structural Steel Shadow', type: 'color' },
+        { key: 'houseColor', label: 'USA Tactical Blue Accent', type: 'color' }
+      ]
+    }
+  ];
+
+  const USA_BUILDING_PRESETS = {
+    DIORAMA_DEFAULT: {
+      name: 'Standard High Command',
+      params: {
+        footprintScale: 1.0, plinthHeight: 1.0, structureHeight: 1.0, extrusionDepth: 1.0,
+        turretScale: 1.0, barrelLength: 1.0, radarScale: 1.0, superstructureScale: 1.0,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#cbd5e1', armorHighlightColor: '#f1f5f9', armorShadowColor: '#64748b', houseColor: '#2563eb'
+      }
+    },
+    DESERT_FOB: {
+      name: 'Desert Forward Operating Base',
+      params: {
+        footprintScale: 1.04, plinthHeight: 1.1, structureHeight: 1.0, extrusionDepth: 1.05,
+        turretScale: 1.05, barrelLength: 1.05, radarScale: 1.05, superstructureScale: 1.02,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#d6c7b2', armorHighlightColor: '#ede4d3', armorShadowColor: '#8c7a62', houseColor: '#0284c7'
+      }
+    },
+    SUPERWEAPON_GENERAL: {
+      name: 'Superweapon General Grid',
+      params: {
+        footprintScale: 1.05, plinthHeight: 1.15, structureHeight: 1.12, extrusionDepth: 1.15,
+        turretScale: 1.15, barrelLength: 1.2, radarScale: 1.2, superstructureScale: 1.1,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#cbd5e1', armorHighlightColor: '#e0f2fe', armorShadowColor: '#475569', houseColor: '#06b6d4'
+      }
+    },
+    AIR_FORCE_GENERAL: {
+      name: 'Air Force Command Wing',
+      params: {
+        footprintScale: 1.08, plinthHeight: 0.95, structureHeight: 1.05, extrusionDepth: 1.05,
+        turretScale: 1.08, barrelLength: 1.1, radarScale: 1.25, superstructureScale: 1.06,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#3b82f6'
+      }
+    },
+    SPEC_OPS_BLACK: {
+      name: 'Spec-Ops Classified Site',
+      params: {
+        footprintScale: 1.0, plinthHeight: 1.05, structureHeight: 1.08, extrusionDepth: 1.1,
+        turretScale: 1.1, barrelLength: 1.15, radarScale: 1.15, superstructureScale: 1.08,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#475569', armorHighlightColor: '#64748b', armorShadowColor: '#1e293b', houseColor: '#38bdf8'
+      }
+    }
+  };
+
+  const CHINA_BUILDING_PARAM_SCHEMA = [
+    {
+      group: 'Fortress Plinth & Bastions',
+      fields: [
+        { key: 'footprintScale', label: 'Fortress Plinth Scale', type: 'range', min: 0.80, max: 1.25, step: 0.02 },
+        { key: 'plinthHeight', label: 'Reinforced Concrete Base', type: 'range', min: 0.65, max: 1.50, step: 0.05 },
+        { key: 'ShowPerimeterWall', label: 'Brutalist Corner Bastions', type: 'checkbox' }
+      ]
+    },
+    {
+      group: 'Foundry & Citadel Mass',
+      fields: [
+        { key: 'structureHeight', label: 'Citadel / Tower Elevation', type: 'range', min: 0.75, max: 1.40, step: 0.02 },
+        { key: 'superstructureScale', label: 'Furnace / Cooling Tower Mass', type: 'range', min: 0.80, max: 1.35, step: 0.02 },
+        { key: 'extrusionDepth', label: '3D Isometric Relief Depth', type: 'range', min: 0.70, max: 1.40, step: 0.05 }
+      ]
+    },
+    {
+      group: 'Gattling, Silo & Gantries',
+      fields: [
+        { key: 'turretScale', label: 'Gattling / Silo Collar Scale', type: 'range', min: 0.75, max: 1.35, step: 0.02 },
+        { key: 'barrelLength', label: 'Barrel / Warhead Extension', type: 'range', min: 0.75, max: 1.45, step: 0.02 },
+        { key: 'ShowGantryCrane', label: 'Foundry Gantries & Smokestacks', type: 'checkbox' }
+      ]
+    },
+    {
+      group: 'Propaganda, Cyber & Mines',
+      fields: [
+        { key: 'radarScale', label: 'Radar / Speaker / Sat Scale', type: 'range', min: 0.70, max: 1.45, step: 0.05 },
+        { key: 'ShowUpgradeKit', label: 'Subliminal / Overcharge Upgrade', type: 'checkbox' },
+        { key: 'ShowHazardBeacons', label: 'Reactor & Warning Beacons', type: 'checkbox' },
+        { key: 'ShowFactionEmblem', label: 'PLA Red Star Pediment', type: 'checkbox' }
+      ]
+    },
+    {
+      group: 'Materials & Livery',
+      fields: [
+        { key: 'armorBaseColor', label: 'Reinforced Concrete / Steel', type: 'color' },
+        { key: 'armorHighlightColor', label: 'Sunlit Brutalist Trim', type: 'color' },
+        { key: 'armorShadowColor', label: 'Foundry Iron Shadow', type: 'color' },
+        { key: 'houseColor', label: 'PLA Crimson Banner Accent', type: 'color' }
+      ]
+    }
+  ];
+
+  const CHINA_BUILDING_PRESETS = {
+    DIORAMA_DEFAULT: {
+      name: 'PLA State Citadel',
+      params: {
+        footprintScale: 1.0, plinthHeight: 1.0, structureHeight: 1.0, extrusionDepth: 1.0,
+        turretScale: 1.0, barrelLength: 1.0, radarScale: 1.0, superstructureScale: 1.0,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626'
+      }
+    },
+    RED_GUARD_GARRISON: {
+      name: 'Red Guard Parade Complex',
+      params: {
+        footprintScale: 1.04, plinthHeight: 1.08, structureHeight: 1.06, extrusionDepth: 1.05,
+        turretScale: 1.05, barrelLength: 1.05, radarScale: 1.1, superstructureScale: 1.05,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#b8a99a', armorHighlightColor: '#dfd3c3', armorShadowColor: '#6b5e52', houseColor: '#ef4444'
+      }
+    },
+    NUCLEAR_GENERAL: {
+      name: 'Nuclear General Enrichment Site',
+      params: {
+        footprintScale: 1.06, plinthHeight: 1.15, structureHeight: 1.15, extrusionDepth: 1.15,
+        turretScale: 1.12, barrelLength: 1.18, radarScale: 1.15, superstructureScale: 1.15,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#64748b', armorHighlightColor: '#94a3b8', armorShadowColor: '#334155', houseColor: '#f97316'
+      }
+    },
+    TANK_GENERAL_FOUNDRY: {
+      name: 'Tank General Armor Foundry',
+      params: {
+        footprintScale: 1.08, plinthHeight: 1.12, structureHeight: 1.05, extrusionDepth: 1.1,
+        turretScale: 1.18, barrelLength: 1.15, radarScale: 1.0, superstructureScale: 1.12,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#657359', armorHighlightColor: '#849477', armorShadowColor: '#3f4a36', houseColor: '#dc2626'
+      }
+    },
+    INFANTRY_FORTRESS: {
+      name: 'Infantry General Bastion',
+      params: {
+        footprintScale: 1.02, plinthHeight: 1.18, structureHeight: 1.08, extrusionDepth: 1.08,
+        turretScale: 1.15, barrelLength: 1.12, radarScale: 1.08, superstructureScale: 1.06,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#78716c', armorHighlightColor: '#a8a29e', armorShadowColor: '#44403c', houseColor: '#b91c1c'
+      }
+    }
+  };
+
+  const GLA_BUILDING_PARAM_SCHEMA = [
+    {
+      group: 'Earthworks & Sandbag Revetment',
+      fields: [
+        { key: 'footprintScale', label: 'Compound Earthwork Scale', type: 'range', min: 0.80, max: 1.25, step: 0.02 },
+        { key: 'plinthHeight', label: 'Sandbag & Adobe Foundation', type: 'range', min: 0.65, max: 1.50, step: 0.05 },
+        { key: 'ShowPerimeterWall', label: 'Sandbag & Scrap Revetments', type: 'checkbox' }
+      ]
+    },
+    {
+      group: 'Adobe Halls & Camo Canopy',
+      fields: [
+        { key: 'structureHeight', label: 'Bastion / Dome Elevation', type: 'range', min: 0.75, max: 1.40, step: 0.02 },
+        { key: 'superstructureScale', label: 'Workshop / Palace Mass', type: 'range', min: 0.80, max: 1.35, step: 0.02 },
+        { key: 'extrusionDepth', label: '3D Isometric Relief Depth', type: 'range', min: 0.70, max: 1.40, step: 0.05 }
+      ]
+    },
+    {
+      group: 'DShK, Stinger & Scud Clusters',
+      fields: [
+        { key: 'turretScale', label: 'Turret / Scud Cluster Scale', type: 'range', min: 0.75, max: 1.35, step: 0.02 },
+        { key: 'barrelLength', label: 'Launcher / Gun Extension', type: 'range', min: 0.75, max: 1.45, step: 0.02 },
+        { key: 'ShowGantryCrane', label: 'Salvage Hoists & Camo Nets', type: 'checkbox' }
+      ]
+    },
+    {
+      group: 'Fortified Bunker & Anthrax Upgrades',
+      fields: [
+        { key: 'radarScale', label: 'Smuggler Dish / Banner Scale', type: 'range', min: 0.70, max: 1.45, step: 0.05 },
+        { key: 'ShowUpgradeKit', label: 'Camo Netting & Anthrax Vat', type: 'checkbox' },
+        { key: 'ShowHazardBeacons', label: 'Brazier & Toxin Beacons', type: 'checkbox' },
+        { key: 'ShowFactionEmblem', label: 'GLA Scorpion Banner', type: 'checkbox' }
+      ]
+    },
+    {
+      group: 'Materials & Livery',
+      fields: [
+        { key: 'armorBaseColor', label: 'Sandstone & Adobe Brick', type: 'color' },
+        { key: 'armorHighlightColor', label: 'Sun-Bleached Plaster', type: 'color' },
+        { key: 'armorShadowColor', label: 'Scrap Iron & Mud Shadow', type: 'color' },
+        { key: 'houseColor', label: 'GLA Scorpion Olive-Green', type: 'color' }
+      ]
+    }
+  ];
+
+  const GLA_BUILDING_PRESETS = {
+    DIORAMA_DEFAULT: {
+      name: 'Desert Insurgent Stronghold',
+      params: {
+        footprintScale: 1.0, plinthHeight: 1.0, structureHeight: 1.0, extrusionDepth: 1.0,
+        turretScale: 1.0, barrelLength: 1.0, radarScale: 1.0, superstructureScale: 1.0,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#d4b483', armorHighlightColor: '#ead2ac', armorShadowColor: '#8c6d46', houseColor: '#65a30d'
+      }
+    },
+    TOXIN_GENERAL: {
+      name: 'Dr. Thrax Toxin Refinery',
+      params: {
+        footprintScale: 1.04, plinthHeight: 1.08, structureHeight: 1.08, extrusionDepth: 1.08,
+        turretScale: 1.1, barrelLength: 1.12, radarScale: 1.08, superstructureScale: 1.08,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#b5a886', armorHighlightColor: '#d4c9ab', armorShadowColor: '#69624c', houseColor: '#84cc16'
+      }
+    },
+    STEALTH_GENERAL: {
+      name: 'Prince Kassad Camo Network',
+      params: {
+        footprintScale: 1.0, plinthHeight: 0.92, structureHeight: 0.95, extrusionDepth: 0.98,
+        turretScale: 1.05, barrelLength: 1.08, radarScale: 1.15, superstructureScale: 0.96,
+        ShowUpgradeKit: true, ShowHazardBeacons: false, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#a8987e', armorHighlightColor: '#c7b89e', armorShadowColor: '#635847', houseColor: '#4d7c0f'
+      }
+    },
+    DEMO_GENERAL: {
+      name: 'General Juhziz Ordnance Bastion',
+      params: {
+        footprintScale: 1.06, plinthHeight: 1.12, structureHeight: 1.06, extrusionDepth: 1.1,
+        turretScale: 1.15, barrelLength: 1.15, radarScale: 1.05, superstructureScale: 1.1,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#c29b6b', armorHighlightColor: '#dfb98a', armorShadowColor: '#7d5a32', houseColor: '#ca8a04'
+      }
+    },
+    PALACE_GUARD: {
+      name: 'Royal Scorpion Citadel',
+      params: {
+        footprintScale: 1.08, plinthHeight: 1.15, structureHeight: 1.12, extrusionDepth: 1.12,
+        turretScale: 1.1, barrelLength: 1.1, radarScale: 1.1, superstructureScale: 1.12,
+        ShowUpgradeKit: true, ShowHazardBeacons: true, ShowGantryCrane: true, ShowPerimeterWall: true, ShowFactionEmblem: true,
+        armorBaseColor: '#dfc18b', armorHighlightColor: '#f5deb3', armorShadowColor: '#967846', houseColor: '#16a34a'
+      }
+    }
+  };
+
+  function pushTaperedBox3D(faceList, proj, x0, x1, y0, y1, tx0, tx1, ty0, ty1, z0, z1, baseHex, strokeHex, strokeW = 1.15, bias = 0) {
+    const bot = [
+      [x0, y0, z0],
+      [x1, y0, z0],
+      [x1, y1, z0],
+      [x0, y1, z0]
+    ];
+    const top = [
+      [tx0, ty0, z1],
+      [tx1, ty0, z1],
+      [tx1, ty1, z1],
+      [tx0, ty1, z1]
+    ];
+    pushFrustumFaces(faceList, proj, bot, top, baseHex, strokeHex, strokeW, bias);
+  }
+
+  function pushHazardRamp3D(faces, proj, x0, x1, y0, y1, z0, z1, seamCol, stripes = 4) {
+    pushTaperedBox3D(faces, proj, x0, x1, y0, y1, x0, x1 * 0.96 + x0 * 0.04, y0 * 0.94 + y1 * 0.06, y1 * 0.94 + y0 * 0.06, z0, z1, '#eab308', seamCol, 1.1, 2);
+    const dy = (y1 - y0) / (stripes * 2);
+    for (let i = 0; i < stripes; i++) {
+      const sy0 = y0 + (i * 2 + 0.4) * dy;
+      const sy1 = Math.min(y1, sy0 + dy * 0.95);
+      pushBox3D(faces, proj, x0 + (x1 - x0) * 0.12, x1 - (x1 - x0) * 0.08, sy0, sy1, z0 + (z1 - z0) * 0.2, z1 + 0.5, '#1e293b', seamCol, 0.9, 4);
+    }
+  }
+
+  function pushLatticeTower3D(faces, proj, cx, cy, zBase, zTop, wBase, wTop, col, seamCol) {
+    const tiers = 3;
+    const dz = (zTop - zBase) / tiers;
+    for (let i = 0; i < tiers; i++) {
+      const t0 = i / tiers;
+      const t1 = (i + 1) / tiers;
+      const w0 = wBase + (wTop - wBase) * t0;
+      const w1 = wBase + (wTop - wBase) * t1;
+      const za = zBase + i * dz;
+      const zb = za + dz;
+      pushTaperedBox3D(faces, proj, cx - w0, cx + w0, cy - w0, cy + w0, cx - w1, cx + w1, cy - w1, cy + w1, za, zb, col, seamCol, 1.05, 5);
+      pushBox3D(faces, proj, cx - w1 * 1.12, cx + w1 * 1.12, cy - w1 * 1.12, cy + w1 * 1.12, zb - dz * 0.14, zb, '#334155', seamCol, 0.95, 6);
+    }
+  }
+
+  function renderBuildingCompoundBase3D(ctx, faces, proj, r, p, baseCol, hiCol, shCol, houseCol, seamCol, isOctagonal) {
+    const FS = p.footprintScale || 1.0;
+    const PH = (p.plinthHeight || 1.0) * (p.extrusionDepth || 1.0);
+    const W = r * 1.18 * FS;
+
+    // 1. Soft ground shadow on canvas before 3D faces flush
+    ctx.fillStyle = 'rgba(20, 17, 14, 0.42)';
+    ctx.beginPath();
+    ctx.ellipse(4, r * 0.14, W * 1.18, W * 0.64, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2. 3D beveled concrete compound plinth with panel joints & curb step
+    if (isOctagonal) {
+      pushCylinderZ3D(faces, proj, 0, 0, 0, 0.14 * r * PH, W * 1.04, W * 0.95, 8, '#b8ab96', seamCol, 1.02, 1.35);
+      pushCylinderZ3D(faces, proj, 0, 0, 0.14 * r * PH, 0.19 * r * PH, W * 0.92, W * 0.89, 8, houseCol, seamCol, 1.08, 1.1);
+      pushCylinderZ3D(faces, proj, 0, 0, 0.19 * r * PH, 0.24 * r * PH, W * 0.86, W * 0.84, 8, '#475569', seamCol, 0.95, 1.05);
+      // 8 radial sloped concrete buttress ribs around the octagonal perimeter
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4;
+        const rx = Math.cos(a) * W * 0.88;
+        const ry = Math.sin(a) * W * 0.88;
+        pushBox3D(faces, proj, rx - 0.08 * r, rx + 0.08 * r, ry - 0.08 * r, ry + 0.08 * r, 0.04 * r * PH, 0.25 * r * PH, shCol, seamCol, 1.0, 1.05);
+      }
+    } else {
+      pushTaperedBox3D(faces, proj, -W, W, -W, W, -W * 0.93, W * 0.93, -W * 0.93, W * 0.93, 0, 0.15 * r * PH, '#b8ab96', seamCol, 1.35);
+      // Faction perimeter trim band
+      pushBox3D(faces, proj, -W * 0.91, W * 0.91, -W * 0.91, W * 0.91, 0.15 * r * PH, 0.19 * r * PH, houseCol, seamCol, 1.08, 1.05);
+      // Inner asphalt/concrete tarmac deck
+      pushBox3D(faces, proj, -W * 0.86, W * 0.86, -W * 0.86, W * 0.86, 0.19 * r * PH, 0.23 * r * PH, '#475569', seamCol, 0.95, 1.0);
+    }
+
+    // 3. Corner blast bollards & hazard beacons
+    if (p.ShowPerimeterWall !== false) {
+      const cOff = W * 0.83;
+      const corners = [[-cOff, -cOff], [cOff, -cOff], [cOff, cOff], [-cOff, cOff]];
+      for (const [cx, cy] of corners) {
+        pushTaperedBox3D(faces, proj, cx - 0.10 * r, cx + 0.10 * r, cy - 0.10 * r, cy + 0.10 * r, cx - 0.07 * r, cx + 0.07 * r, cy - 0.07 * r, cy + 0.07 * r, 0.15 * r * PH, 0.34 * r * PH, shCol, seamCol, 1.1, 2);
+        if (p.ShowHazardBeacons !== false) {
+          pushBox3D(faces, proj, cx - 0.045 * r, cx + 0.045 * r, cy - 0.045 * r, cy + 0.045 * r, 0.34 * r * PH, 0.41 * r * PH, '#fbbf24', seamCol, 1.25, 3);
+        }
+      }
+    }
+    return 0.23 * r * PH;
+  }
+
+  function renderUsaBuildingModel(ctx, u, faction, params, options) {
+    const p = Object.assign({}, BUILDING_DEFAULT_PARAMS, params || {});
+    const opts = options || {};
+    const defId = u.defId || (u.def && u.def.id) || 'USA_COMMAND_CENTER';
+    const r = (u.radius || ((u.def && u.def.size) ? u.def.size * 0.46 : 36)) * (p.footprintScale || 1.0);
+    const H = (p.structureHeight || 1.0) * (p.extrusionDepth || 1.0);
+    const SS = p.superstructureScale || 1.0;
+    const TS = p.turretScale || 1.0;
+    const BL = p.barrelLength || 1.0;
+    const RS = p.radarScale || 1.0;
+    const t = (typeof performance !== 'undefined' ? performance.now() * 0.001 : 0) + (u.treadPhase || 0) * 6.0;
+    const baseAngle = (u.angle !== undefined ? u.angle : 0.68);
+    const turretAngle = (u.turretAngle !== undefined ? u.turretAngle : baseAngle);
+    const recoil = (u.recoilOffset || 0) * 0.05 * r;
+    const pitchScale = opts.pitchScale !== undefined ? opts.pitchScale : 0.64;
+    const zScale = opts.zScale !== undefined ? opts.zScale : 0.78;
+
+    const baseCol = p.armorBaseColor || '#cbd5e1';
+    const hiCol = p.armorHighlightColor || '#f1f5f9';
+    const shCol = p.armorShadowColor || '#64748b';
+    const houseCol = (faction && faction.color) || p.houseColor || '#2563eb';
+    const seamCol = '#2b241f';
+
+    const proj = createProjector(baseAngle, pitchScale, zScale);
+    const faces = [];
+    const isRound = defId === 'USA_PATRIOT' || defId === 'USA_FIREBASE' || defId === 'USA_PARTICLE_CANNON' || defId === 'USA_REACTOR' || defId === 'USA_SUPPLY_DROP_ZONE' || defId === 'USA_STRATEGY_CENTER';
+    const z0 = renderBuildingCompoundBase3D(ctx, faces, proj, r, p, baseCol, hiCol, shCol, houseCol, seamCol, isRound);
+
+    if (defId === 'USA_COMMAND_CENTER') {
+      // Sprite Sheet Match: Multi-tiered sloped light-grey bunker + 2 navy wrap stripes + corner buttresses + dual Dozer bays with hazard ramps + central cyan glass tower + 2 parabolic dishes + lattice mast
+      pushTaperedBox3D(faces, proj, -0.84 * r * SS, 0.62 * r * SS, -0.80 * r * SS, 0.80 * r * SS, -0.68 * r * SS, 0.48 * r * SS, -0.66 * r * SS, 0.66 * r * SS, z0, z0 + 0.50 * r * H, baseCol, seamCol, 1.3);
+      // Lower & upper navy-blue wrap-around stripes
+      pushBox3D(faces, proj, -0.78 * r * SS, 0.56 * r * SS, -0.74 * r * SS, 0.74 * r * SS, z0 + 0.14 * r * H, z0 + 0.23 * r * H, houseCol, seamCol, 1.1, 1.15, 2);
+      pushBox3D(faces, proj, -0.71 * r * SS, 0.50 * r * SS, -0.68 * r * SS, 0.68 * r * SS, z0 + 0.36 * r * H, z0 + 0.44 * r * H, houseCol, seamCol, 1.1, 1.15, 2);
+      // 4 Sloped armored corner buttresses
+      for (const [bx, by] of [[-0.76 * r, -0.72 * r], [0.52 * r, -0.72 * r], [0.52 * r, 0.72 * r], [-0.76 * r, 0.72 * r]]) {
+        pushTaperedBox3D(faces, proj, bx - 0.12 * r, bx + 0.12 * r, by - 0.12 * r, by + 0.12 * r, bx - 0.08 * r, bx + 0.08 * r, by - 0.08 * r, by + 0.08 * r, z0, z0 + 0.54 * r * H, shCol, seamCol, 1.15, 3);
+      }
+      // Front-left & front-right recessed Dozer rollout bays + yellow/black hazard ramps
+      for (const bayY of [-0.36 * r, 0.36 * r]) {
+        pushBox3D(faces, proj, 0.38 * r * SS, 0.60 * r * SS, bayY - 0.22 * r, bayY + 0.22 * r, z0 + 0.04 * r * H, z0 + 0.38 * r * H, '#1e293b', seamCol, 0.85, 1.15, 4);
+        pushHazardRamp3D(faces, proj, 0.56 * r * SS, 0.88 * r, bayY - 0.22 * r, bayY + 0.22 * r, z0, z0 + 0.08 * r * H, seamCol, 3);
+      }
+      // Second-tier concrete deck + glowing cyan strip windows
+      pushTaperedBox3D(faces, proj, -0.62 * r * SS, 0.38 * r * SS, -0.58 * r * SS, 0.58 * r * SS, -0.52 * r * SS, 0.30 * r * SS, -0.48 * r * SS, 0.48 * r * SS, z0 + 0.50 * r * H, z0 + 0.82 * r * H, hiCol, seamCol, 1.25);
+      pushBox3D(faces, proj, -0.55 * r * SS, 0.33 * r * SS, -0.51 * r * SS, 0.51 * r * SS, z0 + 0.64 * r * H, z0 + 0.74 * r * H, '#38bdf8', seamCol, 1.25, 1.1, 3);
+      // Raised central command bridge with wrap-around cyan observation windows + mullion ribs + sloped cap
+      pushBox3D(faces, proj, -0.40 * r * SS, 0.22 * r * SS, -0.38 * r * SS, 0.38 * r * SS, z0 + 0.82 * r * H, z0 + 1.10 * r * H, '#0284c7', seamCol, 1.2, 1.2);
+      pushBox3D(faces, proj, -0.38 * r * SS, 0.20 * r * SS, -0.36 * r * SS, 0.36 * r * SS, z0 + 0.90 * r * H, z0 + 1.04 * r * H, '#7dd3fc', seamCol, 1.3, 1.1, 3);
+      pushTaperedBox3D(faces, proj, -0.44 * r * SS, 0.26 * r * SS, -0.42 * r * SS, 0.42 * r * SS, -0.34 * r * SS, 0.16 * r * SS, -0.32 * r * SS, 0.32 * r * SS, z0 + 1.10 * r * H, z0 + 1.22 * r * H, houseCol, seamCol, 1.2);
+      // Back-center tall steel lattice microwave tower
+      pushLatticeTower3D(faces, proj, -0.46 * r, 0, z0 + 0.82 * r * H, z0 + 1.62 * r * H, 0.11 * r * RS, 0.04 * r * RS, shCol, seamCol);
+      pushBox3D(faces, proj, -0.49 * r, -0.43 * r, -0.03 * r, 0.03 * r, z0 + 1.62 * r * H, z0 + 1.70 * r * H, '#ef4444', seamCol, 1.3, 1.1, 6);
+      // Twin parabolic radar pedestals on left & right wings
+      pushCylinderZ3D(faces, proj, -0.18 * r, -0.40 * r, z0 + 0.82 * r * H, z0 + 1.06 * r * H, 0.10 * r * RS, 0.07 * r * RS, 8, shCol, seamCol, 1.0, 1.1);
+      pushCylinderZ3D(faces, proj, -0.18 * r, 0.40 * r, z0 + 0.82 * r * H, z0 + 1.06 * r * H, 0.10 * r * RS, 0.07 * r * RS, 8, shCol, seamCol, 1.0, 1.1);
+      flushFaces(ctx, faces);
+
+      // Animated rotating parabolic radar dishes (left & right)
+      for (const [rx, ry, spd] of [[-0.18 * r, -0.40 * r, 1.4], [-0.18 * r, 0.40 * r, -1.1]]) {
+        const rCenter = proj.project(rx, ry, z0 + 1.14 * r * H);
+        ctx.save();
+        ctx.translate(rCenter.x, rCenter.y);
+        const localRadProj = createProjector(baseAngle + t * spd, pitchScale, zScale);
+        const radFaces = [];
+        pushTaperedBox3D(radFaces, localRadProj, -0.08 * r * RS, 0.10 * r * RS, -0.32 * r * RS, 0.32 * r * RS, -0.04 * r * RS, 0.16 * r * RS, -0.38 * r * RS, 0.38 * r * RS, -0.08 * r, 0.10 * r, hiCol, seamCol, 1.2);
+        pushBox3D(radFaces, localRadProj, 0.08 * r * RS, 0.24 * r * RS, -0.04 * r * RS, 0.04 * r * RS, -0.02 * r, 0.04 * r, '#38bdf8', seamCol, 1.25, 1.1, 3);
+        flushFaces(ctx, radFaces);
+        ctx.restore();
+      }
+      return;
+    }
+
+    if (defId === 'USA_REACTOR') {
+      // Sprite Sheet Match: Circular concrete foundation + central cyan plasma core with 4 bright neon rings + 4 tall angled silver-grey vertical cooling fins with cyan inner slots + front-right chiller annex
+      pushCylinderZ3D(faces, proj, 0, 0, z0, z0 + 0.34 * r * H, 0.68 * r * SS, 0.58 * r * SS, 8, baseCol, seamCol, 1.06, 1.25);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.14 * r * H, z0 + 0.22 * r * H, 0.65 * r * SS, 0.63 * r * SS, 8, houseCol, seamCol, 1.1, 1.1, 2);
+      // Front-right auxiliary chiller/transformer annex with cryo pipes
+      pushBox3D(faces, proj, 0.28 * r, 0.78 * r, 0.22 * r, 0.72 * r, z0, z0 + 0.44 * r * H, baseCol, seamCol, 1.08, 1.2);
+      pushBox3D(faces, proj, 0.32 * r, 0.74 * r, 0.26 * r, 0.68 * r, z0 + 0.44 * r * H, z0 + 0.52 * r * H, houseCol, seamCol, 1.12, 1.15);
+      pushBox3D(faces, proj, 0.14 * r, 0.36 * r, 0.28 * r, 0.42 * r, z0 + 0.20 * r * H, z0 + 0.34 * r * H, '#475569', seamCol, 1.0, 1.1);
+      // Central cylindrical cyan plasma containment column + 4 stacked glowing neon-cyan torus rings
+      const pulse = 0.94 + 0.06 * Math.sin(t * 5.0);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.34 * r * H, z0 + 1.18 * r * H, 0.38 * r * SS, 0.36 * r * SS, 8, '#0284c7', seamCol, 1.2, 1.2);
+      for (let k = 0; k < 4; k++) {
+        const rz = z0 + (0.42 + k * 0.18) * r * H;
+        pushCylinderZ3D(faces, proj, 0, 0, rz, rz + 0.09 * r * H, 0.46 * r * SS * pulse, 0.46 * r * SS * pulse, 8, '#7dd3fc', seamCol, 1.35, 1.15, 3);
+      }
+      // 4 Tall angled vertical silver-grey cooling fins / radiator buttresses with cyan inner slots
+      for (const [fx, fy, wx, wy] of [
+        [-0.56 * r * SS, 0, 0.30 * r * SS, 0.14 * r],
+        [0.56 * r * SS, 0, 0.30 * r * SS, 0.14 * r],
+        [0, -0.56 * r * SS, 0.14 * r, 0.30 * r * SS],
+        [0, 0.56 * r * SS, 0.14 * r, 0.30 * r * SS]
+      ]) {
+        pushTaperedBox3D(faces, proj, fx - wx, fx + wx, fy - wy, fy + wy, fx * 0.78 - wx * 0.75, fx * 0.78 + wx * 0.75, fy * 0.78 - wy * 0.75, fy * 0.78 + wy * 0.75, z0 + 0.10 * r * H, z0 + 1.16 * r * H, hiCol, seamCol, 1.2, 4);
+        pushBox3D(faces, proj, fx * 0.85 - wx * 0.45, fx * 0.85 + wx * 0.45, fy * 0.85 - wy * 0.45, fy * 0.85 + wy * 0.45, z0 + 0.30 * r * H, z0 + 1.04 * r * H, '#38bdf8', seamCol, 1.3, 1.05, 5);
+      }
+      // Top armored reactor cap with 4 bolt lugs + glowing cyan center lens
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 1.18 * r * H, z0 + 1.34 * r * H, 0.44 * r * SS, 0.28 * r * SS, 8, shCol, seamCol, 1.12, 1.25);
+      if (p.ShowUpgradeKit !== false) {
+        pushCylinderZ3D(faces, proj, 0, 0, z0 + 1.34 * r * H, z0 + 1.48 * r * H, 0.20 * r * RS, 0.14 * r * RS, 8, '#bae6fd', seamCol, 1.35, 1.15, 5);
+      }
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'USA_SUPPLY_CENTER') {
+      // Sprite Sheet Match: Elevated Chinook helipad on left (-Y) with yellow/black hazard border & white H circle + right (+Y) sorting conveyor bay spanned by tall yellow bridge gantry crane + olive crates & blue cargo pallets
+      // Left elevated concrete Chinook helipad deck (-Y wing)
+      pushBox3D(faces, proj, -0.78 * r * SS, 0.78 * r * SS, -0.82 * r * SS, -0.04 * r, z0, z0 + 0.36 * r * H, baseCol, seamCol, 1.06, 1.25);
+      pushBox3D(faces, proj, -0.72 * r * SS, 0.72 * r * SS, -0.76 * r * SS, -0.10 * r, z0 + 0.36 * r * H, z0 + 0.42 * r * H, '#eab308', seamCol, 1.15, 1.15);
+      pushBox3D(faces, proj, -0.64 * r * SS, 0.64 * r * SS, -0.68 * r * SS, -0.18 * r, z0 + 0.42 * r * H, z0 + 0.45 * r * H, '#334155', seamCol, 0.96, 1.1, 2);
+      // Helipad circle & white 'H' marking on top
+      pushCylinderZ3D(faces, proj, 0, -0.43 * r * SS, z0 + 0.45 * r * H, z0 + 0.48 * r * H, 0.26 * r, 0.26 * r, 8, '#eab308', seamCol, 1.2, 1.05, 3);
+      pushCylinderZ3D(faces, proj, 0, -0.43 * r * SS, z0 + 0.48 * r * H, z0 + 0.50 * r * H, 0.21 * r, 0.21 * r, 8, '#334155', seamCol, 1.0, 1.0, 4);
+      pushBox3D(faces, proj, -0.11 * r, 0.11 * r, -0.52 * r * SS, -0.48 * r * SS, z0 + 0.50 * r * H, z0 + 0.53 * r * H, '#f8fafc', seamCol, 1.25, 1.0, 5);
+      pushBox3D(faces, proj, -0.11 * r, 0.11 * r, -0.38 * r * SS, -0.34 * r * SS, z0 + 0.50 * r * H, z0 + 0.53 * r * H, '#f8fafc', seamCol, 1.25, 1.0, 5);
+      pushBox3D(faces, proj, -0.03 * r, 0.03 * r, -0.50 * r * SS, -0.36 * r * SS, z0 + 0.50 * r * H, z0 + 0.53 * r * H, '#f8fafc', seamCol, 1.25, 1.0, 5);
+      // Back-center logistics control cabin with navy stripe & cyan glass
+      pushBox3D(faces, proj, -0.80 * r * SS, -0.26 * r, -0.12 * r, 0.72 * r * SS, z0, z0 + 0.72 * r * H, hiCol, seamCol, 1.1, 1.25);
+      pushBox3D(faces, proj, -0.76 * r * SS, -0.22 * r, -0.08 * r, 0.68 * r * SS, z0 + 0.48 * r * H, z0 + 0.60 * r * H, '#38bdf8', seamCol, 1.25, 1.1, 3);
+      pushBox3D(faces, proj, -0.82 * r * SS, -0.24 * r, -0.10 * r, 0.70 * r * SS, z0 + 0.72 * r * H, z0 + 0.82 * r * H, houseCol, seamCol, 1.12, 1.15);
+      // Right-side conveyor sorting table (+Y wing)
+      pushBox3D(faces, proj, -0.18 * r, 0.68 * r, 0.02 * r, 0.48 * r, z0, z0 + 0.28 * r * H, '#475569', seamCol, 1.0, 1.15);
+      // Stacked olive military crates & blue cargo pallets
+      pushBox3D(faces, proj, -0.08 * r, 0.26 * r, 0.08 * r, 0.38 * r, z0 + 0.28 * r * H, z0 + 0.54 * r * H, '#65a30d', seamCol, 1.1, 1.15, 3);
+      pushBox3D(faces, proj, 0.30 * r, 0.60 * r, 0.08 * r, 0.38 * r, z0 + 0.28 * r * H, z0 + 0.50 * r * H, '#ca8a04', seamCol, 1.12, 1.15, 3);
+      pushBox3D(faces, proj, 0.18 * r, 0.76 * r, 0.52 * r, 0.80 * r, z0, z0 + 0.10 * r * H, '#2563eb', seamCol, 1.15, 1.1);
+      pushBox3D(faces, proj, 0.22 * r, 0.70 * r, 0.55 * r, 0.77 * r, z0 + 0.10 * r * H, z0 + 0.36 * r * H, '#4d7c0f', seamCol, 1.1, 1.15, 3);
+      // Tall yellow industrial overhead bridge gantry crane with 4 legs + top bridge beam + hoist trolley
+      if (p.ShowGantryCrane !== false) {
+        const gZ = z0 + 1.16 * r * H * TS;
+        for (const [lx, ly] of [[-0.14 * r, 0.00 * r], [0.64 * r, 0.00 * r], [0.64 * r, 0.50 * r], [-0.14 * r, 0.50 * r]]) {
+          pushBox3D(faces, proj, lx - 0.05 * r, lx + 0.05 * r, ly - 0.05 * r, ly + 0.05 * r, z0, gZ, '#f59e0b', seamCol, 1.18, 1.15, 4);
+        }
+        pushBox3D(faces, proj, -0.18 * r, 0.68 * r, -0.04 * r, 0.54 * r, gZ, gZ + 0.14 * r * H, '#fbbf24', seamCol, 1.22, 1.2, 5);
+        const trolleyX = 0.25 * r + Math.sin(t * 1.6) * 0.22 * r;
+        pushBox3D(faces, proj, trolleyX - 0.10 * r, trolleyX + 0.10 * r, 0.14 * r, 0.36 * r, gZ - 0.16 * r * H, gZ, '#1e293b', seamCol, 1.0, 1.15, 6);
+      }
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'USA_BARRACKS') {
+      // Sprite Sheet Match: Enclosed front-left asphalt muster courtyard with white [ ] squad markings + sandbagged guard watchtower + back-right main barracks hall with navy trim, roll-up troop door, hazard ramp, and USAF star-and-bars roundel
+      // Perimeter concrete compound walls around front courtyard (+X, -Y)
+      pushBox3D(faces, proj, -0.10 * r, 0.80 * r, -0.80 * r, -0.68 * r, z0, z0 + 0.32 * r * H, baseCol, seamCol, 1.06, 1.15);
+      pushBox3D(faces, proj, 0.68 * r, 0.80 * r, -0.80 * r, 0.18 * r, z0, z0 + 0.32 * r * H, baseCol, seamCol, 1.06, 1.15);
+      // White squad assembly box markings on courtyard asphalt
+      pushBox3D(faces, proj, 0.16 * r, 0.54 * r, -0.56 * r, -0.14 * r, z0, z0 + 0.03 * r * H, '#f8fafc', seamCol, 1.25, 1.0, 2);
+      pushBox3D(faces, proj, 0.22 * r, 0.48 * r, -0.50 * r, -0.20 * r, z0 + 0.01 * r * H, z0 + 0.04 * r * H, '#475569', seamCol, 0.95, 1.0, 3);
+      // Main barracks structure on back & right (-X and +Y)
+      pushTaperedBox3D(faces, proj, -0.82 * r * SS, 0.32 * r * SS, -0.78 * r * SS, 0.78 * r * SS, -0.74 * r * SS, 0.26 * r * SS, -0.70 * r * SS, 0.70 * r * SS, z0, z0 + 0.68 * r * H, baseCol, seamCol, 1.3);
+      pushBox3D(faces, proj, -0.78 * r * SS, 0.29 * r * SS, -0.74 * r * SS, 0.74 * r * SS, z0 + 0.48 * r * H, z0 + 0.58 * r * H, houseCol, seamCol, 1.12, 1.15, 2);
+      // Sloped gable roof with skylights & USAF Star-and-Bars emblem
+      pushTaperedBox3D(faces, proj, -0.74 * r * SS, 0.26 * r * SS, -0.70 * r * SS, 0.70 * r * SS, -0.64 * r * SS, 0.16 * r * SS, -0.46 * r * SS, 0.46 * r * SS, z0 + 0.68 * r * H, z0 + 0.92 * r * H, hiCol, seamCol, 1.22);
+      pushBox3D(faces, proj, -0.48 * r, -0.04 * r, -0.34 * r, 0.34 * r, z0 + 0.92 * r * H, z0 + 0.97 * r * H, houseCol, seamCol, 1.15, 1.1, 4);
+      pushCylinderZ3D(faces, proj, -0.26 * r, 0, z0 + 0.97 * r * H, z0 + 1.02 * r * H, 0.16 * r, 0.16 * r, 8, '#f8fafc', seamCol, 1.3, 1.1, 5);
+      // Roll-up troop bay door + yellow/black hazard ramp facing courtyard
+      pushBox3D(faces, proj, 0.20 * r * SS, 0.34 * r * SS, -0.24 * r, 0.32 * r, z0 + 0.04 * r * H, z0 + 0.46 * r * H, '#1e293b', seamCol, 0.85, 1.15, 3);
+      pushHazardRamp3D(faces, proj, 0.30 * r * SS, 0.58 * r, -0.24 * r, 0.32 * r, z0, z0 + 0.07 * r * H, seamCol, 3);
+      // Front-left corner sandbagged guard watchtower (+X, -Y corner) with twin spotlights
+      pushCylinderZ3D(faces, proj, 0.56 * r, -0.56 * r, z0, z0 + 0.26 * r * H, 0.28 * r, 0.24 * r, 8, '#d4b483', seamCol, 1.08, 1.15, 3);
+      pushBox3D(faces, proj, 0.42 * r, 0.70 * r, -0.70 * r, -0.42 * r, z0 + 0.22 * r * H, z0 + 0.98 * r * H, shCol, seamCol, 1.05, 1.2, 4);
+      pushBox3D(faces, proj, 0.38 * r, 0.74 * r, -0.74 * r, -0.38 * r, z0 + 0.98 * r * H, z0 + 1.18 * r * H, '#38bdf8', seamCol, 1.25, 1.15, 5);
+      pushTaperedBox3D(faces, proj, 0.36 * r, 0.76 * r, -0.76 * r, -0.36 * r, 0.44 * r, 0.68 * r, -0.68 * r, -0.44 * r, z0 + 1.18 * r * H, z0 + 1.30 * r * H, houseCol, seamCol, 1.2, 5);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'USA_WAR_FACTORY') {
+      // Sprite Sheet Match: Massive barrel-vaulted dark-slate steel hangar with structural arch ribs & 4 cyan skylights + wide open front bay with hazard ramp & tan M1A1 Crusader tank inside + left yellow gantry crane + twin rear smokestacks + right stacked tank treads
+      pushBox3D(faces, proj, -0.84 * r * SS, 0.50 * r * SS, -0.68 * r * SS, 0.62 * r * SS, z0, z0 + 0.66 * r * H, baseCol, seamCol, 1.06, 1.3);
+      pushBox3D(faces, proj, -0.82 * r * SS, 0.52 * r * SS, -0.66 * r * SS, 0.60 * r * SS, z0 + 0.44 * r * H, z0 + 0.54 * r * H, houseCol, seamCol, 1.12, 1.15, 2);
+      // Barrel-vaulted dark-slate roof with structural ribs & 4 glowing cyan skylights
+      pushTaperedBox3D(faces, proj, -0.84 * r * SS, 0.50 * r * SS, -0.68 * r * SS, 0.62 * r * SS, -0.78 * r * SS, 0.46 * r * SS, -0.46 * r * SS, 0.40 * r * SS, z0 + 0.66 * r * H, z0 + 0.98 * r * H, '#334155', seamCol, 1.25);
+      pushTaperedBox3D(faces, proj, -0.78 * r * SS, 0.46 * r * SS, -0.46 * r * SS, 0.40 * r * SS, -0.72 * r * SS, 0.42 * r * SS, -0.22 * r * SS, 0.18 * r * SS, z0 + 0.98 * r * H, z0 + 1.12 * r * H, '#475569', seamCol, 1.2);
+      for (let i = 0; i < 3; i++) {
+        const rx = (-0.64 + i * 0.44) * r * SS;
+        pushBox3D(faces, proj, rx, rx + 0.24 * r * SS, -0.36 * r * SS, 0.30 * r * SS, z0 + 0.96 * r * H, z0 + 1.14 * r * H, '#38bdf8', seamCol, 1.3, 1.1, 4);
+      }
+      // Open front tank assembly bay (+X) + yellow/black hazard ramp + desert-tan M1A1 Crusader tank inside
+      pushBox3D(faces, proj, 0.26 * r * SS, 0.52 * r * SS, -0.44 * r, 0.38 * r, z0 + 0.04 * r * H, z0 + 0.56 * r * H, '#0f172a', seamCol, 0.8, 1.2, 3);
+      pushHazardRamp3D(faces, proj, 0.48 * r * SS, 0.88 * r, -0.44 * r, 0.38 * r, z0, z0 + 0.08 * r * H, seamCol, 4);
+      // Miniature tan M1A1 Crusader Tank emerging from the bay
+      pushBox3D(faces, proj, 0.18 * r, 0.64 * r, -0.22 * r, 0.16 * r, z0 + 0.08 * r * H, z0 + 0.26 * r * H, '#d4b483', seamCol, 1.12, 1.15, 5);
+      pushBox3D(faces, proj, 0.24 * r, 0.54 * r, -0.15 * r, 0.09 * r, z0 + 0.26 * r * H, z0 + 0.38 * r * H, '#ead2ac', seamCol, 1.18, 1.15, 6);
+      pushTubeSegment3D(faces, proj, 0.48 * r, -0.03 * r, z0 + 0.33 * r * H, 0.05, 0, 0.36 * r, 0.04 * r, 0.035 * r, '#475569', seamCol, 1.1, 1.15, 7);
+      // Twin rear exhaust smokestacks (-X, -Y)
+      pushCylinderZ3D(faces, proj, -0.74 * r, -0.52 * r, z0 + 0.50 * r * H, z0 + 1.42 * r * H, 0.11 * r, 0.09 * r, 8, shCol, seamCol, 1.0, 1.15);
+      pushCylinderZ3D(faces, proj, -0.48 * r, -0.52 * r, z0 + 0.50 * r * H, z0 + 1.42 * r * H, 0.11 * r, 0.09 * r, 8, shCol, seamCol, 1.0, 1.15);
+      // Left exterior yellow steel overhead gantry crane (-Y side)
+      if (p.ShowGantryCrane !== false) {
+        pushBox3D(faces, proj, -0.68 * r, -0.56 * r, -0.86 * r, -0.68 * r, z0, z0 + 1.14 * r * H * TS, '#f59e0b', seamCol, 1.18, 1.15);
+        pushBox3D(faces, proj, 0.28 * r, 0.40 * r, -0.86 * r, -0.68 * r, z0, z0 + 1.14 * r * H * TS, '#f59e0b', seamCol, 1.18, 1.15);
+        pushBox3D(faces, proj, -0.72 * r, 0.44 * r, -0.88 * r, -0.64 * r, z0 + 1.14 * r * H * TS, z0 + 1.26 * r * H * TS, '#fbbf24', seamCol, 1.22, 1.2);
+      }
+      // Right-side (+Y) stacked spare tank treads & olive crates
+      pushBox3D(faces, proj, -0.56 * r, -0.16 * r, 0.62 * r, 0.84 * r, z0, z0 + 0.28 * r * H, '#1e293b', seamCol, 0.9, 1.15);
+      pushBox3D(faces, proj, -0.08 * r, 0.34 * r, 0.62 * r, 0.84 * r, z0, z0 + 0.32 * r * H, '#65a30d', seamCol, 1.1, 1.15);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'USA_AIRFIELD') {
+      // Sprite Sheet Match: Concrete tarmac with 4 dark-asphalt jet hardstands + yellow taxiway lines + 2 parked white-and-blue F-22 Raptor jets + back-right maintenance hangar + tall ATC control tower with cyan glass cab & rotating radar + twin horizontal cylindrical fuel tanks
+      pushBox3D(faces, proj, -0.84 * r, 0.84 * r, -0.82 * r, 0.82 * r, z0, z0 + 0.08 * r * H, '#cbd5e1', seamCol, 1.05, 1.2);
+      // Yellow central taxiway stripe
+      pushBox3D(faces, proj, -0.76 * r, 0.76 * r, -0.05 * r, 0.05 * r, z0 + 0.08 * r * H, z0 + 0.11 * r * H, '#eab308', seamCol, 1.2, 1.0, 2);
+      // 4 Dark asphalt aircraft parking pads + 2 parked F-22 Raptor jets on front pads
+      const pads = [[-0.42 * r, -0.44 * r, false], [0.36 * r, -0.44 * r, true], [-0.42 * r, 0.44 * r, false], [0.36 * r, 0.44 * r, true]];
+      for (const [px, py, hasJet] of pads) {
+        pushBox3D(faces, proj, px - 0.32 * r, px + 0.32 * r, py - 0.28 * r, py + 0.28 * r, z0 + 0.08 * r * H, z0 + 0.12 * r * H, '#334155', seamCol, 0.95, 1.05, 2);
+        if (hasJet) {
+          // Miniature white-and-blue F-22 Raptor jet (swept delta wings, fuselage, twin canted tails, cyan canopy)
+          pushTaperedBox3D(faces, proj, px - 0.18 * r, px + 0.14 * r, py - 0.24 * r, py + 0.24 * r, px - 0.08 * r, px + 0.06 * r, py - 0.06 * r, py + 0.06 * r, z0 + 0.14 * r * H, z0 + 0.20 * r * H, houseCol, seamCol, 1.15, 4);
+          pushTaperedBox3D(faces, proj, px - 0.24 * r, px + 0.28 * r, py - 0.08 * r, py + 0.08 * r, px - 0.18 * r, px + 0.32 * r, py - 0.03 * r, py + 0.03 * r, z0 + 0.14 * r * H, z0 + 0.26 * r * H, '#f8fafc', seamCol, 1.2, 5);
+          pushBox3D(faces, proj, px + 0.04 * r, px + 0.20 * r, py - 0.05 * r, py + 0.05 * r, z0 + 0.24 * r * H, z0 + 0.30 * r * H, '#38bdf8', seamCol, 1.3, 1.1, 6);
+        }
+      }
+      // Back maintenance hangar (-X, -Y)
+      pushBox3D(faces, proj, -0.82 * r * SS, -0.24 * r, -0.78 * r * SS, -0.12 * r, z0 + 0.08 * r * H, z0 + 0.56 * r * H, baseCol, seamCol, 1.06, 1.2);
+      pushTaperedBox3D(faces, proj, -0.80 * r * SS, -0.26 * r, -0.76 * r * SS, -0.14 * r, -0.72 * r * SS, -0.32 * r, -0.60 * r * SS, -0.28 * r, z0 + 0.56 * r * H, z0 + 0.72 * r * H, houseCol, seamCol, 1.15);
+      // Twin horizontal cylindrical white aviation fuel tanks on back-right (-X, +Y)
+      pushTubeSegment3D(faces, proj, -0.74 * r, 0.54 * r, z0 + 0.24 * r * H, 0, 0, 0.44 * r, 0.12 * r, 0.12 * r, '#f8fafc', seamCol, 1.18, 1.15, 3);
+      pushTubeSegment3D(faces, proj, -0.74 * r, 0.74 * r, z0 + 0.24 * r * H, 0, 0, 0.44 * r, 0.12 * r, 0.12 * r, '#f8fafc', seamCol, 1.18, 1.15, 3);
+      // Tall Air Traffic Control tower at (-0.54r, +0.20r) with flared cyan glass cab
+      pushTaperedBox3D(faces, proj, -0.70 * r, -0.38 * r, 0.04 * r, 0.36 * r, -0.64 * r, -0.44 * r, 0.10 * r, 0.30 * r, z0 + 0.08 * r * H, z0 + 1.14 * r * H, hiCol, seamCol, 1.2);
+      pushTaperedBox3D(faces, proj, -0.68 * r, -0.40 * r, 0.06 * r, 0.34 * r, -0.76 * r, -0.32 * r, -0.02 * r, 0.42 * r, z0 + 1.14 * r * H, z0 + 1.42 * r * H, '#38bdf8', seamCol, 1.28);
+      pushBox3D(faces, proj, -0.78 * r, -0.30 * r, -0.04 * r, 0.44 * r, z0 + 1.42 * r * H, z0 + 1.50 * r * H, houseCol, seamCol, 1.15, 1.15);
+      flushFaces(ctx, faces);
+
+      const atcCenter = proj.project(-0.54 * r, 0.20 * r, z0 + 1.56 * r * H);
+      ctx.save();
+      ctx.translate(atcCenter.x, atcCenter.y);
+      const rProj = createProjector(baseAngle + t * 2.2, pitchScale, zScale);
+      const rFaces = [];
+      pushBox3D(rFaces, rProj, -0.05 * r * RS, 0.05 * r * RS, -0.34 * r * RS, 0.34 * r * RS, -0.04 * r, 0.05 * r, '#f8fafc', seamCol, 1.2, 1.15);
+      flushFaces(ctx, rFaces);
+      ctx.restore();
+      return;
+    }
+
+    if (defId === 'USA_STRATEGY_CENTER') {
+      // Sprite Sheet Match: Star-shaped octagonal Pentagon bunker with projecting sloped white/navy bastions + glowing cyan window strips on 2 tiers + central geodesic radar dome + 3 satellite dishes + corner twin-gun defense turrets
+      pushCylinderZ3D(faces, proj, 0, 0, z0, z0 + 0.46 * r * H, 0.84 * r * SS, 0.74 * r * SS, 8, baseCol, seamCol, 1.06, 1.3);
+      // 4 Projecting sloped armor bastions with navy stripes
+      for (const [bx, by, wx, wy] of [
+        [-0.58 * r * SS, 0, 0.30 * r * SS, 0.36 * r * SS],
+        [0.58 * r * SS, 0, 0.30 * r * SS, 0.36 * r * SS],
+        [0, -0.58 * r * SS, 0.36 * r * SS, 0.30 * r * SS],
+        [0, 0.58 * r * SS, 0.36 * r * SS, 0.30 * r * SS]
+      ]) {
+        pushTaperedBox3D(faces, proj, bx - wx, bx + wx, by - wy, by + wy, bx * 0.86 - wx * 0.82, bx * 0.86 + wx * 0.82, by * 0.86 - wy * 0.82, by * 0.86 + wy * 0.82, z0, z0 + 0.56 * r * H, hiCol, seamCol, 1.2, 2);
+        pushBox3D(faces, proj, bx * 0.92 - wx * 0.88, bx * 0.92 + wx * 0.88, by * 0.92 - wy * 0.88, by * 0.92 + wy * 0.88, z0 + 0.22 * r * H, z0 + 0.34 * r * H, houseCol, seamCol, 1.12, 1.15, 3);
+      }
+      // Second octagonal tier with glowing cyan horizontal window strip
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.46 * r * H, z0 + 0.78 * r * H, 0.66 * r * SS, 0.58 * r * SS, 8, hiCol, seamCol, 1.1, 1.25);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.58 * r * H, z0 + 0.70 * r * H, 0.63 * r * SS, 0.61 * r * SS, 8, '#38bdf8', seamCol, 1.3, 1.1, 3);
+      // Central geodesic tactical dome (2-stage faceted hemisphere with dark seam lines)
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.78 * r * H, z0 + 1.04 * r * H, 0.44 * r * SS, 0.32 * r * SS, 8, '#e2e8f0', seamCol, 1.18, 1.25);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 1.04 * r * H, z0 + 1.22 * r * H, 0.32 * r * SS, 0.12 * r * SS, 8, '#f8fafc', seamCol, 1.25, 1.2);
+      // 3 Corner defense turrets + 2 roof satellite dishes
+      for (const a of [0.78, 2.35, -1.57]) {
+        const tx = Math.cos(a) * 0.64 * r * SS;
+        const ty = Math.sin(a) * 0.64 * r * SS;
+        pushCylinderZ3D(faces, proj, tx, ty, z0 + 0.46 * r * H, z0 + 0.68 * r * H, 0.15 * r * TS, 0.12 * r * TS, 6, houseCol, seamCol, 1.12, 1.15, 4);
+        pushTubeSegment3D(faces, proj, tx, ty, z0 + 0.60 * r * H, 0.18, a, 0.28 * r * BL, 0.04 * r, 0.03 * r, '#1e293b', seamCol, 1.1, 1.15, 5);
+      }
+      if (p.ShowUpgradeKit !== false) {
+        pushCylinderZ3D(faces, proj, -0.34 * r, -0.34 * r, z0 + 0.78 * r * H, z0 + 1.06 * r * H, 0.08 * r * RS, 0.22 * r * RS, 8, '#f8fafc', seamCol, 1.2, 1.15, 5);
+        pushCylinderZ3D(faces, proj, 0.34 * r, -0.34 * r, z0 + 0.78 * r * H, z0 + 1.06 * r * H, 0.08 * r * RS, 0.22 * r * RS, 8, '#f8fafc', seamCol, 1.2, 1.15, 5);
+      }
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'USA_SUPPLY_DROP_ZONE') {
+      // Sprite Sheet Match: Octagonal concrete target pad with concentric yellow/white target rings + 8 cyan perimeter landing lights + 2 floodlight pylons + back-right telemetry uplink shack + descending cargo crate under ribbed olive parachute canopy
+      pushCylinderZ3D(faces, proj, 0, 0, z0, z0 + 0.10 * r * H, 0.80 * r, 0.76 * r, 8, '#334155', seamCol, 0.96, 1.2);
+      // Concentric target rings (outer yellow, middle slate, inner white, center bullseye)
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.10 * r * H, z0 + 0.13 * r * H, 0.58 * r, 0.58 * r, 8, '#eab308', seamCol, 1.2, 1.05, 2);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.13 * r * H, z0 + 0.15 * r * H, 0.44 * r, 0.44 * r, 8, '#334155', seamCol, 0.96, 1.0, 3);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.15 * r * H, z0 + 0.17 * r * H, 0.30 * r, 0.30 * r, 8, '#f8fafc', seamCol, 1.25, 1.0, 4);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.17 * r * H, z0 + 0.19 * r * H, 0.14 * r, 0.14 * r, 8, '#eab308', seamCol, 1.2, 1.0, 5);
+      // 8 Glowing cyan perimeter landing beacons
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4;
+        const bx = Math.cos(a) * 0.68 * r;
+        const by = Math.sin(a) * 0.68 * r;
+        pushBox3D(faces, proj, bx - 0.05 * r, bx + 0.05 * r, by - 0.05 * r, by + 0.05 * r, z0 + 0.10 * r * H, z0 + 0.18 * r * H, '#38bdf8', seamCol, 1.35, 1.1, 4);
+      }
+      // Back-right telemetry uplink shack (-X, +Y) with radar dish
+      pushBox3D(faces, proj, -0.78 * r, -0.32 * r, 0.24 * r, 0.72 * r, z0 + 0.10 * r * H, z0 + 0.56 * r * H, baseCol, seamCol, 1.08, 1.2);
+      pushBox3D(faces, proj, -0.74 * r, -0.36 * r, 0.28 * r, 0.68 * r, z0 + 0.56 * r * H, z0 + 0.66 * r * H, houseCol, seamCol, 1.12, 1.15);
+      pushCylinderZ3D(faces, proj, -0.55 * r, 0.48 * r, z0 + 0.66 * r * H, z0 + 0.92 * r * H, 0.06 * r * RS, 0.20 * r * RS, 8, hiCol, seamCol, 1.2, 1.15, 5);
+      // Twin tall floodlight pylons on left & right corners
+      for (const [lx, ly] of [[-0.58 * r, -0.58 * r], [0.58 * r, 0.58 * r]]) {
+        pushBox3D(faces, proj, lx - 0.04 * r, lx + 0.04 * r, ly - 0.04 * r, ly + 0.04 * r, z0 + 0.10 * r * H, z0 + 0.96 * r * H, shCol, seamCol, 1.05, 1.15);
+        pushBox3D(faces, proj, lx - 0.12 * r, lx + 0.12 * r, ly - 0.08 * r, ly + 0.08 * r, z0 + 0.96 * r * H, z0 + 1.10 * r * H, '#bae6fd', seamCol, 1.35, 1.15, 5);
+      }
+      // Animated descending cargo crate + olive-drab ribbed parachute canopy above pad
+      const dropPhase = (t * 0.38) % 1.0;
+      const crateZ = z0 + (0.22 + (1.0 - dropPhase) * 0.65) * r * H;
+      pushBox3D(faces, proj, -0.16 * r, 0.16 * r, -0.16 * r, 0.16 * r, crateZ, crateZ + 0.28 * r * H, '#ca8a04', seamCol, 1.15, 1.2, 6);
+      // Parachute canopy dome above crate
+      const canopyZ = crateZ + 0.58 * r * H;
+      pushCylinderZ3D(faces, proj, 0, 0, canopyZ, canopyZ + 0.24 * r * H, 0.46 * r, 0.22 * r, 8, '#65a30d', seamCol, 1.15, 1.25, 7);
+      pushCylinderZ3D(faces, proj, 0, 0, canopyZ + 0.24 * r * H, canopyZ + 0.34 * r * H, 0.22 * r, 0.06 * r, 8, '#84cc16', seamCol, 1.22, 1.2, 8);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'USA_PATRIOT' || defId === 'USA_FIREBASE') {
+      // Sprite Sheet Match: Octagonal concrete emplacement with yellow/black hazard collar, corner sandbags, and rotating 4-cell Patriot launcher + cyan phased-array radar (or 155mm Firebase howitzer)
+      pushCylinderZ3D(faces, proj, 0, 0, z0, z0 + 0.28 * r * H, 0.72 * r * SS, 0.62 * r * SS, 8, baseCol, seamCol, 1.06, 1.25);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.28 * r * H, z0 + 0.40 * r * H, 0.58 * r * TS, 0.52 * r * TS, 8, '#eab308', seamCol, 1.18, 1.2, 2);
+      // 4 Corner sandbag revetments
+      for (const [sx, sy] of [[-0.56 * r, -0.56 * r], [0.56 * r, -0.56 * r], [0.56 * r, 0.56 * r], [-0.56 * r, 0.56 * r]]) {
+        pushBox3D(faces, proj, sx - 0.16 * r, sx + 0.16 * r, sy - 0.16 * r, sy + 0.16 * r, z0, z0 + 0.24 * r * H, '#d4b483', seamCol, 1.08, 1.15, 3);
+      }
+      flushFaces(ctx, faces);
+
+      const turProj = createProjector(turretAngle, pitchScale, zScale);
+      const turFaces = [];
+      pushCylinderZ3D(turFaces, turProj, 0, 0, z0 + 0.40 * r * H, z0 + 0.66 * r * H, 0.42 * r * TS, 0.36 * r * TS, 8, shCol, seamCol, 1.05, 1.2);
+      if (defId === 'USA_FIREBASE') {
+        // 155mm Howitzer Artillery Gun Shield + Long Cannon Barrel
+        pushTaperedBox3D(turFaces, turProj, -0.36 * r * TS, 0.28 * r * TS, -0.38 * r * TS, 0.38 * r * TS, -0.24 * r * TS, 0.20 * r * TS, -0.28 * r * TS, 0.28 * r * TS, z0 + 0.66 * r * H, z0 + 1.06 * r * H, baseCol, seamCol, 1.22);
+        pushTubeSegment3D(turFaces, turProj, 0.08 * r - recoil, 0, z0 + 0.88 * r * H, 0.24, 0, 1.05 * r * BL, 0.10 * r * TS, 0.08 * r * TS, '#1e293b', seamCol, 1.1, 1.25, 4);
+      } else {
+        // Elevated 4-cell MIM-104 Patriot rectangular canister pod with 4 dark launch tubes on front face + angled cyan phased-array radar panel on side
+        pushTaperedBox3D(turFaces, turProj,
+          -0.48 * r * BL - recoil, 0.18 * r * BL - recoil, -0.34 * r * TS, 0.34 * r * TS,
+          -0.12 * r * BL - recoil, 0.68 * r * BL - recoil, -0.32 * r * TS, 0.32 * r * TS,
+          z0 + 0.66 * r * H, z0 + 1.34 * r * H, hiCol, seamCol, 1.28);
+        pushBox3D(turFaces, turProj, 0.08 * r * BL - recoil, 0.64 * r * BL - recoil, -0.30 * r * TS, 0.30 * r * TS, z0 + 1.04 * r * H, z0 + 1.30 * r * H, houseCol, seamCol, 1.15, 1.15, 3);
+        // 4 Missile canister launch doors on front (+X)
+        for (const cy of [-0.16 * r * TS, 0.16 * r * TS]) {
+          pushBox3D(turFaces, turProj, 0.56 * r * BL - recoil, 0.72 * r * BL - recoil, cy - 0.10 * r * TS, cy + 0.10 * r * TS, z0 + 0.96 * r * H, z0 + 1.28 * r * H, '#1e293b', seamCol, 0.9, 1.15, 5);
+        }
+        // Angled cyan phased-array tracking radar panel on +Y side
+        pushTaperedBox3D(turFaces, turProj, -0.26 * r * TS, 0.16 * r * TS, 0.36 * r * TS, 0.58 * r * TS, -0.14 * r * TS, 0.28 * r * TS, 0.42 * r * TS, 0.64 * r * TS, z0 + 0.58 * r * H, z0 + 1.12 * r * H, '#38bdf8', seamCol, 1.28, 4);
+      }
+      flushFaces(ctx, turFaces);
+      return;
+    }
+
+    if (defId === 'USA_PARTICLE_CANNON') {
+      // Sprite Sheet Match: Circular sunken accelerator pit with glowing cyan inner ring + 4 diagonal semi-cylindrical glowing cyan plasma capacitor banks + curved dark power conduits + central emitter tower with 4 unfolding cyan mirror petals
+      pushCylinderZ3D(faces, proj, 0, 0, z0, z0 + 0.42 * r * H, 0.84 * r * SS, 0.74 * r * SS, 8, baseCol, seamCol, 1.06, 1.3);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.20 * r * H, z0 + 0.30 * r * H, 0.79 * r * SS, 0.77 * r * SS, 8, houseCol, seamCol, 1.12, 1.15, 2);
+      // Glowing cyan sunken accelerator ring
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.42 * r * H, z0 + 0.56 * r * H, 0.60 * r * SS, 0.54 * r * SS, 8, '#38bdf8', seamCol, 1.32, 1.2, 3);
+      // 4 Diagonal semi-cylindrical glowing cyan plasma capacitor banks + curved dark power conduits feeding the core
+      for (let i = 0; i < 4; i++) {
+        const a = (i * Math.PI) / 2 + Math.PI / 4;
+        const cx = Math.cos(a) * 0.62 * r * SS;
+        const cy = Math.sin(a) * 0.62 * r * SS;
+        pushBox3D(faces, proj, cx - 0.20 * r, cx + 0.20 * r, cy - 0.20 * r, cy + 0.20 * r, z0 + 0.14 * r * H, z0 + 0.76 * r * H, shCol, seamCol, 1.06, 1.2, 4);
+        pushBox3D(faces, proj, cx - 0.15 * r, cx + 0.15 * r, cy - 0.15 * r, cy + 0.15 * r, z0 + 0.32 * r * H, z0 + 0.72 * r * H, '#7dd3fc', seamCol, 1.35, 1.15, 5);
+        // Heavy dark power conduit pipe into central tower
+        const mx = Math.cos(a) * 0.36 * r * SS;
+        const my = Math.sin(a) * 0.36 * r * SS;
+        pushBox3D(faces, proj, mx - 0.10 * r, mx + 0.10 * r, my - 0.10 * r, my + 0.10 * r, z0 + 0.44 * r * H, z0 + 0.68 * r * H, '#1e293b', seamCol, 0.9, 1.15, 5);
+      }
+      // Towering central particle emitter column + 4 unfolding mirror petals + blazing cyan core
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.56 * r * H, z0 + 1.28 * r * H * BL, 0.32 * r * TS, 0.20 * r * TS, 8, hiCol, seamCol, 1.18, 1.25, 6);
+      for (let i = 0; i < 4; i++) {
+        const a = (i * Math.PI) / 2;
+        const px = Math.cos(a) * 0.24 * r * TS;
+        const py = Math.sin(a) * 0.24 * r * TS;
+        pushTaperedBox3D(faces, proj, px - 0.10 * r, px + 0.10 * r, py - 0.10 * r, py + 0.10 * r, px * 1.45 - 0.12 * r, px * 1.45 + 0.12 * r, py * 1.45 - 0.12 * r, py * 1.45 + 0.12 * r, z0 + 1.22 * r * H * BL, z0 + 1.62 * r * H * BL, '#38bdf8', seamCol, 1.28, 7);
+      }
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 1.28 * r * H * BL, z0 + 1.56 * r * H * BL, 0.18 * r * TS, 0.26 * r * TS, 8, '#e0f2fe', seamCol, 1.4, 1.2, 8);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    flushFaces(ctx, faces);
+  }
+
+  function renderChinaBuildingModel(ctx, u, faction, params, options) {
+    const p = Object.assign({}, BUILDING_DEFAULT_PARAMS, {
+      armorBaseColor: '#94a3b8',
+      armorHighlightColor: '#cbd5e1',
+      armorShadowColor: '#475569',
+      houseColor: '#dc2626'
+    }, params || {});
+    const opts = options || {};
+    const defId = u.defId || (u.def && u.def.id) || 'CHINA_COMMAND_CENTER';
+    const r = (u.radius || ((u.def && u.def.size) ? u.def.size * 0.46 : 36)) * (p.footprintScale || 1.0);
+    const H = (p.structureHeight || 1.0) * (p.extrusionDepth || 1.0);
+    const SS = p.superstructureScale || 1.0;
+    const TS = p.turretScale || 1.0;
+    const BL = p.barrelLength || 1.0;
+    const RS = p.radarScale || 1.0;
+    const t = (typeof performance !== 'undefined' ? performance.now() * 0.001 : 0) + (u.treadPhase || 0) * 6.0;
+    const baseAngle = (u.angle !== undefined ? u.angle : 0.68);
+    const turretAngle = (u.turretAngle !== undefined ? u.turretAngle : baseAngle);
+    const recoil = (u.recoilOffset || 0) * 0.05 * r;
+    const pitchScale = opts.pitchScale !== undefined ? opts.pitchScale : 0.64;
+    const zScale = opts.zScale !== undefined ? opts.zScale : 0.78;
+
+    const baseCol = p.armorBaseColor || '#94a3b8';
+    const hiCol = p.armorHighlightColor || '#cbd5e1';
+    const shCol = p.armorShadowColor || '#475569';
+    const houseCol = (faction && faction.color) || p.houseColor || '#dc2626';
+    const seamCol = '#2b241f';
+
+    const proj = createProjector(baseAngle, pitchScale, zScale);
+    const faces = [];
+    const isRound = defId === 'CHINA_GATTLING_CANNON' || defId === 'CHINA_BUNKER' || defId === 'CHINA_SPEAKER_TOWER' || defId === 'CHINA_NUCLEAR_SILO' || defId === 'CHINA_INTERNET_CENTER' || defId === 'CHINA_MINES';
+    const z0 = renderBuildingCompoundBase3D(ctx, faces, proj, r, p, baseCol, hiCol, shCol, houseCol, seamCol, isRound);
+
+    if (defId === 'CHINA_COMMAND_CENTER') {
+      // Sprite Sheet Match: Brutalist grey concrete fortress + crimson base trim + front Dozer bay & right blast gate with hazard stripes + giant gold-bordered red star crest + 2-tier sweeping crimson pagoda roofs with amber clerestory windows + lattice mast & twin radar dishes
+      pushTaperedBox3D(faces, proj, -0.84 * r * SS, 0.64 * r * SS, -0.80 * r * SS, 0.80 * r * SS, -0.70 * r * SS, 0.52 * r * SS, -0.68 * r * SS, 0.68 * r * SS, z0, z0 + 0.52 * r * H, baseCol, seamCol, 1.3);
+      pushBox3D(faces, proj, -0.80 * r * SS, 0.60 * r * SS, -0.76 * r * SS, 0.76 * r * SS, z0 + 0.06 * r * H, z0 + 0.16 * r * H, houseCol, seamCol, 1.12, 1.15, 2);
+      // 4 Heavy brutalist corner buttresses
+      for (const [bx, by] of [[-0.76 * r, -0.72 * r], [0.54 * r, -0.72 * r], [0.54 * r, 0.72 * r], [-0.76 * r, 0.72 * r]]) {
+        pushTaperedBox3D(faces, proj, bx - 0.14 * r, bx + 0.14 * r, by - 0.14 * r, by + 0.14 * r, bx - 0.09 * r, bx + 0.09 * r, by - 0.09 * r, by + 0.09 * r, z0, z0 + 0.54 * r * H, shCol, seamCol, 1.18, 3);
+      }
+      // Front Dozer rollout bay (+X) & right blast gate (+Y) with yellow/black hazard ramps
+      pushBox3D(faces, proj, 0.36 * r * SS, 0.62 * r * SS, -0.32 * r, 0.32 * r, z0 + 0.04 * r * H, z0 + 0.42 * r * H, '#1e293b', seamCol, 0.85, 1.15, 4);
+      pushHazardRamp3D(faces, proj, 0.54 * r * SS, 0.88 * r, -0.32 * r, 0.32 * r, z0, z0 + 0.08 * r * H, seamCol, 4);
+      // Giant gold-bordered crimson star pediment above front rollout bay
+      pushBox3D(faces, proj, 0.38 * r * SS, 0.58 * r * SS, -0.22 * r, 0.22 * r, z0 + 0.44 * r * H, z0 + 0.74 * r * H, '#fbbf24', seamCol, 1.25, 1.15, 5);
+      pushBox3D(faces, proj, 0.42 * r * SS, 0.61 * r * SS, -0.14 * r, 0.14 * r, z0 + 0.50 * r * H, z0 + 0.68 * r * H, houseCol, seamCol, 1.15, 1.1, 6);
+      // First sweeping crimson ribbed pagoda roof eave + glowing amber clerestory window strip
+      pushTaperedBox3D(faces, proj, -0.78 * r * SS, 0.58 * r * SS, -0.76 * r * SS, 0.76 * r * SS, -0.58 * r * SS, 0.38 * r * SS, -0.56 * r * SS, 0.56 * r * SS, z0 + 0.52 * r * H, z0 + 0.74 * r * H, houseCol, seamCol, 1.25);
+      pushBox3D(faces, proj, -0.56 * r * SS, 0.36 * r * SS, -0.52 * r * SS, 0.52 * r * SS, z0 + 0.74 * r * H, z0 + 0.94 * r * H, shCol, seamCol, 1.05, 1.2);
+      pushBox3D(faces, proj, -0.54 * r * SS, 0.34 * r * SS, -0.50 * r * SS, 0.50 * r * SS, z0 + 0.78 * r * H, z0 + 0.88 * r * H, '#fbbf24', seamCol, 1.32, 1.1, 3);
+      // Second upper sweeping crimson pagoda roof eave + top command penthouse
+      pushTaperedBox3D(faces, proj, -0.62 * r * SS, 0.42 * r * SS, -0.58 * r * SS, 0.58 * r * SS, -0.40 * r * SS, 0.22 * r * SS, -0.38 * r * SS, 0.38 * r * SS, z0 + 0.94 * r * H, z0 + 1.16 * r * H, houseCol, seamCol, 1.25);
+      pushBox3D(faces, proj, -0.36 * r * SS, 0.18 * r * SS, -0.32 * r * SS, 0.32 * r * SS, z0 + 1.16 * r * H, z0 + 1.30 * r * H, hiCol, seamCol, 1.12, 1.15);
+      // Back lattice radio tower + twin rooftop radar pedestals
+      pushLatticeTower3D(faces, proj, -0.44 * r, 0, z0 + 0.94 * r * H, z0 + 1.66 * r * H, 0.11 * r * RS, 0.04 * r * RS, shCol, seamCol);
+      flushFaces(ctx, faces);
+
+      for (const [rx, ry, spd] of [[-0.12 * r, -0.34 * r, 1.3], [-0.12 * r, 0.34 * r, -1.0]]) {
+        const rCenter = proj.project(rx, ry, z0 + 1.36 * r * H);
+        ctx.save();
+        ctx.translate(rCenter.x, rCenter.y);
+        const rProj = createProjector(baseAngle + t * spd, pitchScale, zScale);
+        const rFaces = [];
+        pushTaperedBox3D(rFaces, rProj, -0.08 * r * RS, 0.10 * r * RS, -0.30 * r * RS, 0.30 * r * RS, -0.04 * r * RS, 0.15 * r * RS, -0.36 * r * RS, 0.36 * r * RS, -0.06 * r, 0.10 * r, hiCol, seamCol, 1.2);
+        pushBox3D(rFaces, rProj, 0.06 * r * RS, 0.20 * r * RS, -0.05 * r * RS, 0.05 * r * RS, -0.02 * r, 0.06 * r, houseCol, seamCol, 1.2, 1.1, 3);
+        flushFaces(ctx, rFaces);
+        ctx.restore();
+      }
+      return;
+    }
+
+    if (defId === 'CHINA_REACTOR') {
+      // Sprite Sheet Match: Left tall hyperboloid concrete cooling tower with crimson rim & white steam puffs + right spherical steel containment dome with crimson ribs & glowing lime-green equatorial window band + front coolant manifold pipes & transformer box
+      // Left (-Y) tall hyperboloid cooling tower (waisted lower frustum + flared upper frustum + crimson collar + dark steam throat)
+      pushCylinderZ3D(faces, proj, -0.10 * r, -0.38 * r * SS, z0, z0 + 0.68 * r * H, 0.44 * r * SS, 0.28 * r * SS, 8, baseCol, seamCol, 1.06, 1.25);
+      pushCylinderZ3D(faces, proj, -0.10 * r, -0.38 * r * SS, z0 + 0.68 * r * H, z0 + 1.20 * r * H, 0.28 * r * SS, 0.36 * r * SS, 8, hiCol, seamCol, 1.12, 1.25);
+      pushCylinderZ3D(faces, proj, -0.10 * r, -0.38 * r * SS, z0 + 1.10 * r * H, z0 + 1.20 * r * H, 0.36 * r * SS, 0.37 * r * SS, 8, houseCol, seamCol, 1.15, 1.15, 2);
+      pushCylinderZ3D(faces, proj, -0.10 * r, -0.38 * r * SS, z0 + 1.20 * r * H, z0 + 1.25 * r * H, 0.33 * r * SS, 0.31 * r * SS, 8, '#1e293b', seamCol, 0.85, 1.1, 3);
+      // Cel-shaded white steam puffs rising from cooling tower
+      const steamBob = Math.sin(t * 2.4) * 0.05 * r;
+      pushCylinderZ3D(faces, proj, -0.10 * r, -0.38 * r * SS, z0 + 1.26 * r * H + steamBob, z0 + 1.46 * r * H + steamBob, 0.26 * r, 0.18 * r, 8, '#f8fafc', seamCol, 1.35, 1.1, 4);
+      // Right (+Y) spherical steel containment dome with glowing lime-green equatorial window band & crimson ribs
+      const greenPulse = 0.94 + 0.06 * Math.sin(t * 4.5);
+      pushCylinderZ3D(faces, proj, -0.06 * r, 0.36 * r * SS, z0, z0 + 0.42 * r * H, 0.44 * r * SS, 0.48 * r * SS, 8, baseCol, seamCol, 1.06, 1.25);
+      pushCylinderZ3D(faces, proj, -0.06 * r, 0.36 * r * SS, z0 + 0.42 * r * H, z0 + 0.58 * r * H, 0.49 * r * SS * greenPulse, 0.49 * r * SS * greenPulse, 8, '#4ade80', seamCol, 1.38, 1.15, 3);
+      pushCylinderZ3D(faces, proj, -0.06 * r, 0.36 * r * SS, z0 + 0.58 * r * H, z0 + 0.90 * r * H, 0.46 * r * SS, 0.30 * r * SS, 8, hiCol, seamCol, 1.12, 1.25);
+      pushCylinderZ3D(faces, proj, -0.06 * r, 0.36 * r * SS, z0 + 0.90 * r * H, z0 + 1.04 * r * H, 0.30 * r * SS, 0.12 * r * SS, 8, houseCol, seamCol, 1.18, 1.2);
+      // Heavy front coolant manifold pipes & glowing green auxiliary core (+X)
+      pushBox3D(faces, proj, 0.22 * r, 0.62 * r, -0.44 * r, 0.44 * r, z0 + 0.12 * r * H, z0 + 0.34 * r * H, shCol, seamCol, 1.02, 1.15);
+      pushCylinderZ3D(faces, proj, 0.48 * r, -0.02 * r, z0, z0 + 0.54 * r * H, 0.22 * r, 0.18 * r, 8, '#22c55e', seamCol, 1.32, 1.15, 4);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'CHINA_SUPPLY_CENTER') {
+      // Sprite Sheet Match: Back-left warehouse with peaked crimson gable roof & red PLA supply truck inside loading dock + front-right conveyor sorting platform spanned by yellow-and-red overhead bridge gantry crane + stacked olive/red crates
+      // Back-left logistics warehouse (-X, -Y) with peaked crimson gable roof
+      pushBox3D(faces, proj, -0.84 * r * SS, 0.08 * r, -0.80 * r * SS, 0.22 * r, z0, z0 + 0.66 * r * H, baseCol, seamCol, 1.06, 1.25);
+      pushTaperedBox3D(faces, proj, -0.86 * r * SS, 0.12 * r, -0.82 * r * SS, 0.24 * r, -0.74 * r * SS, 0.02 * r, -0.44 * r * SS, -0.14 * r, z0 + 0.66 * r * H, z0 + 0.96 * r * H, houseCol, seamCol, 1.22);
+      // Truck unloading dock bay on front of warehouse (+X, -Y) with hazard ramp & red PLA Supply Truck inside
+      pushBox3D(faces, proj, -0.06 * r, 0.12 * r, -0.62 * r, -0.06 * r, z0 + 0.04 * r * H, z0 + 0.50 * r * H, '#1e293b', seamCol, 0.85, 1.15, 3);
+      pushHazardRamp3D(faces, proj, 0.08 * r, 0.42 * r, -0.62 * r, -0.06 * r, z0, z0 + 0.08 * r * H, seamCol, 3);
+      // Miniature red-and-olive PLA Supply Truck backed into dock
+      pushBox3D(faces, proj, 0.04 * r, 0.48 * r, -0.48 * r, -0.18 * r, z0 + 0.08 * r * H, z0 + 0.32 * r * H, '#65a30d', seamCol, 1.1, 1.15, 4);
+      pushBox3D(faces, proj, 0.34 * r, 0.56 * r, -0.46 * r, -0.20 * r, z0 + 0.08 * r * H, z0 + 0.36 * r * H, houseCol, seamCol, 1.15, 1.15, 5);
+      // Right-side (+Y) elevated conveyor sorting platform + stacked olive & crimson crates
+      pushBox3D(faces, proj, -0.58 * r, 0.72 * r, 0.24 * r, 0.76 * r, z0, z0 + 0.26 * r * H, '#334155', seamCol, 0.96, 1.15);
+      pushBox3D(faces, proj, -0.44 * r, -0.08 * r, 0.32 * r, 0.66 * r, z0 + 0.26 * r * H, z0 + 0.52 * r * H, '#65a30d', seamCol, 1.1, 1.15, 3);
+      pushBox3D(faces, proj, 0.04 * r, 0.42 * r, 0.32 * r, 0.66 * r, z0 + 0.26 * r * H, z0 + 0.54 * r * H, houseCol, seamCol, 1.15, 1.15, 3);
+      pushBox3D(faces, proj, 0.46 * r, 0.78 * r, -0.08 * r, 0.22 * r, z0, z0 + 0.28 * r * H, '#ca8a04', seamCol, 1.12, 1.15);
+      // Yellow-and-crimson industrial overhead bridge gantry crane spanning right platform
+      if (p.ShowGantryCrane !== false) {
+        const gZ = z0 + 1.12 * r * H * TS;
+        for (const [lx, ly] of [[-0.48 * r, 0.24 * r], [0.58 * r, 0.24 * r], [0.58 * r, 0.74 * r], [-0.48 * r, 0.74 * r]]) {
+          pushBox3D(faces, proj, lx - 0.05 * r, lx + 0.05 * r, ly - 0.05 * r, ly + 0.05 * r, z0, gZ, houseCol, seamCol, 1.15, 1.15, 4);
+        }
+        pushBox3D(faces, proj, -0.54 * r, 0.64 * r, 0.20 * r, 0.78 * r, gZ, gZ + 0.14 * r * H, '#fbbf24', seamCol, 1.22, 1.2, 5);
+      }
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'CHINA_BARRACKS') {
+      // Sprite Sheet Match: Perimeter compound walls with front crimson pagoda gatehouse & gold star + vertical red banners + 2 front corner sandbagged guard watchtowers with spotlights + back-right main barracks hall with sweeping crimson pagoda roof
+      // Perimeter compound walls around front muster courtyard
+      pushBox3D(faces, proj, -0.20 * r, 0.78 * r, -0.80 * r, -0.66 * r, z0, z0 + 0.36 * r * H, baseCol, seamCol, 1.06, 1.15);
+      pushBox3D(faces, proj, 0.64 * r, 0.78 * r, -0.80 * r, 0.78 * r, z0, z0 + 0.36 * r * H, baseCol, seamCol, 1.06, 1.15);
+      // Front gatehouse arch (+X, 0) with crimson pagoda eave, gold star crest & vertical red banners
+      pushBox3D(faces, proj, 0.56 * r, 0.82 * r, -0.28 * r, 0.28 * r, z0, z0 + 0.62 * r * H, shCol, seamCol, 1.05, 1.2, 2);
+      pushBox3D(faces, proj, 0.54 * r, 0.84 * r, -0.16 * r, 0.16 * r, z0, z0 + 0.44 * r * H, '#1e293b', seamCol, 0.85, 1.15, 3);
+      pushTaperedBox3D(faces, proj, 0.50 * r, 0.88 * r, -0.36 * r, 0.36 * r, 0.58 * r, 0.80 * r, -0.24 * r, 0.24 * r, z0 + 0.62 * r * H, z0 + 0.82 * r * H, houseCol, seamCol, 1.2, 4);
+      pushBox3D(faces, proj, 0.76 * r, 0.86 * r, -0.08 * r, 0.08 * r, z0 + 0.50 * r * H, z0 + 0.68 * r * H, '#fbbf24', seamCol, 1.28, 1.1, 5);
+      // Twin front corner sandbagged guard pillbox watchtowers (+X, -Y and +X, +Y)
+      for (const wy of [-0.66 * r, 0.66 * r]) {
+        pushCylinderZ3D(faces, proj, 0.66 * r, wy, z0, z0 + 0.26 * r * H, 0.24 * r, 0.22 * r, 8, '#d4b483', seamCol, 1.08, 1.15, 3);
+        pushBox3D(faces, proj, 0.52 * r, 0.80 * r, wy - 0.14 * r, wy + 0.14 * r, z0 + 0.22 * r * H, z0 + 0.90 * r * H, hiCol, seamCol, 1.1, 1.2, 4);
+        pushTaperedBox3D(faces, proj, 0.48 * r, 0.84 * r, wy - 0.18 * r, wy + 0.18 * r, 0.56 * r, 0.76 * r, wy - 0.10 * r, wy + 0.10 * r, z0 + 0.90 * r * H, z0 + 1.06 * r * H, houseCol, seamCol, 1.2, 5);
+      }
+      // Main back-right PLA troop barracks hall (-X) with sweeping crimson pagoda roof & gold star pediment
+      pushTaperedBox3D(faces, proj, -0.84 * r * SS, 0.26 * r * SS, -0.76 * r * SS, 0.76 * r * SS, -0.74 * r * SS, 0.18 * r * SS, -0.68 * r * SS, 0.68 * r * SS, z0, z0 + 0.68 * r * H, baseCol, seamCol, 1.3);
+      pushTaperedBox3D(faces, proj, -0.86 * r * SS, 0.30 * r * SS, -0.82 * r * SS, 0.82 * r * SS, -0.62 * r * SS, 0.10 * r * SS, -0.52 * r * SS, 0.52 * r * SS, z0 + 0.68 * r * H, z0 + 1.04 * r * H, houseCol, seamCol, 1.25);
+      // Vertical crimson military banners flanking main hall doorway
+      pushBox3D(faces, proj, 0.16 * r * SS, 0.24 * r * SS, -0.44 * r, -0.32 * r, z0 + 0.16 * r * H, z0 + 0.62 * r * H, houseCol, seamCol, 1.18, 1.1, 4);
+      pushBox3D(faces, proj, 0.16 * r * SS, 0.24 * r * SS, 0.32 * r, 0.44 * r, z0 + 0.16 * r * H, z0 + 0.62 * r * H, houseCol, seamCol, 1.18, 1.1, 4);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'CHINA_WAR_FACTORY') {
+      // Sprite Sheet Match: Arched dark-grey hangar roof with 2 bold crimson arch ribs & 4 skylights + wide open front bay with hazard ramp & green/red Type-88 Battlemaster tank inside + left dark-steel gantry crane + twin rear smokestacks with crimson bands
+      pushBox3D(faces, proj, -0.84 * r * SS, 0.50 * r * SS, -0.68 * r * SS, 0.66 * r * SS, z0, z0 + 0.68 * r * H, baseCol, seamCol, 1.06, 1.3);
+      pushBox3D(faces, proj, -0.82 * r * SS, 0.52 * r * SS, -0.66 * r * SS, 0.64 * r * SS, z0 + 0.12 * r * H, z0 + 0.22 * r * H, houseCol, seamCol, 1.12, 1.15, 2);
+      // Arched dark-slate roof + 2 bold crimson structural arch ribs
+      pushTaperedBox3D(faces, proj, -0.84 * r * SS, 0.50 * r * SS, -0.68 * r * SS, 0.66 * r * SS, -0.76 * r * SS, 0.44 * r * SS, -0.44 * r * SS, 0.42 * r * SS, z0 + 0.68 * r * H, z0 + 1.02 * r * H, '#334155', seamCol, 1.25);
+      for (const rx of [-0.56 * r * SS, 0.08 * r * SS]) {
+        pushTaperedBox3D(faces, proj, rx, rx + 0.18 * r * SS, -0.70 * r * SS, 0.68 * r * SS, rx + 0.02 * r, rx + 0.16 * r * SS, -0.46 * r * SS, 0.44 * r * SS, z0 + 0.68 * r * H, z0 + 1.06 * r * H, houseCol, seamCol, 1.22, 4);
+      }
+      // Open front tank rollout bay (+X) with hazard ramp & green/red Battlemaster tank inside
+      pushBox3D(faces, proj, 0.26 * r * SS, 0.52 * r * SS, -0.44 * r, 0.42 * r, z0 + 0.04 * r * H, z0 + 0.58 * r * H, '#0f172a', seamCol, 0.8, 1.2, 3);
+      pushHazardRamp3D(faces, proj, 0.48 * r * SS, 0.88 * r, -0.44 * r, 0.42 * r, z0, z0 + 0.08 * r * H, seamCol, 4);
+      // Miniature olive-green & crimson PLA Battlemaster Tank emerging from bay
+      pushBox3D(faces, proj, 0.16 * r, 0.64 * r, -0.22 * r, 0.20 * r, z0 + 0.08 * r * H, z0 + 0.26 * r * H, '#4d7c0f', seamCol, 1.1, 1.15, 5);
+      pushCylinderZ3D(faces, proj, 0.38 * r, -0.01 * r, z0 + 0.26 * r * H, z0 + 0.40 * r * H, 0.18 * r, 0.14 * r, 8, houseCol, seamCol, 1.18, 1.15, 6);
+      pushTubeSegment3D(faces, proj, 0.46 * r, -0.01 * r, z0 + 0.34 * r * H, 0.05, 0, 0.38 * r, 0.04 * r, 0.035 * r, '#1e293b', seamCol, 1.1, 1.15, 7);
+      // Twin tall foundry smokestacks on back-left (-X, -Y) with crimson bands & smoke puffs
+      for (const sx of [-0.72 * r, -0.44 * r]) {
+        pushCylinderZ3D(faces, proj, sx, -0.56 * r, z0 + 0.50 * r * H, z0 + 1.44 * r * H, 0.12 * r, 0.09 * r, 8, shCol, seamCol, 1.0, 1.15);
+        pushCylinderZ3D(faces, proj, sx, -0.56 * r, z0 + 1.20 * r * H, z0 + 1.32 * r * H, 0.11 * r, 0.10 * r, 8, houseCol, seamCol, 1.15, 1.1, 3);
+      }
+      // Left exterior steel bridge gantry crane (-Y side)
+      if (p.ShowGantryCrane !== false) {
+        pushBox3D(faces, proj, -0.68 * r, 0.42 * r, -0.86 * r, -0.68 * r, z0 + 1.02 * r * H * TS, z0 + 1.16 * r * H * TS, houseCol, seamCol, 1.18, 1.2);
+      }
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'CHINA_AIRFIELD') {
+      // Sprite Sheet Match: Concrete apron with yellow parking boxes + white dashed taxi line + 2 parked grey/crimson delta-wing MiG-1.44 fighters + twin cylindrical fuel tanks + red-and-white striped ATC radar tower
+      pushBox3D(faces, proj, -0.84 * r, 0.84 * r, -0.82 * r, 0.82 * r, z0, z0 + 0.08 * r * H, '#94a3b8', seamCol, 1.04, 1.2);
+      pushBox3D(faces, proj, -0.76 * r, 0.76 * r, -0.04 * r, 0.04 * r, z0 + 0.08 * r * H, z0 + 0.11 * r * H, '#f8fafc', seamCol, 1.25, 1.0, 2);
+      // 4 Yellow-bordered jet parking boxes + 2 parked grey/crimson MiG-1.44 delta-wing fighters
+      const pads = [[-0.38 * r, -0.44 * r, false], [0.36 * r, -0.44 * r, true], [-0.38 * r, 0.44 * r, false], [0.36 * r, 0.44 * r, true]];
+      for (const [px, py, hasMig] of pads) {
+        pushBox3D(faces, proj, px - 0.32 * r, px + 0.32 * r, py - 0.28 * r, py + 0.28 * r, z0 + 0.08 * r * H, z0 + 0.11 * r * H, '#eab308', seamCol, 1.15, 1.05, 2);
+        pushBox3D(faces, proj, px - 0.28 * r, px + 0.28 * r, py - 0.24 * r, py + 0.24 * r, z0 + 0.11 * r * H, z0 + 0.13 * r * H, '#334155', seamCol, 0.95, 1.0, 3);
+        if (hasMig) {
+          // Miniature grey-and-crimson MiG-1.44 delta-wing fighter
+          pushTaperedBox3D(faces, proj, px - 0.20 * r, px + 0.10 * r, py - 0.24 * r, py + 0.24 * r, px - 0.08 * r, px + 0.04 * r, py - 0.05 * r, py + 0.05 * r, z0 + 0.14 * r * H, z0 + 0.20 * r * H, houseCol, seamCol, 1.15, 4);
+          pushTaperedBox3D(faces, proj, px - 0.24 * r, px + 0.28 * r, py - 0.08 * r, py + 0.08 * r, px - 0.18 * r, px + 0.32 * r, py - 0.03 * r, py + 0.03 * r, z0 + 0.14 * r * H, z0 + 0.25 * r * H, hiCol, seamCol, 1.2, 5);
+        }
+      }
+      // Twin horizontal cylindrical fuel tanks on back-left (-X, -Y)
+      pushTubeSegment3D(faces, proj, -0.76 * r, -0.68 * r, z0 + 0.22 * r * H, 0, 0, 0.42 * r, 0.12 * r, 0.12 * r, hiCol, seamCol, 1.15, 1.15, 3);
+      pushTubeSegment3D(faces, proj, -0.76 * r, -0.48 * r, z0 + 0.22 * r * H, 0, 0, 0.42 * r, 0.12 * r, 0.12 * r, hiCol, seamCol, 1.15, 1.15, 3);
+      // Red-and-white striped ATC radar tower on back-right (-X, +Y)
+      pushTaperedBox3D(faces, proj, -0.72 * r, -0.38 * r, 0.26 * r, 0.64 * r, -0.64 * r, -0.44 * r, 0.34 * r, 0.56 * r, z0 + 0.08 * r * H, z0 + 0.96 * r * H, baseCol, seamCol, 1.2);
+      pushBox3D(faces, proj, -0.68 * r, -0.40 * r, 0.30 * r, 0.60 * r, z0 + 0.56 * r * H, z0 + 0.74 * r * H, houseCol, seamCol, 1.15, 1.15, 3);
+      pushTaperedBox3D(faces, proj, -0.70 * r, -0.38 * r, 0.28 * r, 0.62 * r, -0.76 * r, -0.32 * r, 0.22 * r, 0.68 * r, z0 + 0.96 * r * H, z0 + 1.24 * r * H, '#38bdf8', seamCol, 1.25);
+      pushTaperedBox3D(faces, proj, -0.78 * r, -0.30 * r, 0.20 * r, 0.70 * r, -0.66 * r, -0.42 * r, 0.32 * r, 0.58 * r, z0 + 1.24 * r * H, z0 + 1.38 * r * H, houseCol, seamCol, 1.2);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'CHINA_PROPAGANDA_CENTER') {
+      // Sprite Sheet Match: Monumental brutalist square fortress with 4 corner towers + vertical concrete buttress fins + crimson vertical military banners with gold stars between fins + stepped amber-lit roof podium + tall central lattice broadcast tower with 4 red megaphone horns
+      pushTaperedBox3D(faces, proj, -0.82 * r * SS, 0.82 * r * SS, -0.80 * r * SS, 0.80 * r * SS, -0.70 * r * SS, 0.70 * r * SS, -0.68 * r * SS, 0.68 * r * SS, z0, z0 + 0.66 * r * H, baseCol, seamCol, 1.3);
+      // 4 Corner concrete towers with crimson caps
+      for (const [cx, cy] of [[-0.68 * r, -0.66 * r], [0.68 * r, -0.66 * r], [0.68 * r, 0.66 * r], [-0.68 * r, 0.66 * r]]) {
+        pushBox3D(faces, proj, cx - 0.16 * r, cx + 0.16 * r, cy - 0.16 * r, cy + 0.16 * r, z0, z0 + 0.82 * r * H, shCol, seamCol, 1.06, 1.2, 2);
+        pushBox3D(faces, proj, cx - 0.18 * r, cx + 0.18 * r, cy - 0.18 * r, cy + 0.18 * r, z0 + 0.82 * r * H, z0 + 0.92 * r * H, houseCol, seamCol, 1.15, 1.15, 3);
+      }
+      // Vertical crimson military banners with gold stars on front (+X) & right (+Y) facades
+      for (const by of [-0.30 * r, 0.0, 0.30 * r]) {
+        pushBox3D(faces, proj, 0.66 * r * SS, 0.78 * r * SS, by - 0.09 * r, by + 0.09 * r, z0 + 0.14 * r * H, z0 + 0.60 * r * H, houseCol, seamCol, 1.18, 1.1, 4);
+        pushBox3D(faces, proj, 0.70 * r * SS, 0.80 * r * SS, by - 0.04 * r, by + 0.04 * r, z0 + 0.42 * r * H, z0 + 0.52 * r * H, '#fbbf24', seamCol, 1.3, 1.05, 5);
+      }
+      // Stepped upper podium with glowing amber tactical windows
+      pushBox3D(faces, proj, -0.52 * r * SS, 0.52 * r * SS, -0.52 * r * SS, 0.52 * r * SS, z0 + 0.66 * r * H, z0 + 0.96 * r * H, hiCol, seamCol, 1.1, 1.25);
+      pushBox3D(faces, proj, -0.54 * r * SS, 0.54 * r * SS, -0.54 * r * SS, 0.54 * r * SS, z0 + 0.74 * r * H, z0 + 0.86 * r * H, '#fbbf24', seamCol, 1.32, 1.1, 3);
+      pushTaperedBox3D(faces, proj, -0.56 * r * SS, 0.56 * r * SS, -0.56 * r * SS, 0.56 * r * SS, -0.40 * r * SS, 0.40 * r * SS, -0.40 * r * SS, 0.40 * r * SS, z0 + 0.96 * r * H, z0 + 1.12 * r * H, houseCol, seamCol, 1.2);
+      // Central lattice broadcast tower + 4 directional megaphone speaker horns
+      pushLatticeTower3D(faces, proj, 0, 0, z0 + 1.12 * r * H, z0 + 1.68 * r * H, 0.16 * r * RS, 0.06 * r * RS, shCol, seamCol);
+      pushBox3D(faces, proj, -0.38 * r * RS, 0.38 * r * RS, -0.14 * r * RS, 0.14 * r * RS, z0 + 1.48 * r * H, z0 + 1.64 * r * H, houseCol, seamCol, 1.2, 1.15, 7);
+      pushBox3D(faces, proj, -0.14 * r * RS, 0.14 * r * RS, -0.38 * r * RS, 0.38 * r * RS, z0 + 1.48 * r * H, z0 + 1.64 * r * H, houseCol, seamCol, 1.2, 1.15, 7);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'CHINA_INTERNET_CENTER') {
+      // Sprite Sheet Match: Octagonal dark-gunmetal cyber-warfare bunker + crimson upper corner blocks + glowing matrix-green horizontal server louvers on all faces + oversized rotating white-and-crimson parabolic satellite uplink dish on roof
+      pushCylinderZ3D(faces, proj, 0, 0, z0, z0 + 0.64 * r * H, 0.82 * r * SS, 0.72 * r * SS, 8, '#334155', seamCol, 1.0, 1.3);
+      // 3 Stacked glowing matrix-green server cooling louver bands
+      for (const lz of [0.16, 0.32, 0.48]) {
+        pushCylinderZ3D(faces, proj, 0, 0, z0 + lz * r * H, z0 + (lz + 0.08) * r * H, 0.79 * r * SS, 0.77 * r * SS, 8, '#4ade80', seamCol, 1.35, 1.1, 3);
+      }
+      // Crimson armored upper parapet ring + dark roof deck
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.64 * r * H, z0 + 0.80 * r * H, 0.76 * r * SS, 0.66 * r * SS, 8, houseCol, seamCol, 1.15, 1.25);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.80 * r * H, z0 + 0.92 * r * H, 0.44 * r * RS, 0.34 * r * RS, 8, shCol, seamCol, 1.05, 1.2);
+      flushFaces(ctx, faces);
+
+      // Oversized rotating white-and-crimson parabolic satellite dish on roof
+      const dishCenter = proj.project(0, 0, z0 + 1.12 * r * H);
+      ctx.save();
+      ctx.translate(dishCenter.x, dishCenter.y);
+      const dProj = createProjector(baseAngle + t * 0.75, pitchScale, zScale);
+      const dFaces = [];
+      pushTaperedBox3D(dFaces, dProj, -0.18 * r * RS, 0.22 * r * RS, -0.58 * r * RS, 0.58 * r * RS, -0.06 * r * RS, 0.38 * r * RS, -0.68 * r * RS, 0.68 * r * RS, -0.16 * r, 0.24 * r, '#f8fafc', seamCol, 1.28);
+      pushBox3D(dFaces, dProj, -0.10 * r * RS, 0.34 * r * RS, -0.64 * r * RS, 0.64 * r * RS, 0.02 * r, 0.14 * r, houseCol, seamCol, 1.18, 1.15, 2);
+      pushTubeSegment3D(dFaces, dProj, 0.18 * r * RS, 0, 0.08 * r, 0.35, 0, 0.46 * r * RS, 0.05 * r, 0.03 * r, '#1e293b', seamCol, 1.1, 1.15, 4);
+      flushFaces(ctx, dFaces);
+      ctx.restore();
+      return;
+    }
+
+    if (defId === 'CHINA_GATTLING_CANNON') {
+      // Sprite Sheet Match: Octagonal concrete emplacement with yellow/black hazard base collar + crimson armor ring + swiveling dual-pod 6-barrel rotary Gattling turret with twin brass ammo drums
+      pushCylinderZ3D(faces, proj, 0, 0, z0, z0 + 0.34 * r * H, 0.78 * r * SS, 0.68 * r * SS, 8, baseCol, seamCol, 1.06, 1.25);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.34 * r * H, z0 + 0.48 * r * H, 0.68 * r * SS, 0.62 * r * SS, 8, '#eab308', seamCol, 1.18, 1.2, 2);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.48 * r * H, z0 + 0.64 * r * H, 0.58 * r * TS, 0.52 * r * TS, 8, houseCol, seamCol, 1.15, 1.2);
+      flushFaces(ctx, faces);
+
+      const turProj = createProjector(turretAngle, pitchScale, zScale);
+      const turFaces = [];
+      pushTaperedBox3D(turFaces, turProj, -0.40 * r * TS, 0.34 * r * TS, -0.38 * r * TS, 0.38 * r * TS, -0.30 * r * TS, 0.24 * r * TS, -0.28 * r * TS, 0.28 * r * TS, z0 + 0.64 * r * H, z0 + 1.12 * r * H, hiCol, seamCol, 1.22);
+      pushBox3D(turFaces, turProj, -0.26 * r * TS, 0.20 * r * TS, -0.24 * r * TS, 0.24 * r * TS, z0 + 1.12 * r * H, z0 + 1.22 * r * H, houseCol, seamCol, 1.15, 1.15);
+      // Twin side brass ammo drums + 6-barrel rotary Gattling clusters with muzzle clamps
+      for (const sy of [-0.44 * r * TS, 0.44 * r * TS]) {
+        pushBox3D(turFaces, turProj, -0.32 * r * TS, 0.14 * r * TS, sy - 0.14 * r * TS, sy + 0.14 * r * TS, z0 + 0.72 * r * H, z0 + 1.04 * r * H, '#ca8a04', seamCol, 1.18, 1.15, 3);
+        pushTubeSegment3D(turFaces, turProj, -0.06 * r - recoil, sy, z0 + 0.90 * r * H, 0.20, 0, 1.02 * r * BL, 0.12 * r * TS, 0.10 * r * TS, '#1e293b', seamCol, 1.1, 1.25, 4);
+        pushTubeSegment3D(turFaces, turProj, 0.58 * r - recoil, sy, z0 + 1.03 * r * H, 0.20, 0, 0.16 * r * BL, 0.14 * r * TS, 0.14 * r * TS, '#94a3b8', seamCol, 1.2, 1.15, 5);
+      }
+      flushFaces(ctx, turFaces);
+      return;
+    }
+
+    if (defId === 'CHINA_BUNKER' || defId === 'CHINA_MINES') {
+      // Sprite Sheet Match: Octagonal reinforced concrete pillbox + corner sandbag revetments + dark horizontal armored firing slits + sloped concrete roof with circular crimson hatch & gold star emblem + periscope
+      pushCylinderZ3D(faces, proj, 0, 0, z0, z0 + 0.44 * r * H, 0.84 * r * SS, 0.78 * r * SS, 8, baseCol, seamCol, 1.06, 1.25);
+      // 4 Corner sandbag revetment stacks
+      for (const [sx, sy] of [[-0.58 * r, -0.58 * r], [0.58 * r, -0.58 * r], [0.58 * r, 0.58 * r], [-0.58 * r, 0.58 * r]]) {
+        pushBox3D(faces, proj, sx - 0.18 * r, sx + 0.18 * r, sy - 0.18 * r, sy + 0.18 * r, z0, z0 + 0.26 * r * H, '#d4b483', seamCol, 1.08, 1.15, 2);
+      }
+      // Dark horizontal armored firing slit band
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.44 * r * H, z0 + 0.62 * r * H, 0.74 * r * SS, 0.74 * r * SS, 8, '#0f172a', seamCol, 0.82, 1.2, 3);
+      // Sloped concrete roof cap + circular crimson hatch with gold star
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.62 * r * H, z0 + 0.88 * r * H, 0.82 * r * SS, 0.56 * r * SS, 8, hiCol, seamCol, 1.12, 1.25, 4);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.88 * r * H, z0 + 0.96 * r * H, 0.38 * r * SS, 0.34 * r * SS, 8, houseCol, seamCol, 1.18, 1.2, 5);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.96 * r * H, z0 + 1.01 * r * H, 0.16 * r * SS, 0.14 * r * SS, 5, '#fbbf24', seamCol, 1.3, 1.1, 6);
+      // Periscope / whip antenna on roof
+      pushBox3D(faces, proj, -0.26 * r, -0.18 * r, -0.04 * r, 0.04 * r, z0 + 0.88 * r * H, z0 + 1.26 * r * H, shCol, seamCol, 1.05, 1.1, 6);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'CHINA_SPEAKER_TOWER') {
+      // Sprite Sheet Match: Octagonal concrete base with yellow/black hazard collar + tall crimson-and-steel cross-braced lattice tower + 4 flared directional red megaphone horns with gold rims + glowing red beacon finial
+      pushCylinderZ3D(faces, proj, 0, 0, z0, z0 + 0.28 * r * H, 0.60 * r * SS, 0.50 * r * SS, 8, baseCol, seamCol, 1.06, 1.2);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.28 * r * H, z0 + 0.38 * r * H, 0.50 * r * SS, 0.44 * r * SS, 8, '#eab308', seamCol, 1.18, 1.15, 2);
+      pushLatticeTower3D(faces, proj, 0, 0, z0 + 0.38 * r * H, z0 + 1.40 * r * H, 0.24 * r * SS, 0.11 * r * SS, houseCol, seamCol);
+      // 4 Flared megaphone loudspeaker horns at top
+      for (const [hx, hy, wx, wy] of [
+        [-0.32 * r * RS, 0, 0.18 * r * RS, 0.16 * r * RS],
+        [0.32 * r * RS, 0, 0.18 * r * RS, 0.16 * r * RS],
+        [0, -0.32 * r * RS, 0.16 * r * RS, 0.18 * r * RS],
+        [0, 0.32 * r * RS, 0.16 * r * RS, 0.18 * r * RS]
+      ]) {
+        pushTaperedBox3D(faces, proj, hx * 0.4 - wx * 0.5, hx * 0.4 + wx * 0.5, hy * 0.4 - wy * 0.5, hy * 0.4 + wy * 0.5, hx - wx, hx + wx, hy - wy, hy + wy, z0 + 1.24 * r * H, z0 + 1.48 * r * H, houseCol, seamCol, 1.22, 6);
+      }
+      // Pulsing red top beacon
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 1.48 * r * H, z0 + 1.66 * r * H, 0.10 * r * RS, 0.06 * r * RS, 8, '#ef4444', seamCol, 1.38, 1.15, 7);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'CHINA_NUCLEAR_SILO') {
+      // Sprite Sheet Match: Octagonal subterranean silo bunker + 4 glowing lime-green radiation vents + 4 open yellow/black hazard-striped blast doors folded outward + glowing green silo pit + tall crimson steel launch gantry arm + red-and-white thermonuclear ICBM emerging
+      pushCylinderZ3D(faces, proj, 0, 0, z0, z0 + 0.46 * r * H, 0.86 * r * SS, 0.74 * r * SS, 8, baseCol, seamCol, 1.06, 1.3);
+      // 4 Glowing lime-green radiation vents around the sloped bunker collar
+      for (let i = 0; i < 4; i++) {
+        const a = (i * Math.PI) / 2 + Math.PI / 4;
+        const vx = Math.cos(a) * 0.64 * r * SS;
+        const vy = Math.sin(a) * 0.64 * r * SS;
+        pushBox3D(faces, proj, vx - 0.14 * r, vx + 0.14 * r, vy - 0.14 * r, vy + 0.14 * r, z0 + 0.18 * r * H, z0 + 0.44 * r * H, '#4ade80', seamCol, 1.35, 1.15, 3);
+      }
+      // Glowing green subterranean silo pit ring
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.46 * r * H, z0 + 0.58 * r * H, 0.52 * r * SS, 0.48 * r * SS, 8, '#22c55e', seamCol, 1.35, 1.2, 3);
+      // 4 Open yellow/black hazard-striped blast doors folded outward
+      for (const [dx, dy, wx, wy] of [
+        [-0.56 * r * SS, 0, 0.16 * r, 0.28 * r],
+        [0.56 * r * SS, 0, 0.16 * r, 0.28 * r],
+        [0, -0.56 * r * SS, 0.28 * r, 0.16 * r],
+        [0, 0.56 * r * SS, 0.28 * r, 0.16 * r]
+      ]) {
+        pushBox3D(faces, proj, dx - wx, dx + wx, dy - wy, dy + wy, z0 + 0.46 * r * H, z0 + 0.56 * r * H, '#eab308', seamCol, 1.2, 1.15, 4);
+      }
+      // Tall crimson lattice umbilical launch gantry tower on -Y side + horizontal stabilizer arm
+      pushLatticeTower3D(faces, proj, -0.18 * r, -0.46 * r, z0 + 0.46 * r * H, z0 + 1.54 * r * H, 0.14 * r, 0.09 * r, houseCol, seamCol);
+      pushBox3D(faces, proj, -0.22 * r, 0.06 * r, -0.46 * r, -0.06 * r, z0 + 1.26 * r * H, z0 + 1.38 * r * H, houseCol, seamCol, 1.18, 1.15, 6);
+      // Central white-and-crimson DF-31 ICBM warhead emerging from silo pit
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.56 * r * H, z0 + 1.34 * r * H * BL, 0.24 * r * TS, 0.22 * r * TS, 8, '#f8fafc', seamCol, 1.22, 1.25, 5);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.96 * r * H, z0 + 1.12 * r * H * BL, 0.23 * r * TS, 0.23 * r * TS, 8, houseCol, seamCol, 1.18, 1.15, 6);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 1.34 * r * H * BL, z0 + 1.72 * r * H * BL, 0.22 * r * TS, 0.03 * r * TS, 8, houseCol, seamCol, 1.25, 1.2, 7);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    flushFaces(ctx, faces);
+  }
+
+  function renderGlaBuildingModel(ctx, u, faction, params, options) {
+    const p = Object.assign({}, BUILDING_DEFAULT_PARAMS, {
+      armorBaseColor: '#d4b483',
+      armorHighlightColor: '#ead2ac',
+      armorShadowColor: '#8c6d46',
+      houseColor: '#65a30d'
+    }, params || {});
+    const opts = options || {};
+    const defId = u.defId || (u.def && u.def.id) || 'GLA_COMMAND_CENTER';
+    const r = (u.radius || ((u.def && u.def.size) ? u.def.size * 0.46 : 36)) * (p.footprintScale || 1.0);
+    const H = (p.structureHeight || 1.0) * (p.extrusionDepth || 1.0);
+    const SS = p.superstructureScale || 1.0;
+    const TS = p.turretScale || 1.0;
+    const BL = p.barrelLength || 1.0;
+    const RS = p.radarScale || 1.0;
+    const t = (typeof performance !== 'undefined' ? performance.now() * 0.001 : 0) + (u.treadPhase || 0) * 6.0;
+    const baseAngle = (u.angle !== undefined ? u.angle : 0.68);
+    const turretAngle = (u.turretAngle !== undefined ? u.turretAngle : baseAngle);
+    const recoil = (u.recoilOffset || 0) * 0.05 * r;
+    const pitchScale = opts.pitchScale !== undefined ? opts.pitchScale : 0.64;
+    const zScale = opts.zScale !== undefined ? opts.zScale : 0.78;
+
+    const baseCol = p.armorBaseColor || '#d4b483';
+    const hiCol = p.armorHighlightColor || '#ead2ac';
+    const shCol = p.armorShadowColor || '#8c6d46';
+    const houseCol = (faction && faction.color) || p.houseColor || '#65a30d';
+    const seamCol = '#2b241f';
+
+    const proj = createProjector(baseAngle, pitchScale, zScale);
+    const faces = [];
+    const isRound = defId === 'GLA_TUNNEL_NETWORK' || defId === 'GLA_STINGER_SITE' || defId === 'GLA_DEMO_TRAP';
+    const z0 = renderBuildingCompoundBase3D(ctx, faces, proj, r, p, baseCol, hiCol, shCol, houseCol, seamCol, isRound);
+
+    if (defId === 'GLA_COMMAND_CENTER') {
+      // GLA Command Center: Two-tier desert sandstone adobe fortress with crenelated parapet,
+      // corrugated rusty sheet-metal awnings on poles, draped olive-camo netting tarp,
+      // rooftop wire-mesh radar + lattice mast + parabolic dish, and stacked oil drums/crates in yard
+      pushBox3D(faces, proj, -0.82 * r * SS, 0.46 * r * SS, -0.76 * r * SS, 0.76 * r * SS, z0, z0 + 0.56 * r * H, baseCol, seamCol, 1.05, 1.3);
+      // Crenelated merlons around lower bastion perimeter
+      for (const mx of [-0.74 * r, -0.44 * r, -0.14 * r, 0.16 * r, 0.38 * r]) {
+        pushBox3D(faces, proj, mx - 0.08 * r, mx + 0.08 * r, -0.78 * r * SS, -0.68 * r * SS, z0 + 0.56 * r * H, z0 + 0.68 * r * H, hiCol, seamCol, 1.1, 1.1);
+        pushBox3D(faces, proj, mx - 0.08 * r, mx + 0.08 * r, 0.68 * r * SS, 0.78 * r * SS, z0 + 0.56 * r * H, z0 + 0.68 * r * H, hiCol, seamCol, 1.1, 1.1);
+      }
+      // Second-tier central sandstone keep + crenelations
+      pushBox3D(faces, proj, -0.66 * r * SS, 0.18 * r * SS, -0.54 * r * SS, 0.54 * r * SS, z0 + 0.56 * r * H, z0 + 1.02 * r * H, hiCol, seamCol, 1.1, 1.25);
+      for (const my of [-0.46 * r, -0.16 * r, 0.16 * r, 0.46 * r]) {
+        pushBox3D(faces, proj, 0.10 * r * SS, 0.20 * r * SS, my - 0.07 * r, my + 0.07 * r, z0 + 1.02 * r * H, z0 + 1.14 * r * H, baseCol, seamCol, 1.12, 1.1);
+      }
+      // Narrow horizontal fortress firing slits
+      for (const wy of [-0.36 * r, 0, 0.36 * r]) {
+        pushBox3D(faces, proj, 0.16 * r * SS, 0.20 * r * SS, wy - 0.09 * r, wy + 0.09 * r, z0 + 0.74 * r * H, z0 + 0.86 * r * H, '#1e293b', seamCol, 0.85, 1.05);
+      }
+      // Corrugated rusty sheet-metal awning on timber poles over right/front yard
+      pushTaperedBox3D(faces, proj, 0.16 * r, 0.82 * r, -0.64 * r, 0.16 * r, 0.20 * r, 0.78 * r, -0.58 * r, 0.12 * r, z0 + 0.48 * r * H, z0 + 0.64 * r * H, '#9a3412', seamCol, 1.15);
+      for (const py of [-0.56 * r, 0.08 * r]) {
+        pushBox3D(faces, proj, 0.70 * r, 0.76 * r, py - 0.03 * r, py + 0.03 * r, z0, z0 + 0.50 * r * H, '#57534e', seamCol, 0.96, 1.05);
+      }
+      // Olive-camo netting tarp draped across right flank
+      pushTaperedBox3D(faces, proj, -0.12 * r, 0.64 * r, 0.16 * r, 0.78 * r, -0.06 * r, 0.56 * r, 0.22 * r, 0.72 * r, z0 + 0.44 * r * H, z0 + 0.68 * r * H, houseCol, seamCol, 1.16);
+      // Armored underground tunnel hatch + stacked red/green oil drums in front yard
+      pushBox3D(faces, proj, 0.38 * r, 0.74 * r, 0.24 * r, 0.62 * r, z0, z0 + 0.14 * r * H, '#475569', seamCol, 1.02, 1.15);
+      pushCylinderZ3D(faces, proj, 0.54 * r, -0.36 * r, z0, z0 + 0.28 * r * H, 0.11 * r, 0.11 * r, 8, '#dc2626', seamCol, 1.12, 1.05);
+      pushCylinderZ3D(faces, proj, 0.36 * r, -0.44 * r, z0, z0 + 0.28 * r * H, 0.11 * r, 0.11 * r, 8, '#84cc16', seamCol, 1.2, 1.05);
+      // Rooftop lattice radio mast + rotating wire-mesh radar + parabolic dish
+      if (p.ShowRadarDish !== false) {
+        pushLatticeTower3D(faces, proj, -0.44 * r, -0.28 * r, z0 + 1.02 * r * H, z0 + 1.66 * r * H * RS, 0.12 * r, 0.03 * r, '#57534e', seamCol);
+        pushCylinderZ3D(faces, proj, -0.14 * r, 0.22 * r, z0 + 1.02 * r * H, z0 + 1.24 * r * H, 0.10 * r * RS, 0.26 * r * RS, 8, hiCol, seamCol, 1.2, 1.15);
+        const rAng = t * 1.6;
+        const rx = Math.cos(rAng) * 0.22 * r * RS, ry = Math.sin(rAng) * 0.22 * r * RS;
+        pushBox3D(faces, proj, -0.14 * r - Math.abs(rx) - 0.04 * r, -0.14 * r + Math.abs(rx) + 0.04 * r, -0.22 * r - Math.abs(ry) - 0.04 * r, -0.22 * r + Math.abs(ry) + 0.04 * r, z0 + 1.18 * r * H, z0 + 1.30 * r * H, '#78716c', seamCol, 1.15, 1.1);
+      }
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'GLA_SUPPLY_STASH') {
+      // GLA Supply Stash: Sandy pad with corrugated tin & timber cargo sorting shed shaded by
+      // olive-camo pitched tarp roof, front wooden plank stairs, stacked olive ammo crates,
+      // and glowing lime-green anthrax toxin drums
+      // Raised timber & sandstone dock platform
+      pushBox3D(faces, proj, -0.82 * r * SS, 0.16 * r * SS, -0.76 * r * SS, 0.76 * r * SS, z0, z0 + 0.24 * r * H, shCol, seamCol, 1.02, 1.2);
+      // Front wooden plank loading ramp/stairs
+      pushTaperedBox3D(faces, proj, 0.16 * r * SS, 0.48 * r * SS, -0.32 * r, 0.32 * r, 0.16 * r * SS, 0.22 * r * SS, -0.30 * r, 0.30 * r, z0, z0 + 0.24 * r * H, '#a16207', seamCol, 1.12);
+      // Corrugated tin & sandstone shed walls
+      pushBox3D(faces, proj, -0.78 * r * SS, 0.08 * r * SS, -0.70 * r * SS, 0.70 * r * SS, z0 + 0.24 * r * H, z0 + 0.68 * r * H, baseCol, seamCol, 1.06, 1.25);
+      // Dark open sorting bay interior
+      pushBox3D(faces, proj, -0.06 * r * SS, 0.10 * r * SS, -0.48 * r, 0.48 * r, z0 + 0.26 * r * H, z0 + 0.62 * r * H, '#1e293b', seamCol, 0.85, 1.1);
+      // Pitched olive-camo tarp roof + rusty corrugated iron ridge
+      pushTaperedBox3D(faces, proj, -0.84 * r * SS, 0.16 * r * SS, -0.76 * r * SS, 0.76 * r * SS, -0.68 * r * SS, 0.02 * r * SS, -0.58 * r * SS, 0.58 * r * SS, z0 + 0.68 * r * H, z0 + 0.94 * r * H, houseCol, seamCol, 1.18);
+      pushBox3D(faces, proj, -0.70 * r * SS, 0.04 * r * SS, -0.22 * r, 0.22 * r, z0 + 0.92 * r * H, z0 + 1.00 * r * H, '#9a3412', seamCol, 1.12, 1.1);
+      // Stacked wooden & olive military ammo crates in front courtyard
+      if (p.ShowSupplyPallets !== false) {
+        pushBox3D(faces, proj, 0.24 * r, 0.66 * r, -0.68 * r, -0.24 * r, z0, z0 + 0.30 * r * H, '#a16207', seamCol, 1.12, 1.15);
+        pushBox3D(faces, proj, 0.30 * r, 0.60 * r, -0.62 * r, -0.30 * r, z0 + 0.30 * r * H, z0 + 0.52 * r * H, '#4d7c0f', seamCol, 1.16, 1.1);
+        // Glowing lime-green anthrax toxin drums on right side
+        for (const [dx, dy] of [[0.34 * r, 0.32 * r], [0.58 * r, 0.28 * r], [0.46 * r, 0.54 * r]]) {
+          pushCylinderZ3D(faces, proj, dx, dy, z0, z0 + 0.34 * r * H, 0.11 * r, 0.11 * r, 8, '#15803d', seamCol, 1.1, 1.1);
+          pushCylinderZ3D(faces, proj, dx, dy, z0 + 0.32 * r * H, z0 + 0.38 * r * H, 0.10 * r, 0.09 * r, 8, '#84cc16', seamCol, 1.35, 1.05);
+        }
+      }
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'GLA_BARRACKS') {
+      // GLA Barracks: Sandstone adobe bunker with front arched tunnel doorway flanked by vertical
+      // olive military banners, rooftop sandbag parapet ring, exterior RPG weapon racks,
+      // and tall 4-legged wooden watchtower with searchlight on the roof
+      pushBox3D(faces, proj, -0.80 * r * SS, 0.38 * r * SS, -0.74 * r * SS, 0.74 * r * SS, z0, z0 + 0.62 * r * H, baseCol, seamCol, 1.05, 1.3);
+      // Crenelated sandstone + sandbag parapet ring on roof
+      pushBox3D(faces, proj, -0.76 * r * SS, 0.34 * r * SS, -0.70 * r * SS, 0.70 * r * SS, z0 + 0.62 * r * H, z0 + 0.74 * r * H, hiCol, seamCol, 1.1, 1.2);
+      for (const my of [-0.56 * r, -0.20 * r, 0.20 * r, 0.56 * r]) {
+        pushBox3D(faces, proj, 0.24 * r * SS, 0.38 * r * SS, my - 0.10 * r, my + 0.10 * r, z0 + 0.74 * r * H, z0 + 0.84 * r * H, '#a8a29e', seamCol, 1.08, 1.1);
+      }
+      // Front arched bunker deployment tunnel portal
+      pushBox3D(faces, proj, 0.26 * r * SS, 0.50 * r * SS, -0.34 * r, 0.34 * r, z0, z0 + 0.54 * r * H, shCol, seamCol, 1.04, 1.2);
+      pushBox3D(faces, proj, 0.32 * r * SS, 0.52 * r * SS, -0.24 * r, 0.24 * r, z0, z0 + 0.44 * r * H, '#1e293b', seamCol, 0.82, 1.15);
+      // Vertical olive-green GLA banners flanking doorway
+      for (const by of [-0.46 * r, 0.46 * r]) {
+        pushBox3D(faces, proj, 0.34 * r * SS, 0.40 * r * SS, by - 0.08 * r, by + 0.08 * r, z0 + 0.16 * r * H, z0 + 0.56 * r * H, houseCol, seamCol, 1.18, 1.1);
+        pushBox3D(faces, proj, 0.36 * r * SS, 0.41 * r * SS, by - 0.04 * r, by + 0.04 * r, z0 + 0.30 * r * H, z0 + 0.42 * r * H, '#eab308', seamCol, 1.25, 1.05);
+      }
+      // Exterior wooden RPG / AK-47 weapon rack + sandbag firing line on right apron
+      pushBox3D(faces, proj, 0.44 * r, 0.62 * r, 0.36 * r, 0.70 * r, z0, z0 + 0.32 * r * H, '#78350f', seamCol, 1.08, 1.1);
+      pushBox3D(faces, proj, 0.56 * r, 0.80 * r, -0.68 * r, -0.28 * r, z0, z0 + 0.20 * r * H, '#a8a29e', seamCol, 1.05, 1.1);
+      // Tall 4-legged wooden/steel watchtower on back-left roof with corrugated canopy & spotlight
+      pushLatticeTower3D(faces, proj, -0.46 * r, -0.36 * r, z0 + 0.74 * r * H, z0 + 1.38 * r * H, 0.22 * r, 0.16 * r, '#78350f', seamCol);
+      pushBox3D(faces, proj, -0.66 * r, -0.26 * r, -0.56 * r, -0.16 * r, z0 + 1.36 * r * H, z0 + 1.48 * r * H, baseCol, seamCol, 1.12, 1.15);
+      pushTaperedBox3D(faces, proj, -0.70 * r, -0.22 * r, -0.60 * r, -0.12 * r, -0.58 * r, -0.34 * r, -0.48 * r, -0.24 * r, z0 + 1.58 * r * H, z0 + 1.72 * r * H, houseCol, seamCol, 1.18);
+      if (p.ShowHazardBeacons !== false) {
+        pushCylinderZ3D(faces, proj, -0.30 * r, -0.36 * r, z0 + 1.48 * r * H, z0 + 1.58 * r * H, 0.07 * r, 0.07 * r, 6, '#fef08a', seamCol, 1.35, 1.05);
+      }
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'GLA_ARMS_DEALER') {
+      // GLA Arms Dealer: Sandstone perimeter courtyard wall, arched corrugated steel hangar
+      // draped in desert camo netting, tan Scorpion tank inside the front bay, stacked tires/treads
+      // on the right, twin rear exhaust pipes, and left yellow gantry crane
+      // Sandstone bastion side walls
+      pushBox3D(faces, proj, -0.84 * r * SS, 0.44 * r * SS, -0.78 * r * SS, 0.78 * r * SS, z0, z0 + 0.66 * r * H, baseCol, seamCol, 1.05, 1.3);
+      // Arched corrugated steel hangar barrel roof
+      pushTaperedBox3D(faces, proj, -0.80 * r * SS, 0.42 * r * SS, -0.72 * r * SS, 0.72 * r * SS, -0.72 * r * SS, 0.36 * r * SS, -0.52 * r * SS, 0.52 * r * SS, z0 + 0.66 * r * H, z0 + 0.96 * r * H, '#94a3b8', seamCol, 1.18);
+      pushTaperedBox3D(faces, proj, -0.72 * r * SS, 0.36 * r * SS, -0.52 * r * SS, 0.52 * r * SS, -0.66 * r * SS, 0.30 * r * SS, -0.26 * r * SS, 0.26 * r * SS, z0 + 0.96 * r * H, z0 + 1.12 * r * H, '#cbd5e1', seamCol, 1.22);
+      // Olive-green camouflage netting draped across hangar roof
+      pushTaperedBox3D(faces, proj, -0.54 * r * SS, 0.26 * r * SS, -0.68 * r * SS, 0.48 * r * SS, -0.44 * r * SS, 0.18 * r * SS, -0.42 * r * SS, 0.36 * r * SS, z0 + 0.76 * r * H, z0 + 1.15 * r * H, houseCol, seamCol, 1.15);
+      // Wide dark interior vehicle bay + hazard rollout ramp
+      pushBox3D(faces, proj, 0.22 * r * SS, 0.46 * r * SS, -0.48 * r, 0.48 * r, z0, z0 + 0.56 * r * H, '#1e293b', seamCol, 0.82, 1.15);
+      pushHazardRamp3D(faces, proj, 0.42 * r * SS, 0.84 * r, -0.52 * r, 0.52 * r, z0, z0 + 0.08 * r * H, seamCol);
+      // Miniature Tan & Olive Scorpion Tank being assembled inside front bay
+      pushBox3D(faces, proj, 0.18 * r, 0.56 * r, -0.24 * r, 0.24 * r, z0 + 0.08 * r * H, z0 + 0.26 * r * H, '#d4b483', seamCol, 1.12, 1.15);
+      pushBox3D(faces, proj, 0.24 * r, 0.46 * r, -0.16 * r, 0.16 * r, z0 + 0.26 * r * H, z0 + 0.40 * r * H, houseCol, seamCol, 1.18, 1.1);
+      pushTubeSegment3D(faces, proj, 0.38 * r, 0, z0 + 0.34 * r * H, 0.08, 0, 0.38 * r, 0.04 * r, 0.03 * r, '#475569', seamCol, 1.15, 1.1);
+      // Left industrial yellow A-frame hoist gantry crane
+      if (p.ShowGantryCrane !== false) {
+        for (const gx of [-0.62 * r, 0.18 * r]) {
+          pushBox3D(faces, proj, gx - 0.06 * r, gx + 0.06 * r, -0.86 * r, -0.72 * r, z0, z0 + 1.16 * r * H * TS, '#eab308', seamCol, 1.18, 1.15);
+        }
+        pushBox3D(faces, proj, -0.68 * r, 0.26 * r, -0.88 * r, -0.70 * r, z0 + 1.12 * r * H * TS, z0 + 1.26 * r * H * TS, '#eab308', seamCol, 1.24, 1.2);
+      }
+      // Twin rear exhaust smokestacks + right yard spare tires & treads
+      for (const sy of [-0.46 * r, 0.46 * r]) {
+        pushCylinderZ3D(faces, proj, -0.74 * r, sy, z0 + 0.66 * r * H, z0 + 1.32 * r * H, 0.09 * r, 0.07 * r, 8, '#57534e', seamCol, 1.08, 1.15);
+      }
+      pushCylinderZ3D(faces, proj, 0.14 * r, 0.68 * r, z0, z0 + 0.28 * r * H, 0.12 * r, 0.12 * r, 8, '#1e293b', seamCol, 0.92, 1.05);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'GLA_PALACE') {
+      // GLA Palace: Massive Middle Eastern citadel bunker with crenelated battlements,
+      // 4 corner crenelated bastion towers, central two-tier keep with sandbagged RPG awnings,
+      // octagonal drum + ribbed golden dome, and outer anti-tank dragon's-teeth obstacles
+      // Outer anti-tank concrete dragon's-teeth around front & flank perimeter
+      for (const d of [-0.66 * r, -0.34 * r, 0.34 * r, 0.66 * r]) {
+        pushTaperedBox3D(faces, proj, 0.78 * r, 0.90 * r, d - 0.06 * r, d + 0.06 * r, 0.82 * r, 0.86 * r, d - 0.02 * r, d + 0.02 * r, z0, z0 + 0.18 * r * H, '#94a3b8', seamCol, 1.15);
+      }
+      // Lower sandstone citadel fortress block + arched gatehouse
+      pushBox3D(faces, proj, -0.78 * r * SS, 0.72 * r * SS, -0.78 * r * SS, 0.78 * r * SS, z0, z0 + 0.68 * r * H, baseCol, seamCol, 1.06, 1.3);
+      pushBox3D(faces, proj, 0.56 * r * SS, 0.76 * r * SS, -0.26 * r, 0.26 * r, z0, z0 + 0.52 * r * H, '#1e293b', seamCol, 0.85, 1.15);
+      // Sandbagged firing embrasure awnings on front & side walls
+      for (const wy of [-0.46 * r, 0.46 * r]) {
+        pushBox3D(faces, proj, 0.68 * r * SS, 0.78 * r * SS, wy - 0.14 * r, wy + 0.14 * r, z0 + 0.34 * r * H, z0 + 0.48 * r * H, '#1e293b', seamCol, 0.85, 1.1);
+        pushTaperedBox3D(faces, proj, 0.66 * r * SS, 0.82 * r * SS, wy - 0.16 * r, wy + 0.16 * r, 0.66 * r * SS, 0.76 * r * SS, wy - 0.14 * r, wy + 0.14 * r, z0 + 0.48 * r * H, z0 + 0.58 * r * H, houseCol, seamCol, 1.15);
+      }
+      // 4 Corner crenelated bastion watchtowers
+      for (const [bx, by] of [[-0.68 * r, -0.68 * r], [0.64 * r, -0.68 * r], [0.64 * r, 0.68 * r], [-0.68 * r, 0.68 * r]]) {
+        pushBox3D(faces, proj, bx - 0.20 * r * SS, bx + 0.20 * r * SS, by - 0.20 * r * SS, by + 0.20 * r * SS, z0, z0 + 1.06 * r * H, hiCol, seamCol, 1.1, 1.25);
+        pushBox3D(faces, proj, bx - 0.22 * r * SS, bx + 0.22 * r * SS, by - 0.22 * r * SS, by + 0.22 * r * SS, z0 + 1.06 * r * H, z0 + 1.18 * r * H, baseCol, seamCol, 1.14, 1.15);
+        pushCylinderZ3D(faces, proj, bx, by, z0 + 1.18 * r * H, z0 + 1.38 * r * H, 0.16 * r, 0.05 * r, 8, houseCol, seamCol, 1.18, 1.1);
+      }
+      // Upper second-tier inner keep + octagonal dome drum + ribbed golden dome + finial spire
+      pushBox3D(faces, proj, -0.48 * r * SS, 0.44 * r * SS, -0.48 * r * SS, 0.48 * r * SS, z0 + 0.68 * r * H, z0 + 1.02 * r * H, hiCol, seamCol, 1.1, 1.25);
+      pushCylinderZ3D(faces, proj, -0.02 * r, 0, z0 + 1.02 * r * H, z0 + 1.24 * r * H, 0.40 * r * SS, 0.38 * r * SS, 8, houseCol, seamCol, 1.15, 1.2);
+      pushCylinderZ3D(faces, proj, -0.02 * r, 0, z0 + 1.24 * r * H, z0 + 1.62 * r * H, 0.38 * r * SS, 0.10 * r * SS, 8, '#eab308', seamCol, 1.28, 1.25);
+      pushCylinderZ3D(faces, proj, -0.02 * r, 0, z0 + 1.62 * r * H, z0 + 1.84 * r * H, 0.04 * r, 0.01 * r, 6, '#fef08a', seamCol, 1.35, 1.1);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'GLA_BLACK_MARKET') {
+      // GLA Black Market: Sandstone vault with steel bank-vault door, 3 olive canvas bazaar canopies
+      // on poles, roof ridge tent + camouflaged satellite dish, wooden crates, and glowing green anthrax barrels
+      pushBox3D(faces, proj, -0.80 * r * SS, 0.38 * r * SS, -0.74 * r * SS, 0.74 * r * SS, z0, z0 + 0.66 * r * H, baseCol, seamCol, 1.06, 1.3);
+      // Crenelated parapet edge
+      pushBox3D(faces, proj, -0.82 * r * SS, 0.40 * r * SS, -0.76 * r * SS, 0.76 * r * SS, z0 + 0.66 * r * H, z0 + 0.76 * r * H, hiCol, seamCol, 1.1, 1.2);
+      // Heavy circular steel bank-vault door on front facade
+      pushCylinderZ3D(faces, proj, 0.38 * r * SS, -0.14 * r, z0 + 0.12 * r * H, z0 + 0.52 * r * H, 0.18 * r, 0.18 * r, 8, '#475569', seamCol, 1.08, 1.2);
+      pushCylinderZ3D(faces, proj, 0.42 * r * SS, -0.14 * r, z0 + 0.22 * r * H, z0 + 0.42 * r * H, 0.10 * r, 0.10 * r, 6, '#94a3b8', seamCol, 1.18, 1.1);
+      // 3 Slanted olive-drab market bazaar canvas canopies along front & right courtyard
+      for (const cy of [-0.52 * r, 0.04 * r, 0.52 * r]) {
+        pushTaperedBox3D(faces, proj, 0.34 * r * SS, 0.78 * r, cy - 0.22 * r, cy + 0.22 * r, 0.34 * r * SS, 0.72 * r, cy - 0.20 * r, cy + 0.20 * r, z0 + 0.38 * r * H, z0 + 0.54 * r * H, houseCol, seamCol, 1.16);
+      }
+      // Rooftop merchant ridge tent + large rotating camouflaged satellite uplink dish
+      pushTaperedBox3D(faces, proj, -0.68 * r * SS, 0.04 * r * SS, -0.54 * r * SS, 0.22 * r * SS, -0.56 * r * SS, -0.08 * r * SS, -0.36 * r * SS, 0.06 * r * SS, z0 + 0.76 * r * H, z0 + 1.04 * r * H, '#4d7c0f', seamCol, 1.18);
+      if (p.ShowRadarDish !== false) {
+        pushCylinderZ3D(faces, proj, -0.16 * r, 0.38 * r, z0 + 0.76 * r * H, z0 + 1.02 * r * H, 0.12 * r * RS, 0.10 * r * RS, 8, '#57534e', seamCol, 1.08, 1.1);
+        pushCylinderZ3D(faces, proj, -0.16 * r, 0.38 * r, z0 + 1.02 * r * H, z0 + 1.32 * r * H, 0.12 * r * RS, 0.34 * r * RS, 8, hiCol, seamCol, 1.22, 1.2);
+      }
+      // Contraband rocket crates + glowing green anthrax barrels in front yard
+      if (p.ShowSupplyPallets !== false) {
+        pushBox3D(faces, proj, 0.44 * r, 0.76 * r, -0.66 * r, -0.28 * r, z0, z0 + 0.26 * r * H, '#a16207', seamCol, 1.12, 1.1);
+        pushCylinderZ3D(faces, proj, 0.56 * r, 0.36 * r, z0, z0 + 0.32 * r * H, 0.11 * r, 0.11 * r, 8, '#15803d', seamCol, 1.1, 1.1);
+        pushCylinderZ3D(faces, proj, 0.56 * r, 0.36 * r, z0 + 0.30 * r * H, z0 + 0.36 * r * H, 0.10 * r, 0.09 * r, 8, '#84cc16', seamCol, 1.35, 1.05);
+      }
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'GLA_TUNNEL_NETWORK') {
+      // GLA Tunnel Network: Earthen/sandstone mound with circular concrete tunnel portal,
+      // corrugated scrap metal patches, flank camo tarps on poles, and rooftop sandbagged twin-barrel heavy MG turret
+      // Sloped earthen & sandstone mound + sandbag perimeter ring
+      pushCylinderZ3D(faces, proj, 0, 0, z0, z0 + 0.24 * r * H, 0.88 * r * SS, 0.82 * r * SS, 8, '#a8a29e', seamCol, 1.04, 1.2);
+      pushCylinderZ3D(faces, proj, -0.06 * r, 0, z0 + 0.16 * r * H, z0 + 0.64 * r * H, 0.78 * r * SS, 0.58 * r * SS, 8, baseCol, seamCol, 1.08, 1.25);
+      // Corrugated scrap metal patch panels on sides
+      for (const sy of [-0.56 * r, 0.56 * r]) {
+        pushBox3D(faces, proj, -0.38 * r, 0.22 * r, sy - 0.10 * r, sy + 0.10 * r, z0 + 0.26 * r * H, z0 + 0.56 * r * H, '#9a3412', seamCol, 1.12, 1.15);
+      }
+      // Flank olive camouflage tarp awnings on poles
+      for (const sy of [-0.68 * r, 0.68 * r]) {
+        pushTaperedBox3D(faces, proj, -0.44 * r, 0.34 * r, sy - 0.18 * r, sy + 0.18 * r, -0.36 * r, 0.26 * r, sy - 0.14 * r, sy + 0.14 * r, z0 + 0.42 * r * H, z0 + 0.58 * r * H, houseCol, seamCol, 1.16);
+      }
+      // Circular concrete subterranean tunnel portal arch + dark underground entrance
+      pushBox3D(faces, proj, 0.22 * r * SS, 0.68 * r * SS, -0.44 * r, 0.44 * r, z0 + 0.08 * r * H, z0 + 0.58 * r * H, '#94a3b8', seamCol, 1.1, 1.25);
+      pushBox3D(faces, proj, 0.34 * r * SS, 0.72 * r * SS, -0.32 * r, 0.32 * r, z0 + 0.08 * r * H, z0 + 0.48 * r * H, '#0f172a', seamCol, 0.78, 1.15);
+      pushHazardRamp3D(faces, proj, 0.56 * r * SS, 0.88 * r, -0.38 * r, 0.38 * r, z0, z0 + 0.08 * r * H, seamCol);
+      flushFaces(ctx, faces);
+
+      // Rooftop sandbagged DShK twin-barrel heavy machine-gun turret
+      const turProj = createProjector(turretAngle, pitchScale, zScale);
+      const turFaces = [];
+      pushCylinderZ3D(turFaces, turProj, -0.10 * r, 0, z0 + 0.64 * r * H, z0 + 0.82 * r * H, 0.36 * r * TS, 0.32 * r * TS, 8, '#a8a29e', seamCol, 1.08, 1.15);
+      pushBox3D(turFaces, turProj, -0.28 * r * TS, 0.16 * r * TS, -0.24 * r * TS, 0.24 * r * TS, z0 + 0.82 * r * H, z0 + 1.08 * r * H, houseCol, seamCol, 1.15, 1.2);
+      // Gunner armor shield + twin heavy MG barrels
+      pushBox3D(turFaces, turProj, 0.12 * r * TS, 0.22 * r * TS, -0.28 * r * TS, 0.28 * r * TS, z0 + 0.86 * r * H, z0 + 1.16 * r * H, hiCol, seamCol, 1.18, 1.15);
+      for (const by of [-0.08 * r * TS, 0.08 * r * TS]) {
+        pushTubeSegment3D(turFaces, turProj, 0.16 * r - recoil, by, z0 + 0.98 * r * H, 0.12, 0, 0.76 * r * BL, 0.05 * r * TS, 0.04 * r * TS, '#1e293b', seamCol, 1.1, 1.2);
+      }
+      flushFaces(ctx, turFaces);
+      return;
+    }
+
+    if (defId === 'GLA_STINGER_SITE') {
+      // GLA Stinger Site: Circular sandbagged pit with olive-tan camo netting canopy over
+      // 4 angled steel poles, green missile crates inside, and central tripod quad-Stinger SAM launcher turret
+      // Outer double-tier circular sandbag revetment wall
+      pushCylinderZ3D(faces, proj, 0, 0, z0, z0 + 0.32 * r * H, 0.86 * r * SS, 0.80 * r * SS, 8, baseCol, seamCol, 1.05, 1.25);
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.32 * r * H, z0 + 0.52 * r * H, 0.80 * r * SS, 0.74 * r * SS, 8, hiCol, seamCol, 1.1, 1.2);
+      // Recessed dark bunker floor pit + stacked green Stinger reload crates
+      pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.18 * r * H, z0 + 0.26 * r * H, 0.64 * r * SS, 0.64 * r * SS, 8, '#334155', seamCol, 0.88, 1.1);
+      pushBox3D(faces, proj, -0.48 * r, -0.18 * r, 0.24 * r, 0.52 * r, z0 + 0.26 * r * H, z0 + 0.46 * r * H, '#4d7c0f', seamCol, 1.12, 1.1);
+      // 4 Corner steel support poles + overhead olive-tan camouflage netting canopy ring
+      for (const [px, py] of [[-0.56 * r, -0.56 * r], [0.56 * r, -0.56 * r], [0.56 * r, 0.56 * r], [-0.56 * r, 0.56 * r]]) {
+        pushBox3D(faces, proj, px - 0.04 * r, px + 0.04 * r, py - 0.04 * r, py + 0.04 * r, z0 + 0.44 * r * H, z0 + 1.18 * r * H, '#57534e', seamCol, 1.05, 1.1);
+      }
+      pushTaperedBox3D(faces, proj, -0.74 * r * SS, 0.74 * r * SS, -0.74 * r * SS, 0.74 * r * SS, -0.52 * r * SS, 0.52 * r * SS, -0.52 * r * SS, 0.52 * r * SS, z0 + 1.14 * r * H, z0 + 1.34 * r * H, houseCol, seamCol, 1.16);
+      flushFaces(ctx, faces);
+
+      // Central swiveling tripod + dual 2-tube Stinger SAM launcher pods
+      const turProj = createProjector(turretAngle, pitchScale, zScale);
+      const turFaces = [];
+      pushCylinderZ3D(turFaces, turProj, 0, 0, z0 + 0.26 * r * H, z0 + 0.64 * r * H, 0.22 * r * TS, 0.16 * r * TS, 8, '#475569', seamCol, 1.08, 1.15);
+      pushBox3D(turFaces, turProj, -0.24 * r * TS, 0.24 * r * TS, -0.28 * r * TS, 0.28 * r * TS, z0 + 0.64 * r * H, z0 + 0.92 * r * H, baseCol, seamCol, 1.12, 1.2);
+      for (const sy of [-0.32 * r * TS, 0.32 * r * TS]) {
+        pushTubeSegment3D(turFaces, turProj, -0.14 * r - recoil, sy, z0 + 0.80 * r * H, 0.38, 0, 0.78 * r * BL, 0.11 * r * TS, 0.10 * r * TS, '#4d7c0f', seamCol, 1.16, 1.2);
+        pushTubeSegment3D(turFaces, turProj, 0.42 * r - recoil, sy, z0 + 1.08 * r * H, 0.38, 0, 0.12 * r * BL, 0.08 * r * TS, 0.06 * r * TS, '#ef4444', seamCol, 1.25, 1.1);
+      }
+      flushFaces(ctx, turFaces);
+      return;
+    }
+
+    if (defId === 'GLA_SCUD_STORM') {
+      // GLA Scud Storm Superweapon: Square sandstone fortress with 4 sloped corner bastions,
+      // yellow/black hazard stripe bands, 3 glowing lime-green exterior anthrax fuel vats on front-right wall,
+      // and 9 inclined 45° green/yellow Scud-B missiles on steel erector launch gantries
+      // Main fortified sandstone launch bunker + 4 sloped corner bastions
+      pushBox3D(faces, proj, -0.82 * r * SS, 0.82 * r * SS, -0.82 * r * SS, 0.82 * r * SS, z0, z0 + 0.56 * r * H, baseCol, seamCol, 1.06, 1.3);
+      for (const [bx, by] of [[-0.74 * r, -0.74 * r], [0.74 * r, -0.74 * r], [0.74 * r, 0.74 * r], [-0.74 * r, 0.74 * r]]) {
+        pushTaperedBox3D(faces, proj, bx - 0.22 * r, bx + 0.22 * r, by - 0.22 * r, by + 0.22 * r, bx - 0.16 * r, bx + 0.16 * r, by - 0.16 * r, by + 0.16 * r, z0, z0 + 0.68 * r * H, hiCol, seamCol, 1.14);
+      }
+      // Yellow/black hazard stripe trim along launch bay deck
+      pushHazardRamp3D(faces, proj, -0.68 * r, 0.68 * r, -0.68 * r, 0.68 * r, z0 + 0.56 * r * H, z0 + 0.64 * r * H, seamCol);
+      // 3 Glowing lime-green cylindrical Anthrax toxin fuel vats mounted on front-right wall
+      for (const vx of [-0.36 * r, 0, 0.36 * r]) {
+        pushCylinderZ3D(faces, proj, vx, 0.84 * r * SS, z0 + 0.08 * r * H, z0 + 0.52 * r * H, 0.13 * r, 0.13 * r, 8, '#15803d', seamCol, 1.12, 1.15);
+        pushCylinderZ3D(faces, proj, vx, 0.84 * r * SS, z0 + 0.20 * r * H, z0 + 0.42 * r * H, 0.14 * r, 0.14 * r, 8, '#84cc16', seamCol, 1.35, 1.1);
+      }
+      // 3x3 Array of 9 inclined Scud-B ballistic missiles on steel erector rails with green/yellow warheads
+      const offsets = [-0.38 * r, 0, 0.38 * r];
+      for (const mx of offsets) {
+        for (const my of offsets) {
+          // Steel erector gantry rail
+          pushTubeSegment3D(faces, proj, mx - 0.06 * r, my - 0.05 * r, z0 + 0.64 * r * H, 0.82, 0, 0.72 * r * H * BL, 0.05 * r * TS, 0.04 * r * TS, '#475569', seamCol, 1.05, 1.1);
+          // Olive-green Scud-B missile body
+          pushTubeSegment3D(faces, proj, mx, my, z0 + 0.66 * r * H, 0.82, 0, 0.68 * r * H * BL, 0.10 * r * TS, 0.09 * r * TS, houseCol, seamCol, 1.16, 1.2);
+          // Glowing lime-green & yellow Anthrax warhead nosecone
+          const tipX = mx + Math.cos(0.82) * 0.68 * r * H * BL;
+          const tipZ = z0 + 0.66 * r * H + Math.sin(0.82) * 0.68 * r * H * BL;
+          pushTubeSegment3D(faces, proj, tipX, my, tipZ, 0.82, 0, 0.24 * r * H * BL, 0.09 * r * TS, 0.02 * r * TS, '#84cc16', seamCol, 1.35, 1.15);
+        }
+      }
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    // GLA_DEMO_TRAP: Camouflaged sandbag & scrap-metal IED mound with clustered red/green explosive barrels + blinking fuse
+    pushCylinderZ3D(faces, proj, 0, 0, z0, z0 + 0.28 * r * H, 0.76 * r * SS, 0.66 * r * SS, 8, baseCol, seamCol, 1.05, 1.2);
+    pushTaperedBox3D(faces, proj, -0.54 * r, 0.54 * r, -0.54 * r, 0.54 * r, -0.38 * r, 0.38 * r, -0.38 * r, 0.38 * r, z0 + 0.24 * r * H, z0 + 0.46 * r * H, houseCol, seamCol, 1.15);
+    for (const [bx, by, col] of [[-0.22 * r, -0.18 * r, '#dc2626'], [0.22 * r, -0.14 * r, '#dc2626'], [0, 0.22 * r, '#84cc16']]) {
+      pushCylinderZ3D(faces, proj, bx, by, z0 + 0.28 * r * H, z0 + 0.66 * r * H, 0.16 * r, 0.16 * r, 8, col, seamCol, 1.2, 1.15);
+    }
+    const pulse = 0.5 + 0.5 * Math.sin(t * 6.0);
+    pushCylinderZ3D(faces, proj, 0, 0, z0 + 0.66 * r * H, z0 + 0.82 * r * H, 0.08 * r, 0.08 * r, 6, pulse > 0.5 ? '#ef4444' : '#fef08a', seamCol, 1.35, 1.1);
+    flushFaces(ctx, faces);
+  }
+
+  function renderTechBuildingModel(ctx, u, faction, params, options) {
+    const p = Object.assign({}, BUILDING_DEFAULT_PARAMS, {
+      armorBaseColor: '#e2e8f0',
+      armorHighlightColor: '#f8fafc',
+      armorShadowColor: '#64748b',
+      houseColor: '#0ea5e9'
+    }, params || {});
+    const opts = options || {};
+    const defId = u.defId || (u.def && u.def.id) || 'TECH_OIL_DERRICK';
+    const r = (u.radius || ((u.def && u.def.size) ? u.def.size * 0.46 : 32)) * (p.footprintScale || 1.0);
+    const H = (p.structureHeight || 1.0) * (p.extrusionDepth || 1.0);
+    const SS = p.superstructureScale || 1.0;
+    const t = (typeof performance !== 'undefined' ? performance.now() * 0.001 : 0) + (u.treadPhase || 0) * 6.0;
+    const baseAngle = (u.angle !== undefined ? u.angle : 0.68);
+    const pitchScale = opts.pitchScale !== undefined ? opts.pitchScale : 0.64;
+    const zScale = opts.zScale !== undefined ? opts.zScale : 0.78;
+
+    const baseCol = p.armorBaseColor || '#e2e8f0';
+    const hiCol = p.armorHighlightColor || '#f8fafc';
+    const shCol = p.armorShadowColor || '#64748b';
+    const houseCol = (faction && faction.color) || p.houseColor || '#0ea5e9';
+    const seamCol = '#2b241f';
+
+    const proj = createProjector(baseAngle, pitchScale, zScale);
+    const faces = [];
+    const z0 = renderBuildingCompoundBase3D(ctx, faces, proj, r, p, baseCol, hiCol, shCol, houseCol, seamCol, false);
+
+    if (defId === 'TECH_OIL_DERRICK') {
+      // Twin white/grey crude oil storage tanks + pipelines + tall steel lattice derrick tower + reciprocating pumpjack horsehead
+      for (const ty of [-0.46 * r, 0.46 * r]) {
+        pushCylinderZ3D(faces, proj, -0.48 * r, ty, z0, z0 + 0.68 * r * H, 0.26 * r * SS, 0.26 * r * SS, 8, hiCol, seamCol, 1.12, 1.2);
+        pushCylinderZ3D(faces, proj, -0.48 * r, ty, z0 + 0.28 * r * H, z0 + 0.40 * r * H, 0.27 * r * SS, 0.27 * r * SS, 8, houseCol, seamCol, 1.18, 1.1);
+      }
+      // Pump control generator shed + hazard trim
+      pushBox3D(faces, proj, -0.22 * r, 0.36 * r, -0.68 * r, -0.28 * r, z0, z0 + 0.42 * r * H, baseCol, seamCol, 1.06, 1.2);
+      // Tall open-frame steel lattice derrick tower + red/white crown block
+      pushLatticeTower3D(faces, proj, 0.18 * r, 0.14 * r, z0, z0 + 1.56 * r * H, 0.34 * r * SS, 0.12 * r * SS, '#475569', seamCol);
+      pushBox3D(faces, proj, 0.04 * r, 0.32 * r, 0.00 * r, 0.28 * r, z0 + 1.56 * r * H, z0 + 1.70 * r * H, '#ef4444', seamCol, 1.25, 1.15);
+      // Animated nodding-donkey walking beam + yellow horsehead
+      const nod = Math.sin(t * 2.8) * 0.20;
+      pushBox3D(faces, proj, -0.06 * r, 0.12 * r, -0.08 * r, 0.08 * r, z0, z0 + 0.72 * r * H, '#334155', seamCol, 1.05, 1.15);
+      pushTubeSegment3D(faces, proj, -0.24 * r, 0, z0 + 0.74 * r * H, nod, 0, 0.76 * r, 0.09 * r, 0.11 * r, '#f59e0b', seamCol, 1.22, 1.2);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'TECH_HOSPITAL') {
+      // Multi-wing white-and-red Military Field Hospital + emergency ambulance bay + rooftop Red Cross helipad
+      pushBox3D(faces, proj, -0.82 * r * SS, 0.68 * r * SS, -0.76 * r * SS, 0.76 * r * SS, z0, z0 + 0.64 * r * H, hiCol, seamCol, 1.1, 1.25);
+      // Blue-tinted hospital window ribbon bands
+      pushBox3D(faces, proj, -0.84 * r * SS, 0.70 * r * SS, -0.78 * r * SS, 0.78 * r * SS, z0 + 0.32 * r * H, z0 + 0.46 * r * H, '#38bdf8', seamCol, 1.2, 1.1);
+      // Upper surgical ward tower
+      pushBox3D(faces, proj, -0.66 * r * SS, 0.36 * r * SS, -0.58 * r * SS, 0.58 * r * SS, z0 + 0.64 * r * H, z0 + 1.14 * r * H, baseCol, seamCol, 1.08, 1.25);
+      // Front emergency ambulance canopy + Red Cross emblem on roof & facade
+      pushBox3D(faces, proj, 0.36 * r * SS, 0.82 * r * SS, -0.36 * r, 0.36 * r, z0 + 0.34 * r * H, z0 + 0.48 * r * H, '#ef4444', seamCol, 1.2, 1.15);
+      pushCylinderZ3D(faces, proj, -0.15 * r, 0, z0 + 1.14 * r * H, z0 + 1.18 * r * H, 0.38 * r, 0.38 * r, 8, '#f8fafc', seamCol, 1.2, 1.1);
+      pushBox3D(faces, proj, -0.36 * r, 0.06 * r, -0.09 * r, 0.09 * r, z0 + 1.18 * r * H, z0 + 1.24 * r * H, '#ef4444', seamCol, 1.28, 1.1);
+      pushBox3D(faces, proj, -0.24 * r, -0.06 * r, -0.21 * r, 0.21 * r, z0 + 1.18 * r * H, z0 + 1.24 * r * H, '#ef4444', seamCol, 1.28, 1.1);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    if (defId === 'TECH_REPAIR_BAY') {
+      // Heavy Armored Vehicle Repair Depot + service pit apron + overhead yellow bridge crane + welding beacons
+      pushBox3D(faces, proj, -0.82 * r * SS, 0.16 * r * SS, -0.76 * r * SS, 0.76 * r * SS, z0, z0 + 0.68 * r * H, baseCol, seamCol, 1.06, 1.25);
+      pushTaperedBox3D(faces, proj, -0.84 * r * SS, 0.18 * r * SS, -0.78 * r * SS, 0.78 * r * SS, -0.68 * r * SS, 0.08 * r * SS, -0.60 * r * SS, 0.60 * r * SS, z0 + 0.68 * r * H, z0 + 0.90 * r * H, shCol, seamCol, 1.16);
+      // Open front vehicle repair pad with hazard stripes & dark inspection pit
+      pushHazardRamp3D(faces, proj, 0.16 * r, 0.84 * r, -0.68 * r, 0.68 * r, z0, z0 + 0.08 * r * H, seamCol);
+      pushBox3D(faces, proj, 0.28 * r, 0.72 * r, -0.44 * r, 0.44 * r, z0 + 0.08 * r * H, z0 + 0.14 * r * H, '#1e293b', seamCol, 0.85, 1.15);
+      // Overhead yellow steel service gantry spanning the repair pad
+      for (const gy of [-0.66 * r, 0.66 * r]) {
+        pushBox3D(faces, proj, 0.38 * r, 0.54 * r, gy - 0.06 * r, gy + 0.06 * r, z0 + 0.08 * r * H, z0 + 1.06 * r * H, '#eab308', seamCol, 1.18, 1.15);
+      }
+      pushBox3D(faces, proj, 0.34 * r, 0.58 * r, -0.72 * r, 0.72 * r, z0 + 1.02 * r * H, z0 + 1.18 * r * H, '#eab308', seamCol, 1.24, 1.2);
+      flushFaces(ctx, faces);
+      return;
+    }
+
+    // CIV_GARRISON_BUNKER: Fortified concrete urban command blockhouse with sandbagged roof & 2 tiers of firing slits
+    pushBox3D(faces, proj, -0.76 * r * SS, 0.76 * r * SS, -0.76 * r * SS, 0.76 * r * SS, z0, z0 + 0.46 * r * H, baseCol, seamCol, 1.06, 1.25);
+    pushBox3D(faces, proj, -0.78 * r * SS, 0.78 * r * SS, -0.78 * r * SS, 0.78 * r * SS, z0 + 0.46 * r * H, z0 + 0.58 * r * H, '#1e293b', seamCol, 0.82, 1.15);
+    pushBox3D(faces, proj, -0.76 * r * SS, 0.76 * r * SS, -0.76 * r * SS, 0.76 * r * SS, z0 + 0.58 * r * H, z0 + 0.96 * r * H, hiCol, seamCol, 1.1, 1.25);
+    pushBox3D(faces, proj, -0.78 * r * SS, 0.78 * r * SS, -0.78 * r * SS, 0.78 * r * SS, z0 + 0.96 * r * H, z0 + 1.08 * r * H, '#1e293b', seamCol, 0.82, 1.15);
+    pushBox3D(faces, proj, -0.80 * r * SS, 0.80 * r * SS, -0.80 * r * SS, 0.80 * r * SS, z0 + 1.08 * r * H, z0 + 1.24 * r * H, baseCol, seamCol, 1.14, 1.2);
+    pushBox3D(faces, proj, -0.58 * r * SS, 0.58 * r * SS, -0.58 * r * SS, 0.58 * r * SS, z0 + 1.24 * r * H, z0 + 1.38 * r * H, houseCol, seamCol, 1.18, 1.15);
+    flushFaces(ctx, faces);
+  }
+
 
   // ==========================================================================
-  // 13. Complete Registry of All USA, China & GLA Units (47 Units + Variants)
+  // 13. Complete Registry of All USA, China & GLA Units + 35 Buildings
   // ==========================================================================
   const FACTION_VEHICLE_DEFAULTS = {
     hullScale: 1.0,
@@ -6920,9 +9260,9 @@ const ZH_UNIT_MODELS = (function () {
     ShowUpgradeKit: true,
     ShowHazardBeacons: true,
     ShowAutoloader: true,
-    armorBaseColor: '#9c6e4e',
-    armorHighlightColor: '#b88662',
-    armorShadowColor: '#6e4a32',
+    armorBaseColor: '#6e7b4f',
+    armorHighlightColor: '#879663',
+    armorShadowColor: '#4a5434',
     houseColor: '#dc2626'
   };
 
@@ -7216,10 +9556,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_DOZER',
       modelCode: 'CHINA — PLA CONSTRUCTION DOZER',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_dozer_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_dozer.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Heavy Hydraulic Bulldozer Blade • PLA Red Star Emblem',
-      defaultParams: Object.assign({}, DOZER_DEFAULT_PARAMS, { armorBaseColor: '#9c6e4e', armorHighlightColor: '#b88662', houseColor: '#dc2626' }),
+      referenceImage: 'assets/refs/china_dozer_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_dozer.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Olive PLA Bulldozer • Rear Crane Boom & Winch Hook • Red Star Emblem',
+      defaultParams: Object.assign({}, DOZER_DEFAULT_PARAMS, { armorBaseColor: '#6e7b4f', armorHighlightColor: '#879663', armorShadowColor: '#4a5434', houseColor: '#dc2626', showRearCrane: true }),
       paramSchema: DOZER_PARAM_SCHEMA,
       presets: DOZER_PRESETS,
       render: renderDozerModel
@@ -7228,9 +9568,9 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_SUPPLY_TRUCK',
       modelCode: 'CHINA — PLA SUPPLY CARGO TRUCK',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Covered PLA Logistics Cargo Hauler • Supply Depot Shuttle',
+      referenceImage: 'assets/refs/china_supply_truck_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_supply_truck.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • 6×6 Olive Military Hauler • Arched Khaki-Tan Canvas Tarpaulin Bed',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS),
       paramSchema: CHINA_WHEELED_PARAM_SCHEMA,
       presets: CHINA_WHEELED_PRESETS,
@@ -7240,9 +9580,9 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_BATTLEMASTER',
       modelCode: 'CHINA — TYPE-98 BATTLEMASTER MBT',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Rounded Cast Turret • 125mm Cannon • Red Star & Nationalism Banner',
+      referenceImage: 'assets/refs/china_battlemaster_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_battlemaster.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Sloped Turret Cheeks • 125mm Bore-Evacuator Cannon • Rear Stowage Basket',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS),
       paramSchema: CHINA_TANK_PARAM_SCHEMA,
       presets: CHINA_TANK_PRESETS,
@@ -7252,9 +9592,9 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_NUKE_BATTLEMASTER',
       modelCode: 'CHINA — NUCLEAR BATTLEMASTER (GEN. TAO)',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Depleted Uranium Shells • Isotope Reactor Drive',
+      referenceImage: 'assets/refs/china_battlemaster_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_battlemaster.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Depleted Uranium Shells • Isotope Reactor Drive • 125mm Cannon',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#7c8464', armorHighlightColor: '#98a37a', houseColor: '#84cc16' }),
       paramSchema: CHINA_TANK_PARAM_SCHEMA,
       presets: CHINA_TANK_PRESETS,
@@ -7262,11 +9602,11 @@ const ZH_UNIT_MODELS = (function () {
     },
     CHINA_GATTLING_TANK: {
       defId: 'CHINA_GATTLING_TANK',
-      modelCode: 'CHINA — DUAL ROTARY GATTLING TANK',
+      modelCode: 'CHINA — ROTARY GATTLING TANK',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Twin 6-Barrel Rotary Cannons • Anti-Air / Anti-Infantry Tracking Radar',
+      referenceImage: 'assets/refs/china_gattling_tank_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_gattling_tank.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • 6-Barrel Rotary Gattling Cannon • 5 Road Wheels • Anti-Air / Anti-Infantry',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS),
       paramSchema: CHINA_TANK_PARAM_SCHEMA,
       presets: CHINA_TANK_PRESETS,
@@ -7276,10 +9616,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_DRAGON_TANK',
       modelCode: 'CHINA — DRAGON FLAME TANK',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Pressurized Crimson Napalm Rear Drums • High-Pressure Flame Projector',
-      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#99583d', armorHighlightColor: '#b86b4b', houseColor: '#f97316' }),
+      referenceImage: 'assets/refs/china_dragon_tank_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_dragon_tank.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Sculpted Dragon Head Flame Cowl • Transverse Crimson Napalm Tank • Flame Plume',
+      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#6e7b4f', armorHighlightColor: '#879663', armorShadowColor: '#4a5434', houseColor: '#dc2626' }),
       paramSchema: CHINA_TANK_PARAM_SCHEMA,
       presets: CHINA_TANK_PRESETS,
       render: renderChinaTankModel
@@ -7288,10 +9628,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_INFERNO_CANNON',
       modelCode: 'CHINA — INFERNO NAPALM ARTILLERY',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Long-Range Incendiary Howitzer • Firestorm Salvo Support',
-      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { houseColor: '#ea580c' }),
+      referenceImage: 'assets/refs/china_inferno_cannon_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_inferno_cannon.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Open-Top Trunnion Pedestal • Stepped Napalm Howitzer • Rear Recoil Spade',
+      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { houseColor: '#dc2626' }),
       paramSchema: CHINA_ARTILLERY_PARAM_SCHEMA,
       presets: CHINA_ARTILLERY_PRESETS,
       render: renderChinaArtilleryModel
@@ -7300,9 +9640,9 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_NUKE_CANNON',
       modelCode: 'CHINA — TACTICAL NUCLEAR SIEGE CANNON',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Articulated Twin-Track Chassis • Stabilizer Spades • Heavy Nuclear Ordnance',
+      referenceImage: 'assets/refs/china_nuke_cannon_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_nuke_cannon.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Articulated Twin-Track Carrier • Bulbous Nuclear Breech • Radiation Trefoil ☢',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { hullScale: 1.08, houseColor: '#dc2626' }),
       paramSchema: CHINA_ARTILLERY_PARAM_SCHEMA,
       presets: CHINA_ARTILLERY_PRESETS,
@@ -7312,8 +9652,8 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_ECM_TANK',
       modelCode: 'CHINA — ECM ELECTRONIC WARFARE TANK',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
+      referenceImage: 'assets/refs/china_gattling_tank_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_gattling_tank.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • Phased-Array Jamming Dome • Vehicle Disabler & Missile Deflector',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { houseColor: '#10b981' }),
       paramSchema: CHINA_TANK_PARAM_SCHEMA,
@@ -7326,7 +9666,7 @@ const ZH_UNIT_MODELS = (function () {
       status: 'BESPOKE_HD',
       referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
       spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Twin 125mm Cannons • Roof Gatling Turret • 6 Road Wheels',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Twin 125mm Bore-Evacuator Cannons • Roof Gatling Turret • 6 Road Wheels',
       defaultParams: OVERLORD_DEFAULT_PARAMS,
       paramSchema: OVERLORD_PARAM_SCHEMA,
       presets: OVERLORD_PRESETS,
@@ -7348,8 +9688,8 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_TROOP_CRAWLER',
       modelCode: 'CHINA — 8x8 ARMORED TROOP CRAWLER',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
+      referenceImage: 'assets/refs/china_supply_truck_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_supply_truck.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • 8x8 Heavy APC • Red Star Banner • Stealth Detector • Carries 8 Red Guards',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS),
       paramSchema: CHINA_WHEELED_PARAM_SCHEMA,
@@ -7360,8 +9700,8 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_ASSAULT_CRAWLER',
       modelCode: 'CHINA — ASSAULT TROOP CRAWLER (GEN. FAI)',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
+      referenceImage: 'assets/refs/china_supply_truck_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_supply_truck.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • 8x8 Heavy Assault APC • Carries 8 Elite Minigunners',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#7d8462', armorHighlightColor: '#98a178' }),
       paramSchema: CHINA_WHEELED_PARAM_SCHEMA,
@@ -7372,8 +9712,8 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_ASSAULT_TROOP_CRAWLER',
       modelCode: 'CHINA — ASSAULT TROOP CRAWLER (GEN. FAI)',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
+      referenceImage: 'assets/refs/china_supply_truck_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_supply_truck.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • 8x8 Heavy Assault APC • Carries 8 Elite Minigunners',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#7d8462', armorHighlightColor: '#98a178' }),
       paramSchema: CHINA_WHEELED_PARAM_SCHEMA,
@@ -7384,8 +9724,8 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_LISTENING_OUTPOST',
       modelCode: 'CHINA — STEALTH LISTENING OUTPOST',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
+      referenceImage: 'assets/refs/china_supply_truck_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_supply_truck.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • Dual Parabolic Telemetry Dish • Stealth Recon & Tank Hunter Fireports',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS),
       paramSchema: CHINA_WHEELED_PARAM_SCHEMA,
@@ -7396,8 +9736,8 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_ATTACK_OUTPOST',
       modelCode: 'CHINA — ASSAULT LISTENING OUTPOST (GEN. FAI)',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
+      referenceImage: 'assets/refs/china_supply_truck_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_supply_truck.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • Armored Telemetry Recon Van • Heavy Fireports • Stealth When Stationary',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#7d8462', armorHighlightColor: '#98a178' }),
       paramSchema: CHINA_WHEELED_PARAM_SCHEMA,
@@ -7408,8 +9748,8 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_HELIX',
       modelCode: 'CHINA — KA-58 HELIX HEAVY ASSAULT GUNSHIP',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
+      referenceImage: 'assets/refs/china_mig_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_mig.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • Coaxial Counter-Rotating Rotors • Chin Gatling Cannon • Bunker / Speaker / Napalm Hardpoints',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS),
       paramSchema: HELIX_PARAM_SCHEMA,
@@ -7420,10 +9760,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_MIG',
       modelCode: 'CHINA — MIG-1.44 FIRESTORM STRIKE FIGHTER',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Forward Canards • Twin Afterburners • Napalm Firestorm Missiles',
-      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS),
+      referenceImage: 'assets/refs/china_mig_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_mig.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Slate-Grey MiG-1.44 Delta-Canard • Twin Canted Tails • 4 Underwing Firestorm Missiles',
+      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
       paramSchema: MIG_PARAM_SCHEMA,
       presets: MIG_PRESETS,
       render: renderMigModel
@@ -7432,10 +9772,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_NUKE_MIG',
       modelCode: 'CHINA — TACTICAL NUCLEAR MIG (GEN. TAO)',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
+      referenceImage: 'assets/refs/china_mig_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_mig.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • Tactical Nuclear Air-to-Surface Missiles • Supersonic Interceptor',
-      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#828766', armorHighlightColor: '#9ca37c', houseColor: '#84cc16' }),
+      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#7c8464', armorHighlightColor: '#98a37a', armorShadowColor: '#4a5434', houseColor: '#84cc16' }),
       paramSchema: MIG_PARAM_SCHEMA,
       presets: MIG_PRESETS,
       render: renderMigModel
@@ -7444,10 +9784,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_TACTICAL_NUKEMIG',
       modelCode: 'CHINA — TACTICAL NUCLEAR MIG (GEN. TAO)',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
+      referenceImage: 'assets/refs/china_mig_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_mig.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • Tactical Nuclear Air-to-Surface Missiles • Supersonic Interceptor',
-      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#828766', armorHighlightColor: '#9ca37c', houseColor: '#84cc16' }),
+      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#7c8464', armorHighlightColor: '#98a37a', armorShadowColor: '#4a5434', houseColor: '#84cc16' }),
       paramSchema: MIG_PARAM_SCHEMA,
       presets: MIG_PRESETS,
       render: renderMigModel
@@ -7456,10 +9796,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_RED_GUARD',
       modelCode: 'CHINA — PLA RED GUARD RIFLE SQUAD',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Type-81 Semi-Auto Rifle • Red Star Helmet • Nationalism Horde Bonus',
-      defaultParams: Object.assign({}, INFANTRY_DEFAULT_PARAMS, { helmetColor: '#7a5438', uniformColor: '#9c6e4e', vestColor: '#7f1d1d' }),
+      referenceImage: 'assets/refs/china_red_guard_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_red_guard.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Olive Helmet + Red Star • Khaki-Olive Camo Fatigues • Type-81 Rifle • [⊕] Callout',
+      defaultParams: Object.assign({}, INFANTRY_DEFAULT_PARAMS, { helmetColor: '#6e7b4f', uniformColor: '#8c8265', vestColor: '#5c6446' }),
       paramSchema: INFANTRY_PARAM_SCHEMA,
       presets: INFANTRY_PRESETS,
       render: renderInfantryModel
@@ -7468,10 +9808,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_MINIGUNNER',
       modelCode: 'CHINA — ELITE GATTLING MINIGUNNER (GEN. FAI)',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
+      referenceImage: 'assets/refs/china_red_guard_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_red_guard.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • Handheld Rotary Gattling Minigun • Anti-Infantry & Anti-Air Suppression',
-      defaultParams: Object.assign({}, INFANTRY_DEFAULT_PARAMS, { helmetColor: '#7f1d1d', uniformColor: '#7c583c', vestColor: '#991b1b' }),
+      defaultParams: Object.assign({}, INFANTRY_DEFAULT_PARAMS, { helmetColor: '#7f1d1d', uniformColor: '#6e7b4f', vestColor: '#991b1b' }),
       paramSchema: INFANTRY_PARAM_SCHEMA,
       presets: INFANTRY_PRESETS,
       render: renderInfantryModel
@@ -7480,10 +9820,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_TANK_HUNTER',
       modelCode: 'CHINA — PLA ANTI-ARMOR TANK HUNTER',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Shoulder-Fired Anti-Tank Rocket Launcher • TNT Demolition Charge',
-      defaultParams: Object.assign({}, MISSILE_DEFENDER_DEFAULT_PARAMS, { helmetColor: '#7a5438', uniformColor: '#8d6245', vestColor: '#7f1d1d' }),
+      referenceImage: 'assets/refs/china_tank_hunter_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_tank_hunter.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Olive Helmet + Red Star • Shoulder-Fired Anti-Tank Rocket Tube • [🚀] Callout',
+      defaultParams: Object.assign({}, MISSILE_DEFENDER_DEFAULT_PARAMS, { helmetColor: '#6e7b4f', uniformColor: '#6e7b4f', vestColor: '#4a5434', showGoggles: false }),
       paramSchema: INFANTRY_PARAM_SCHEMA,
       presets: INFANTRY_PRESETS,
       render: renderInfantryModel
@@ -7492,10 +9832,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_HACKER',
       modelCode: 'CHINA — PLA CYBER WARFARE HACKER',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Ruggedized Field Laptop • Satellite Cash Siphon & Building Disable',
-      defaultParams: Object.assign({}, PATHFINDER_DEFAULT_PARAMS, { helmetColor: '#3f4d34', uniformColor: '#5c6650', vestColor: '#1e293b' }),
+      referenceImage: 'assets/refs/china_hacker_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_hacker.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Olive Helmet + Round Glasses • Open Silver Field Laptop • [((•))] Callout',
+      defaultParams: Object.assign({}, PATHFINDER_DEFAULT_PARAMS, { helmetColor: '#6e7b4f', uniformColor: '#6e7b4f', vestColor: '#4a5434' }),
       paramSchema: INFANTRY_PARAM_SCHEMA,
       presets: INFANTRY_PRESETS,
       render: renderInfantryModel
@@ -7504,10 +9844,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_SUPER_HACKER',
       modelCode: 'CHINA — ELITE STEALTH HACKER (GEN. FAI)',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Stealthed Cyber Operative • Accelerated Cash Siphon & Vehicle Subversion',
-      defaultParams: Object.assign({}, PATHFINDER_DEFAULT_PARAMS, { helmetColor: '#334155', uniformColor: '#475569', vestColor: '#0f172a' }),
+      referenceImage: 'assets/refs/china_hacker_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_hacker.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Stealthed Cyber Operative • Open Field Laptop • Accelerated Cash Siphon',
+      defaultParams: Object.assign({}, PATHFINDER_DEFAULT_PARAMS, { helmetColor: '#475569', uniformColor: '#64748b', vestColor: '#334155' }),
       paramSchema: INFANTRY_PARAM_SCHEMA,
       presets: INFANTRY_PRESETS,
       render: renderInfantryModel
@@ -7516,10 +9856,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'CHINA_BLACK_LOTUS',
       modelCode: 'CHINA — BLACK LOTUS ELITE CYBER AGENT',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/china_overlord_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/china_overlord.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Stealth Cyber Commando • Remote Building Capture, Cash Hack & Vehicle Disable',
-      defaultParams: Object.assign({}, PATHFINDER_DEFAULT_PARAMS, { helmetColor: '#0f172a', uniformColor: '#1e293b', vestColor: '#831843' }),
+      referenceImage: 'assets/refs/china_black_lotus_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/china_black_lotus.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Dark Hair & Wrap Sunglasses • Belted Crimson Trench Coat • [🪷] Lotus Callout',
+      defaultParams: Object.assign({}, PATHFINDER_DEFAULT_PARAMS, { helmetColor: '#27272a', uniformColor: '#b91c1c', vestColor: '#dc2626' }),
       paramSchema: INFANTRY_PARAM_SCHEMA,
       presets: INFANTRY_PRESETS,
       render: renderInfantryModel
@@ -7729,6 +10069,478 @@ const ZH_UNIT_MODELS = (function () {
       paramSchema: GLA_WHEELED_PARAM_SCHEMA,
       presets: GLA_WHEELED_PRESETS,
       render: renderGlaWheeledModel
+    },
+
+    // ========================================================================
+    // --- USA MILITARY BUILDINGS (10 STRUCTURES) ---
+    // ========================================================================
+    USA_COMMAND_CENTER: {
+      defId: 'USA_COMMAND_CENTER',
+      modelCode: 'USA — HIGH COMMAND PENTAGON CITADEL',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_command_center.png',
+      spriteImage: 'assets/diorama/buildings/usa_command_center.png',
+      credits: '3D Ligne-Claire Architectural CAD • Armored Blue Glass Command Bridge • Helipad Wing • 360° Rotating Dual-Wing Radar Array',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderUsaBuildingModel
+    },
+    USA_REACTOR: {
+      defId: 'USA_REACTOR',
+      modelCode: 'USA — COLD FUSION CRYOGENIC REACTOR',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_reactor.png',
+      spriteImage: 'assets/diorama/buildings/usa_reactor.png',
+      credits: '3D Ligne-Claire Architectural CAD • Octagonal Containment Vessel • 4 Cryo Heat-Exchanger Wings • Pulsing Cyan Plasma Core & Control Rods',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderUsaBuildingModel
+    },
+    USA_SUPPLY_CENTER: {
+      defId: 'USA_SUPPLY_CENTER',
+      modelCode: 'USA — CHINOOK LOGISTICS & SUPPLY DEPOT',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_supply_center.png',
+      spriteImage: 'assets/diorama/buildings/usa_supply_center.png',
+      credits: '3D Ligne-Claire Architectural CAD • 3-Bay Cargo Warehouse • Overhead Yellow Bridge Crane • Illuminated Chinook Helipad Deck',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderUsaBuildingModel
+    },
+    USA_BARRACKS: {
+      defId: 'USA_BARRACKS',
+      modelCode: 'USA — ALLIED INFANTRY GARRISON BARRACKS',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_barracks.png',
+      spriteImage: 'assets/diorama/buildings/usa_barracks.png',
+      credits: '3D Ligne-Claire Architectural CAD • Twin Quonset Troop Halls • Central Command Watchtower • Sandbagged Parade Muster Deck',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderUsaBuildingModel
+    },
+    USA_WAR_FACTORY: {
+      defId: 'USA_WAR_FACTORY',
+      modelCode: 'USA — HEAVY ARMOR ASSEMBLY PLANT',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_war_factory.png',
+      spriteImage: 'assets/diorama/buildings/usa_war_factory.png',
+      credits: '3D Ligne-Claire Architectural CAD • Sawtooth Skylight Assembly Bays • Exterior Service Gantry Crane • Armored Tank Rollout Apron',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderUsaBuildingModel
+    },
+    USA_AIRFIELD: {
+      defId: 'USA_AIRFIELD',
+      modelCode: 'USA — TACTICAL JET & GUNSHIP AIRBASE',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_airfield.png',
+      spriteImage: 'assets/diorama/buildings/usa_airfield.png',
+      credits: '3D Ligne-Claire Architectural CAD • 4-Pad Concrete Flight Apron • Munitions Hangar • Elevated ATC Glass Tower & Rotating Radar',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderUsaBuildingModel
+    },
+    USA_STRATEGY_CENTER: {
+      defId: 'USA_STRATEGY_CENTER',
+      modelCode: 'USA — PENTAGON STRATEGIC BATTLE NEXUS',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_strategy_center.png',
+      spriteImage: 'assets/diorama/buildings/usa_strategy_center.png',
+      credits: '3D Ligne-Claire Architectural CAD • Tri-Wing Command Bastion • Central Holographic Battle Dome • Rooftop Bombardment Cannon',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderUsaBuildingModel
+    },
+    USA_SUPPLY_DROP_ZONE: {
+      defId: 'USA_SUPPLY_DROP_ZONE',
+      modelCode: 'USA — C-130 AIRLIFT SUPPLY DROP ZONE',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_supply_drop_zone.png',
+      spriteImage: 'assets/diorama/buildings/usa_supply_drop_zone.png',
+      credits: '3D Ligne-Claire Architectural CAD • Illuminated Air-Drop Tarmac • Telemetry Guidance Van • Parachute Supply Cargo Pallets',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderUsaBuildingModel
+    },
+    USA_PATRIOT: {
+      defId: 'USA_PATRIOT',
+      modelCode: 'USA — MIM-104 PATRIOT PAC-3 SAM BATTERY',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_patriot.png',
+      spriteImage: 'assets/diorama/buildings/usa_patriot.png',
+      credits: '3D Ligne-Claire Architectural CAD • Cruciform Outrigger Emplacement • 360° Slewing 4-Cell PAC-3 Missile Pod • Phased-Array Radar',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderUsaBuildingModel
+    },
+    USA_FIREBASE: {
+      defId: 'USA_FIREBASE',
+      modelCode: 'USA — FORTIFIED 155MM ARTILLERY FIREBASE',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_patriot.png',
+      spriteImage: 'assets/diorama/buildings/usa_patriot.png',
+      credits: '3D Ligne-Claire Architectural CAD • 8-Sided Sloped Sandbag & Armor Blast Wall Ring • 4 Infantry Firing Bunkers • 360° Slewing 155mm Howitzer',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderUsaBuildingModel
+    },
+    USA_PARTICLE_CANNON: {
+      defId: 'USA_PARTICLE_CANNON',
+      modelCode: 'USA — ORBITAL PARTICLE UPLINK SUPERWEAPON',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_particle_cannon.png',
+      spriteImage: 'assets/diorama/buildings/usa_particle_cannon.png',
+      credits: '3D Ligne-Claire Architectural CAD • Cryo Accelerator Ring • 3 High-Voltage Capacitor Buttresses • Articulated Orbital Beam Emitter',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderUsaBuildingModel
+    },
+
+    // ========================================================================
+    // --- CHINA MILITARY BUILDINGS (13 STRUCTURES) ---
+    // ========================================================================
+    CHINA_COMMAND_CENTER: {
+      defId: 'CHINA_COMMAND_CENTER',
+      modelCode: 'CHINA — PLA CENTRAL COMMAND CITADEL',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_command_center.png',
+      spriteImage: 'assets/diorama/buildings/china_command_center.png',
+      credits: '3D Ligne-Claire Architectural CAD • Brutalist Gunmetal & Crimson Bastion • Twin Smokestacks • Rotating Hexagonal Phased-Array Radar',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
+      paramSchema: CHINA_BUILDING_PARAM_SCHEMA,
+      presets: CHINA_BUILDING_PRESETS,
+      render: renderChinaBuildingModel
+    },
+    CHINA_REACTOR: {
+      defId: 'CHINA_REACTOR',
+      modelCode: 'CHINA — TWIN-TOWER NUCLEAR FISSION REACTOR',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_reactor.png',
+      spriteImage: 'assets/diorama/buildings/china_reactor.png',
+      credits: '3D Ligne-Claire Architectural CAD • Twin Hyperbolic Cooling Towers • Crimson Turbine Hall • Glowing Emerald-Green Isotope Core',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
+      paramSchema: CHINA_BUILDING_PARAM_SCHEMA,
+      presets: CHINA_BUILDING_PRESETS,
+      render: renderChinaBuildingModel
+    },
+    CHINA_SUPPLY_CENTER: {
+      defId: 'CHINA_SUPPLY_CENTER',
+      modelCode: 'CHINA — STATE INDUSTRIAL SUPPLY DEPOT',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_supply_center.png',
+      spriteImage: 'assets/diorama/buildings/china_supply_center.png',
+      credits: '3D Ligne-Claire Architectural CAD • Crimson Steel Truss Warehouse • Supply Truck Loading Dock • Overhead Ore Gantry',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
+      paramSchema: CHINA_BUILDING_PARAM_SCHEMA,
+      presets: CHINA_BUILDING_PRESETS,
+      render: renderChinaBuildingModel
+    },
+    CHINA_BARRACKS: {
+      defId: 'CHINA_BARRACKS',
+      modelCode: 'CHINA — RED GUARD INFANTRY BARRACKS',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_barracks.png',
+      spriteImage: 'assets/diorama/buildings/china_barracks.png',
+      credits: '3D Ligne-Claire Architectural CAD • Sloped Crimson Roof Pediment • Gold Star Crest • Twin Armored Guard Watchtowers',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
+      paramSchema: CHINA_BUILDING_PARAM_SCHEMA,
+      presets: CHINA_BUILDING_PRESETS,
+      render: renderChinaBuildingModel
+    },
+    CHINA_WAR_FACTORY: {
+      defId: 'CHINA_WAR_FACTORY',
+      modelCode: 'CHINA — STATE HEAVY ARMOR FOUNDRY',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_war_factory.png',
+      spriteImage: 'assets/diorama/buildings/china_war_factory.png',
+      credits: '3D Ligne-Claire Architectural CAD • Heavy Blast Furnace Smokestacks • Crimson Sloped Foundry Roof • Overlord Rollout Bay',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
+      paramSchema: CHINA_BUILDING_PARAM_SCHEMA,
+      presets: CHINA_BUILDING_PRESETS,
+      render: renderChinaBuildingModel
+    },
+    CHINA_AIRFIELD: {
+      defId: 'CHINA_AIRFIELD',
+      modelCode: 'CHINA — PLA FORTIFIED MIG AIRBASE',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_airfield.png',
+      spriteImage: 'assets/diorama/buildings/china_airfield.png',
+      credits: '3D Ligne-Claire Architectural CAD • 4 Armored Blast Revetment Bays • Subterranean Munitions Bunker • Crimson ATC Radar Tower',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
+      paramSchema: CHINA_BUILDING_PARAM_SCHEMA,
+      presets: CHINA_BUILDING_PRESETS,
+      render: renderChinaBuildingModel
+    },
+    CHINA_PROPAGANDA_CENTER: {
+      defId: 'CHINA_PROPAGANDA_CENTER',
+      modelCode: 'CHINA — STATE PROPAGANDA BROADCAST MINISTRY',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_propaganda_center.png',
+      spriteImage: 'assets/diorama/buildings/china_propaganda_center.png',
+      credits: '3D Ligne-Claire Architectural CAD • Stepped Brutalist Crimson Podium • Gold Star Broadcast Screen • Twin Megaphone Pylons',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
+      paramSchema: CHINA_BUILDING_PARAM_SCHEMA,
+      presets: CHINA_BUILDING_PRESETS,
+      render: renderChinaBuildingModel
+    },
+    CHINA_INTERNET_CENTER: {
+      defId: 'CHINA_INTERNET_CENTER',
+      modelCode: 'CHINA — CYBER-WARFARE INTERNET CENTER',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_internet_center.png',
+      spriteImage: 'assets/diorama/buildings/china_internet_center.png',
+      credits: '3D Ligne-Claire Architectural CAD • Shielded 8-Hacker Faraday Dome • Twin Parabolic Satellite Uplink Dishes',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
+      paramSchema: CHINA_BUILDING_PARAM_SCHEMA,
+      presets: CHINA_BUILDING_PRESETS,
+      render: renderChinaBuildingModel
+    },
+    CHINA_GATTLING_CANNON: {
+      defId: 'CHINA_GATTLING_CANNON',
+      modelCode: 'CHINA — DUAL-POD ROTARY GATTLING CANNON',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_gattling_cannon.png',
+      spriteImage: 'assets/diorama/buildings/china_gattling_cannon.png',
+      credits: '3D Ligne-Claire Architectural CAD • Octagonal Steel Gun Emplacement • 360° Slewing Dual-Pod 6-Barrel Rotary Gattling Turret',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
+      paramSchema: CHINA_BUILDING_PARAM_SCHEMA,
+      presets: CHINA_BUILDING_PRESETS,
+      render: renderChinaBuildingModel
+    },
+    CHINA_BUNKER: {
+      defId: 'CHINA_BUNKER',
+      modelCode: 'CHINA — REINFORCED GARRISON PILLBOX BUNKER',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_bunker.png',
+      spriteImage: 'assets/diorama/buildings/china_bunker.png',
+      credits: '3D Ligne-Claire Architectural CAD • Octagonal Concrete Pillbox • 360° Armored Firing Slits • Sloped Crimson Blast Cap',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
+      paramSchema: CHINA_BUILDING_PARAM_SCHEMA,
+      presets: CHINA_BUILDING_PRESETS,
+      render: renderChinaBuildingModel
+    },
+    CHINA_MINES: {
+      defId: 'CHINA_MINES',
+      modelCode: 'CHINA — LANDMINE PERIMETER CLUSTER FIELD',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_bunker.png',
+      spriteImage: 'assets/diorama/buildings/china_bunker.png',
+      credits: '3D Ligne-Claire Architectural CAD • Anti-Tank & Anti-Personnel Pressure Mine Cluster • Pulsing Crimson Proximity Beacons',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
+      paramSchema: CHINA_BUILDING_PARAM_SCHEMA,
+      presets: CHINA_BUILDING_PRESETS,
+      render: renderChinaBuildingModel
+    },
+    CHINA_SPEAKER_TOWER: {
+      defId: 'CHINA_SPEAKER_TOWER',
+      modelCode: 'CHINA — SUBLIMINAL PROPAGANDA SPEAKER TOWER',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_speaker_tower.png',
+      spriteImage: 'assets/diorama/buildings/china_speaker_tower.png',
+      credits: '3D Ligne-Claire Architectural CAD • Lattice Steel Broadcast Pylon • 4 Directional Megaphone Horns • Inspiration Aura Finial',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
+      paramSchema: CHINA_BUILDING_PARAM_SCHEMA,
+      presets: CHINA_BUILDING_PRESETS,
+      render: renderChinaBuildingModel
+    },
+    CHINA_NUCLEAR_SILO: {
+      defId: 'CHINA_NUCLEAR_SILO',
+      modelCode: 'CHINA — DF-31 THERMONUCLEAR MISSILE SILO',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_nuclear_silo.png',
+      spriteImage: 'assets/diorama/buildings/china_nuclear_silo.png',
+      credits: '3D Ligne-Claire Architectural CAD • Subterranean Blast Collar • 4 Lightning Arrestor Gantry Towers • Elevated ICBM Nuclear Warhead',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#94a3b8', armorHighlightColor: '#cbd5e1', armorShadowColor: '#475569', houseColor: '#dc2626' }),
+      paramSchema: CHINA_BUILDING_PARAM_SCHEMA,
+      presets: CHINA_BUILDING_PRESETS,
+      render: renderChinaBuildingModel
+    },
+
+    // ========================================================================
+    // --- GLA MILITARY BUILDINGS (10 STRUCTURES) ---
+    // ========================================================================
+    GLA_COMMAND_CENTER: {
+      defId: 'GLA_COMMAND_CENTER',
+      modelCode: 'GLA — DESERT WARLORD COMMAND COMPOUND',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/gla_command_center.png',
+      spriteImage: 'assets/diorama/buildings/gla_command_center.png',
+      credits: '3D Ligne-Claire Architectural CAD • Sandstone Adobe Citadel • Olive Camo Tarp Muster Canopy • Watchtower Dome',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#d4b483', armorHighlightColor: '#ead2ac', armorShadowColor: '#8c6d46', houseColor: '#65a30d' }),
+      paramSchema: GLA_BUILDING_PARAM_SCHEMA,
+      presets: GLA_BUILDING_PRESETS,
+      render: renderGlaBuildingModel
+    },
+    GLA_SUPPLY_STASH: {
+      defId: 'GLA_SUPPLY_STASH',
+      modelCode: 'GLA — FORTIFIED DESERT SUPPLY STASH',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/gla_supply_stash.png',
+      spriteImage: 'assets/diorama/buildings/gla_supply_stash.png',
+      credits: '3D Ligne-Claire Architectural CAD • Adobe Bazaar Hall • Camo Netting Awning • Stacked Fuel Drums & Contraband Crates',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#d4b483', armorHighlightColor: '#ead2ac', armorShadowColor: '#8c6d46', houseColor: '#65a30d' }),
+      paramSchema: GLA_BUILDING_PARAM_SCHEMA,
+      presets: GLA_BUILDING_PRESETS,
+      render: renderGlaBuildingModel
+    },
+    GLA_BARRACKS: {
+      defId: 'GLA_BARRACKS',
+      modelCode: 'GLA — INSURGENT TRAINING GARRISON',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/gla_barracks.png',
+      spriteImage: 'assets/diorama/buildings/gla_barracks.png',
+      credits: '3D Ligne-Claire Architectural CAD • Mud-Brick Muster Hall • Sandbagged Courtyard • Rooftop Lookout Tower',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#d4b483', armorHighlightColor: '#ead2ac', armorShadowColor: '#8c6d46', houseColor: '#65a30d' }),
+      paramSchema: GLA_BUILDING_PARAM_SCHEMA,
+      presets: GLA_BUILDING_PRESETS,
+      render: renderGlaBuildingModel
+    },
+    GLA_ARMS_DEALER: {
+      defId: 'GLA_ARMS_DEALER',
+      modelCode: 'GLA — IMPROVISED ARMS DEALER WORKSHOP',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/gla_arms_dealer.png',
+      spriteImage: 'assets/diorama/buildings/gla_arms_dealer.png',
+      credits: '3D Ligne-Claire Architectural CAD • Corrugated Steel Vehicle Hangar • A-Frame Salvage Hoist Gantry • Rollout Bay',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#d4b483', armorHighlightColor: '#ead2ac', armorShadowColor: '#8c6d46', houseColor: '#65a30d' }),
+      paramSchema: GLA_BUILDING_PARAM_SCHEMA,
+      presets: GLA_BUILDING_PRESETS,
+      render: renderGlaBuildingModel
+    },
+    GLA_PALACE: {
+      defId: 'GLA_PALACE',
+      modelCode: 'GLA — FORTIFIED SCORPION COMMAND PALACE',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/gla_palace.png',
+      spriteImage: 'assets/diorama/buildings/gla_palace.png',
+      credits: '3D Ligne-Claire Architectural CAD • 4 Corner Crenelated Minaret Bastions • Central Golden Onion Dome • 5-Squad Garrison Embrasures',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#d4b483', armorHighlightColor: '#ead2ac', armorShadowColor: '#8c6d46', houseColor: '#65a30d' }),
+      paramSchema: GLA_BUILDING_PARAM_SCHEMA,
+      presets: GLA_BUILDING_PRESETS,
+      render: renderGlaBuildingModel
+    },
+    GLA_BLACK_MARKET: {
+      defId: 'GLA_BLACK_MARKET',
+      modelCode: 'GLA — CLANDESTINE BLACK MARKET BAZAAR',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/gla_black_market.png',
+      spriteImage: 'assets/diorama/buildings/gla_black_market.png',
+      credits: '3D Ligne-Claire Architectural CAD • Reinforced Merchant Vault • Smuggler Satellite Dish • Salvage Upgrade Depot',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#d4b483', armorHighlightColor: '#ead2ac', armorShadowColor: '#8c6d46', houseColor: '#65a30d' }),
+      paramSchema: GLA_BUILDING_PARAM_SCHEMA,
+      presets: GLA_BUILDING_PRESETS,
+      render: renderGlaBuildingModel
+    },
+    GLA_TUNNEL_NETWORK: {
+      defId: 'GLA_TUNNEL_NETWORK',
+      modelCode: 'GLA — SUBTERRANEAN TUNNEL NETWORK PORTAL',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/gla_tunnel_network.png',
+      spriteImage: 'assets/diorama/buildings/gla_tunnel_network.png',
+      credits: '3D Ligne-Claire Architectural CAD • Timber-Shored Tunnel Arch • Sandbag Revetment • 360° Slewing Roof DShK Heavy MG Turret',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#d4b483', armorHighlightColor: '#ead2ac', armorShadowColor: '#8c6d46', houseColor: '#65a30d' }),
+      paramSchema: GLA_BUILDING_PARAM_SCHEMA,
+      presets: GLA_BUILDING_PRESETS,
+      render: renderGlaBuildingModel
+    },
+    GLA_STINGER_SITE: {
+      defId: 'GLA_STINGER_SITE',
+      modelCode: 'GLA — CAMOUFLAGED STINGER SAM EMPLACEMENT',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/gla_stinger_site.png',
+      spriteImage: 'assets/diorama/buildings/gla_stinger_site.png',
+      credits: '3D Ligne-Claire Architectural CAD • Circular Sandbagged AA Pit • 360° Slewing Twin Stinger Missile Launcher Pod',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#d4b483', armorHighlightColor: '#ead2ac', armorShadowColor: '#8c6d46', houseColor: '#65a30d' }),
+      paramSchema: GLA_BUILDING_PARAM_SCHEMA,
+      presets: GLA_BUILDING_PRESETS,
+      render: renderGlaBuildingModel
+    },
+    GLA_SCUD_STORM: {
+      defId: 'GLA_SCUD_STORM',
+      modelCode: 'GLA — 9-CELL SCUD STORM ANTHRAX SUPERWEAPON',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/gla_scud_storm.png',
+      spriteImage: 'assets/diorama/buildings/gla_scud_storm.png',
+      credits: '3D Ligne-Claire Architectural CAD • Circular Revetment Pit • 9 Inclined Scud-B Ballistic Missiles with Glowing Anthrax Warheads',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#d4b483', armorHighlightColor: '#ead2ac', armorShadowColor: '#8c6d46', houseColor: '#65a30d' }),
+      paramSchema: GLA_BUILDING_PARAM_SCHEMA,
+      presets: GLA_BUILDING_PRESETS,
+      render: renderGlaBuildingModel
+    },
+    GLA_DEMO_TRAP: {
+      defId: 'GLA_DEMO_TRAP',
+      modelCode: 'GLA — CAMOUFLAGED IED DEMOLITION TRAP',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/gla_stinger_site.png',
+      spriteImage: 'assets/diorama/buildings/gla_stinger_site.png',
+      credits: '3D Ligne-Claire Architectural CAD • Camouflaged Sandbag Mound • Clustered Explosive & Anthrax Drums • Proximity Detonator',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#d4b483', armorHighlightColor: '#ead2ac', armorShadowColor: '#8c6d46', houseColor: '#65a30d' }),
+      paramSchema: GLA_BUILDING_PARAM_SCHEMA,
+      presets: GLA_BUILDING_PRESETS,
+      render: renderGlaBuildingModel
+    },
+
+    // ========================================================================
+    // --- NEUTRAL TECH BUILDINGS (4 CAPTURABLE STRUCTURES) ---
+    // ========================================================================
+    TECH_OIL_DERRICK: {
+      defId: 'TECH_OIL_DERRICK',
+      modelCode: 'TECH — INDUSTRIAL CRUDE OIL DERRICK & PUMPJACK',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_supply_center.png',
+      spriteImage: 'assets/diorama/buildings/usa_supply_center.png',
+      credits: '3D Ligne-Claire Architectural CAD • Steel Lattice Derrick Tower • Reciprocating Nodding-Donkey Pumpjack • Twin Crude Storage Tanks',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#e2e8f0', armorHighlightColor: '#f8fafc', armorShadowColor: '#64748b', houseColor: '#f59e0b' }),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderTechBuildingModel
+    },
+    TECH_HOSPITAL: {
+      defId: 'TECH_HOSPITAL',
+      modelCode: 'TECH — CIVILIAN TRAUMA MEDICAL HOSPITAL',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_barracks.png',
+      spriteImage: 'assets/diorama/buildings/usa_barracks.png',
+      credits: '3D Ligne-Claire Architectural CAD • Multi-Story Medical Ward • Rooftop Red Cross Helipad • Global Infantry Regenerative Aura',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#f1f5f9', armorHighlightColor: '#ffffff', armorShadowColor: '#64748b', houseColor: '#ef4444' }),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderTechBuildingModel
+    },
+    TECH_REPAIR_BAY: {
+      defId: 'TECH_REPAIR_BAY',
+      modelCode: 'TECH — HEAVY ARMOR MAINTENANCE & REPAIR DEPOT',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/usa_war_factory.png',
+      spriteImage: 'assets/diorama/buildings/usa_war_factory.png',
+      credits: '3D Ligne-Claire Architectural CAD • Dual Service Hangar Bays • Heavy Hydraulic Repair Gantry Crane • Global Vehicle Repair Aura',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#cbd5e1', armorHighlightColor: '#f1f5f9', armorShadowColor: '#475569', houseColor: '#f59e0b' }),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderTechBuildingModel
+    },
+    CIV_GARRISON_BUNKER: {
+      defId: 'CIV_GARRISON_BUNKER',
+      modelCode: 'TECH — REINFORCED URBAN GARRISON BLOCKHOUSE',
+      status: 'BESPOKE_HD',
+      referenceImage: 'assets/diorama/buildings/china_bunker.png',
+      spriteImage: 'assets/diorama/buildings/china_bunker.png',
+      credits: '3D Ligne-Claire Architectural CAD • Multi-Story Reinforced Concrete Blockhouse • 360° Window Firing Slits • Rooftop Parapet',
+      defaultParams: Object.assign({}, BUILDING_DEFAULT_PARAMS, { armorBaseColor: '#cbd5e1', armorHighlightColor: '#e2e8f0', armorShadowColor: '#64748b', houseColor: '#0ea5e9' }),
+      paramSchema: USA_BUILDING_PARAM_SCHEMA,
+      presets: USA_BUILDING_PRESETS,
+      render: renderTechBuildingModel
     }
   };
 
@@ -8222,7 +11034,7 @@ const ZH_UNIT_MODELS = (function () {
     if (!entry || !entry.presets || !entry.presets[presetKey]) return getParams(defId);
     const preset = entry.presets[presetKey];
     activePresetByUnit[defId] = presetKey;
-    customParamsByUnit[defId] = Object.assign({}, entry.defaultParams || {}, preset.params || {});
+    customParamsByUnit[defId] = Object.assign({}, entry.defaultParams || {}, preset.params || preset.values || {});
     if (persist) saveStoredParams();
     return customParamsByUnit[defId];
   }
@@ -8260,6 +11072,44 @@ const ZH_UNIT_MODELS = (function () {
     return true;
   }
 
+  function renderBuildingIfBespoke(ctx, b, team, gameTime, options) {
+    if (!b) return false;
+    const defId = b.defId || (b.def && b.def.id);
+    if (!defId) return false;
+    const entry = MODEL_REGISTRY[defId];
+    if (!entry) return false;
+    const params = Object.assign({}, getParams(defId));
+    const opts = options || {};
+    if ((opts.forceSprite || params.renderMode === 'ILLUSTRATED_SPRITE') && !opts.forceProcedural) {
+      return false; // Let caller render the 2D illustrated sprite
+    }
+
+    const size = (b.def && b.def.size) || b.size || 72;
+    const prog = b.constructed === false ? Math.max(0.25, Math.min(1, b.buildProgress || 0.35)) : 1.0;
+    if (prog < 1.0) {
+      params.structureHeight = (params.structureHeight || 1.0) * prog;
+    }
+
+    const faction = (team && team.faction) || {
+      id: (b.def && b.def.faction) || 'USA',
+      color: (team && team.faction && team.faction.color) || params.houseColor || '#2563eb'
+    };
+    const mockState = {
+      defId,
+      def: b.def || { id: defId, size },
+      radius: b.radius || size * 0.44,
+      angle: b.angle !== undefined ? b.angle : 0.68,
+      turretAngle: b.turretAngle !== undefined ? b.turretAngle : (0.68 + Math.sin((gameTime || 0) * 0.8) * 0.45),
+      recoilOffset: b.recoilOffset || 0,
+      treadPhase: (gameTime || 0) * 0.25,
+      hp: b.hp !== undefined ? b.hp : 1000,
+      maxHp: b.maxHp !== undefined ? b.maxHp : 1000
+    };
+
+    entry.render(ctx, mockState, faction, params, opts);
+    return true;
+  }
+
   return {
     MODEL_REGISTRY,
     DEEP_ENGINEERED_UNIT_IDS,
@@ -8272,6 +11122,13 @@ const ZH_UNIT_MODELS = (function () {
     DOZER_DEFAULT_PARAMS,
     DOZER_PARAM_SCHEMA,
     DOZER_PRESETS,
+    BUILDING_DEFAULT_PARAMS,
+    USA_BUILDING_PARAM_SCHEMA,
+    USA_BUILDING_PRESETS,
+    CHINA_BUILDING_PARAM_SCHEMA,
+    CHINA_BUILDING_PRESETS,
+    GLA_BUILDING_PARAM_SCHEMA,
+    GLA_BUILDING_PRESETS,
     isDeepEngineeredUnit,
     hasBespokeModel,
     getModelEntry,
@@ -8282,6 +11139,7 @@ const ZH_UNIT_MODELS = (function () {
     applyPreset,
     cyclePreset,
     renderUnitIfBespoke,
+    renderBuildingIfBespoke,
     renderIllustratedUnitSprite,
     renderCrusaderModel,
     renderPaladinModel,
@@ -8304,7 +11162,11 @@ const ZH_UNIT_MODELS = (function () {
     renderHelixModel,
     renderMigModel,
     renderGlaTankModel,
-    renderGlaWheeledModel
+    renderGlaWheeledModel,
+    renderUsaBuildingModel,
+    renderChinaBuildingModel,
+    renderGlaBuildingModel,
+    renderTechBuildingModel
   };
 })();
 

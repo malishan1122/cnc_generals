@@ -3666,28 +3666,45 @@ window.ZH_ENGINE = (function () {
         const col = o.team === 0 ? this.teams[0].faction.color
           : o.team === 1 ? this.teams[1].faction.color
           : '#cbd5e1';
+        const teamObj = o.team >= 0 && this.teams[o.team] ? this.teams[o.team] : { faction: { id: 'NEUTRAL', color: col } };
+        const rendered3D = window.ZH_VFX && ZH_VFX.renderLigneClaireBuilding &&
+          ZH_VFX.renderLigneClaireBuilding(ctx, {
+            id: o.id,
+            defId: o.defId || (o.def && o.def.id) || 'TECH_OIL_DERRICK',
+            def: o.def || { id: o.defId || 'TECH_OIL_DERRICK', size: (o.radius || 32) * 2 },
+            x: o.x,
+            y: o.y,
+            size: (o.radius || 32) * 2,
+            hp: o.hp || 1500,
+            maxHp: o.maxHp || 1500,
+            constructed: true,
+            buildProgress: 1.0,
+            team: o.team
+          }, teamObj, this.gameTime);
 
-        ctx.fillStyle = '#1e293b';
-        ctx.strokeStyle = col;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, o.radius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
+        if (!rendered3D) {
+          ctx.fillStyle = '#1e293b';
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(o.x, o.y, o.radius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
 
-        const bob = Math.sin(this.gameTime * 4) * 7;
-        ctx.strokeStyle = col;
-        ctx.lineWidth = 3.5;
-        ctx.beginPath();
-        ctx.moveTo(o.x - 14, o.y - bob);
-        ctx.lineTo(o.x + 14, o.y + bob);
-        ctx.stroke();
+          const bob = Math.sin(this.gameTime * 4) * 7;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.moveTo(o.x - 14, o.y - bob);
+          ctx.lineTo(o.x + 14, o.y + bob);
+          ctx.stroke();
+        }
 
         ctx.fillStyle = '#f8fafc';
         ctx.font = 'bold 10px monospace';
         ctx.textAlign = 'center';
         const label = o.def ? o.def.shortName : 'TECH BUILDING';
-        ctx.fillText(o.team < 0 ? `NEUTRAL ${label}` : label, o.x, o.y + o.radius + 14);
+        ctx.fillText(o.team < 0 ? `NEUTRAL ${label}` : label, o.x, o.y + o.radius + 18);
         ctx.restore();
       }
 
@@ -3697,27 +3714,45 @@ window.ZH_ENGINE = (function () {
         const col = g.team === 0 ? this.teams[0].faction.color
           : g.team === 1 ? this.teams[1].faction.color
           : '#94a3b8';
-
         const r = g.radius;
-        ctx.fillStyle = '#1e293b';
-        ctx.strokeStyle = col;
-        ctx.lineWidth = 3;
-        ctx.fillRect(g.x - r, g.y - r, r * 2, r * 2);
-        ctx.strokeRect(g.x - r, g.y - r, r * 2, r * 2);
+        const teamObj = g.team >= 0 && this.teams[g.team] ? this.teams[g.team] : { faction: { id: 'NEUTRAL', color: col } };
+        const rendered3D = window.ZH_VFX && ZH_VFX.renderLigneClaireBuilding &&
+          ZH_VFX.renderLigneClaireBuilding(ctx, {
+            id: g.id,
+            defId: g.defId || 'CIV_GARRISON_BUNKER',
+            def: g.def || { id: 'CIV_GARRISON_BUNKER', size: r * 2 },
+            x: g.x,
+            y: g.y,
+            size: r * 2,
+            hp: g.hp,
+            maxHp: g.maxHp,
+            constructed: true,
+            buildProgress: 1.0,
+            team: g.team,
+            occupants: g.occupants
+          }, teamObj, this.gameTime);
 
-        // Firing Port Windows
-        for (let p = 0; p < 6; p++) {
-          const px = g.x - r + 10 + (p % 3) * 24;
-          const py = g.y - r + 12 + Math.floor(p / 3) * 38;
-          ctx.fillStyle = p < g.occupants.length ? col : '#0f172a';
-          ctx.fillRect(px, py, 14, 10);
+        if (!rendered3D) {
+          ctx.fillStyle = '#1e293b';
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 3;
+          ctx.fillRect(g.x - r, g.y - r, r * 2, r * 2);
+          ctx.strokeRect(g.x - r, g.y - r, r * 2, r * 2);
+
+          // Firing Port Windows
+          for (let p = 0; p < 6; p++) {
+            const px = g.x - r + 10 + (p % 3) * 24;
+            const py = g.y - r + 12 + Math.floor(p / 3) * 38;
+            ctx.fillStyle = p < g.occupants.length ? col : '#0f172a';
+            ctx.fillRect(px, py, 14, 10);
+          }
         }
 
         ctx.fillStyle = '#f8fafc';
         ctx.font = 'bold 10px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`GARRISON [${g.occupants.length}/${g.maxOccupants}]`, g.x, g.y + 4);
-        this.drawHealthBar(ctx, g.x, g.y - r - 8, r * 2, g.hp, g.maxHp);
+        ctx.fillText(`GARRISON [${g.occupants.length}/${g.maxOccupants}]`, g.x, g.y + r + 14);
+        this.drawHealthBar(ctx, g.x, g.y - r - 12, r * 2, g.hp, g.maxHp);
         ctx.restore();
       }
     }

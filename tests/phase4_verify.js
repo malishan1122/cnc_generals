@@ -480,6 +480,83 @@ console.log('\n--- [SYS-29] Ligne-Claire Diorama Unit Design Studio (22 USA + 21
     dozerPresetErrors === 0,
     'USA_DOZER renders cleanly across all 5 studio presets with active hydraulic blade scoop cycle and rolling treads'
   );
+
+  // Verify all 35 Buildings (11 USA + 13 China + 10 GLA + 4 Tech/Neutral) have bespoke 3D Ligne-Claire models & 0 NaN coordinates
+  const allBuildingIds = Array.from(new Set([
+    ...Object.keys(ZH_DATA.BUILDINGS),
+    'USA_FIREBASE',
+    'CHINA_MINES',
+    'GLA_DEMO_TRAP',
+    'TECH_OIL_DERRICK',
+    'TECH_HOSPITAL',
+    'TECH_REPAIR_BAY',
+    'CIV_GARRISON_BUNKER'
+  ]));
+  let missingBuildings = 0;
+  let buildingRenderErrors = 0;
+  let nanCoordCount = 0;
+
+  const nanCheckingCtx = new Proxy({}, {
+    get(target, prop) {
+      if (prop === 'moveTo' || prop === 'lineTo') {
+        return (x, y) => {
+          if (!Number.isFinite(x) || !Number.isFinite(y)) nanCoordCount++;
+        };
+      }
+      if (prop === 'arc' || prop === 'ellipse' || prop === 'rect') {
+        return (x, y) => {
+          if (!Number.isFinite(x) || !Number.isFinite(y)) nanCoordCount++;
+        };
+      }
+      if (prop === 'measureText') return () => ({ width: 42 });
+      if (prop === 'createLinearGradient' || prop === 'createRadialGradient') {
+        return () => ({ addColorStop: noop });
+      }
+      return noop;
+    },
+    set() { return true; }
+  });
+
+  for (const bId of allBuildingIds) {
+    const entry = ZH_UNIT_MODELS.getModelEntry(bId);
+    if (!entry) {
+      missingBuildings++;
+      console.error('  [MISSING BUILDING MODEL]', bId);
+      continue;
+    }
+    try {
+      const bDef = ZH_DATA.BUILDINGS[bId] || { id: bId, size: 72, hp: 1000, faction: bId.split('_')[0] };
+      const fac = ZH_DATA.FACTIONS[bDef.faction] || ZH_DATA.FACTIONS.USA;
+      for (const yawDeg of [0, 39, 135, 240]) {
+        const mockBuilding = {
+          defId: bId,
+          def: bDef,
+          x: 500,
+          y: 500,
+          size: bDef.size || 72,
+          radius: (bDef.size || 72) * 0.46,
+          angle: (yawDeg * Math.PI) / 180,
+          turretAngle: ((yawDeg + 30) * Math.PI) / 180,
+          recoilOffset: 2.0,
+          constructed: true,
+          buildProgress: 1.0,
+          hp: bDef.hp || 1000,
+          maxHp: bDef.hp || 1000
+        };
+        const ok = ZH_UNIT_MODELS.renderBuildingIfBespoke(nanCheckingCtx, mockBuilding, { faction: fac }, 1.5);
+        if (!ok) buildingRenderErrors++;
+        ZH_VFX.renderLigneClaireBuilding(nanCheckingCtx, mockBuilding, { faction: fac }, 1.5);
+        ZH_VFX.renderLigneClaireBuildingGhost(nanCheckingCtx, bId, 500, 500, bDef.size || 72, true);
+      }
+    } catch (err) {
+      buildingRenderErrors++;
+      console.error(`Building render error for ${bId}:`, err);
+    }
+  }
+  assert(
+    missingBuildings === 0 && buildingRenderErrors === 0 && nanCoordCount === 0,
+    `All ${allBuildingIds.length} Military & Tech Buildings (USA, China, GLA, Tech) render detailed 3D Ligne-Claire models with 0 errors and 0 NaN coordinates`
+  );
 }
 
 console.log('\n======================================================================');

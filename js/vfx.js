@@ -1060,17 +1060,52 @@ window.ZH_VFX = (function () {
   }
 
   function renderLigneClaireBuilding(ctx, b, team, gameTime) {
-    ensureBuildingSpritesLoaded();
-    const img = buildingSpriteCache[b.def.id];
-    if (!img || !img.complete || img.naturalWidth === 0) {
-      return false; // Let caller fall back while loading
-    }
-
     const s = b.def.size;
     const half = s / 2;
     const col = team ? team.faction.color : '#38bdf8';
     const t = gameTime || 0;
     const INK = '#2b241f';
+
+    // 1. Primary path: Deep-Engineered 3D Ligne-Claire Architectural CAD Rig (when available & not in 2D sprite mode)
+    if (
+      typeof window !== 'undefined' &&
+      window.ZH_UNIT_MODELS &&
+      typeof window.ZH_UNIT_MODELS.renderBuildingIfBespoke === 'function'
+    ) {
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      const rendered3D = window.ZH_UNIT_MODELS.renderBuildingIfBespoke(ctx, b, team, t);
+      if (rendered3D) {
+        if (b.constructed !== false) {
+          const isDisabled = (b.disabledTimer > 0) || (b.empTimer > 0) || (team && team.isLowPower && !b.def.powerBonus);
+          if (!isDisabled) {
+            renderLigneClaireBuildingSubFX(ctx, b, s, t, col);
+          }
+          const hpRatio = b.hp / b.maxHp;
+          if (hpRatio < 0.65) {
+            const smokeCount = hpRatio < 0.35 ? 3 : 2;
+            for (let i = 0; i < smokeCount; i++) {
+              const p = (t * 0.9 + i * 0.33) % 1;
+              const sx = (i - 0.5) * s * 0.22 + Math.sin(t * 3 + i) * 4;
+              const sy = -s * 0.1 - p * s * 0.42;
+              ctx.fillStyle = `rgba(43, 36, 31, ${(1 - p) * 0.7})`;
+              ctx.beginPath();
+              ctx.arc(sx, sy, 4 + p * 6, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+        }
+        ctx.restore();
+        return true;
+      }
+      ctx.restore();
+    }
+
+    ensureBuildingSpritesLoaded();
+    const img = buildingSpriteCache[b.def.id];
+    if (!img || !img.complete || img.naturalWidth === 0) {
+      return false; // Let caller fall back while loading
+    }
 
     ctx.save();
     ctx.translate(b.x, b.y);
@@ -1189,16 +1224,34 @@ window.ZH_VFX = (function () {
     ctx.fill();
     ctx.stroke();
 
-    if (img && img.complete && img.naturalWidth > 0) {
+    ctx.globalAlpha = valid ? 0.82 : 0.55;
+    let renderedBespoke = false;
+    if (window.ZH_UNIT_MODELS && typeof window.ZH_UNIT_MODELS.renderBuildingIfBespoke === 'function') {
+      const bDef = (window.ZH_DATA && window.ZH_DATA.BUILDINGS && window.ZH_DATA.BUILDINGS[defId]) || { id: defId, size: s };
+      const ghostEntity = {
+        defId,
+        def: bDef,
+        x: 0,
+        y: 0,
+        size: s,
+        hp: bDef.hp || 1000,
+        maxHp: bDef.hp || 1000,
+        constructed: true,
+        buildProgress: 1.0
+      };
+      const factionCol = valid ? '#38bdf8' : '#ef4444';
+      renderedBespoke = window.ZH_UNIT_MODELS.renderBuildingIfBespoke(ctx, ghostEntity, { faction: { color: factionCol } }, 0);
+    }
+
+    if (!renderedBespoke && img && img.complete && img.naturalWidth > 0) {
       const drawW = s * 1.68;
       const aspect = img.naturalHeight / img.naturalWidth;
       const drawH = drawW * aspect;
       const drawX = -drawW / 2;
       const drawY = -drawH * 0.58;
-      ctx.globalAlpha = valid ? 0.82 : 0.55;
       ctx.drawImage(img, drawX, drawY, drawW, drawH);
-      ctx.globalAlpha = 1;
     }
+    ctx.globalAlpha = 1;
 
     ctx.restore();
   }

@@ -1932,7 +1932,7 @@
       ? ZH_UNIT_MODELS.getActivePresetKey(primary.defId)
       : 'DIORAMA_DEFAULT';
     const activePresetObj = (cadEntry && cadEntry.presets && cadEntry.presets[activePresetKey]) || null;
-    const presetLabel = activePresetObj ? activePresetObj.label : 'Diorama Blueprint';
+    const presetLabel = (activePresetObj && (activePresetObj.label || activePresetObj.name)) || 'Diorama Blueprint';
     const hpCeil = Math.ceil(primary.hp);
     const isLaserLocked = Boolean(primary.laserLockedTimer > 0 || primary.laserLockTimer > 0);
     const isEmp = Boolean(primary.empTimer > 0);
@@ -1982,8 +1982,12 @@
         presetBtn.addEventListener('click', (ev) => {
           ev.stopPropagation();
           if (window.ZH_UNIT_MODELS && ZH_UNIT_MODELS.cyclePreset) {
-            ZH_UNIT_MODELS.cyclePreset(primary.defId, true);
+            const cycled = ZH_UNIT_MODELS.cyclePreset(primary.defId, true);
+            const nextLabel = (cycled && cycled.preset && (cycled.preset.label || cycled.preset.name))
+              ? (cycled.preset.label || cycled.preset.name)
+              : (cycled && (cycled.key || cycled.presetKey)) || String(cycled);
             refreshCommandBar();
+            showTacticalAlert(`3D CAD PRESET [K]: ${primary.def.shortName || primary.def.name} → ${nextLabel}`, '#38bdf8');
           }
         });
       }
@@ -1993,6 +1997,67 @@
           ev.stopPropagation();
           if (window.ZH_UNIT_STUDIO && ZH_UNIT_STUDIO.openStudio) {
             ZH_UNIT_STUDIO.openStudio(primary.defId);
+          }
+        });
+      }
+    }
+  }
+
+  function renderSingleBuildingInspectorStats(inspectorStats, b, forceRebuild) {
+    if (!inspectorStats || !b || !b.def) return;
+    const defId = b.defId || b.def.id;
+    const isDeepCad = !!(window.ZH_UNIT_MODELS && ZH_UNIT_MODELS.isDeepEngineeredUnit && ZH_UNIT_MODELS.isDeepEngineeredUnit(defId));
+    const cadEntry = isDeepCad && ZH_UNIT_MODELS.getModelEntry ? ZH_UNIT_MODELS.getModelEntry(defId) : null;
+    const activePresetKey = isDeepCad && ZH_UNIT_MODELS.getActivePresetKey ? ZH_UNIT_MODELS.getActivePresetKey(defId) : 'DIORAMA_DEFAULT';
+    const presetObj = cadEntry && cadEntry.presets ? cadEntry.presets[activePresetKey] : null;
+    const presetLabel = (presetObj && (presetObj.label || presetObj.name)) || 'Diorama Blueprint';
+    const hpCeil = Math.ceil(b.hp);
+    const statusText = b.constructed ? 'ONLINE' : `BUILDING (${Math.round((b.buildProgress || 0) * 100)}%)`;
+    const powerVal = b.def.power || 0;
+    const powerText = powerVal >= 0 ? `+${powerVal}` : `${powerVal}`;
+
+    const sig = `${b.id}|${defId}|${hpCeil}/${b.maxHp}|${powerText}|${statusText}|${activePresetKey}`;
+    if (!forceRebuild && inspectorStats.dataset && inspectorStats.dataset.sig === sig) {
+      return;
+    }
+    if (inspectorStats.dataset) {
+      inspectorStats.dataset.sig = sig;
+    }
+
+    const bPortraitSrc = (cadEntry && cadEntry.referenceImage) || `assets/diorama/buildings/${defId.toLowerCase()}.png`;
+    inspectorStats.innerHTML = `
+      <span class="inspector-building-portrait-chip">
+        <img class="inspector-building-portrait" src="${bPortraitSrc}" alt="${b.def.name}" />
+        <strong>${isDeepCad ? '3D CAD' : '2:1 Ligne-Claire'}</strong>
+      </span>
+      <span>HP: ${hpCeil}/${b.maxHp}</span>
+      <span>Power: ${powerText}</span>
+      <span>Status: ${statusText}</span>
+      ${isDeepCad ? `<button type="button" id="btn-hud-cycle-preset" class="hud-cad-chip" title="Click or press [K] to cycle 5 Architectural 3D Presets">🎨 ${presetLabel} [K]</button>` : ''}
+      ${isDeepCad ? `<button type="button" id="btn-hud-open-unit-cad" class="hud-cad-chip hud-cad-chip-accent" title="Open Building in 3D CAD Design Studio [U]">🛠️ 3D Studio</button>` : ''}
+    `;
+
+    if (isDeepCad) {
+      const presetBtn = document.getElementById('btn-hud-cycle-preset');
+      if (presetBtn) {
+        presetBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          if (window.ZH_UNIT_MODELS && ZH_UNIT_MODELS.cyclePreset) {
+            const cycled = ZH_UNIT_MODELS.cyclePreset(defId, true);
+            const nextLabel = (cycled && cycled.preset && (cycled.preset.label || cycled.preset.name))
+              ? (cycled.preset.label || cycled.preset.name)
+              : (cycled && (cycled.key || cycled.presetKey)) || String(cycled);
+            refreshCommandBar();
+            showTacticalAlert(`3D CAD PRESET [K]: ${b.def.shortName || b.def.name} → ${nextLabel}`, '#38bdf8');
+          }
+        });
+      }
+      const studioBtn = document.getElementById('btn-hud-open-unit-cad');
+      if (studioBtn) {
+        studioBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          if (window.ZH_UNIT_STUDIO && ZH_UNIT_STUDIO.openStudio) {
+            ZH_UNIT_STUDIO.openStudio(defId);
           }
         });
       }
@@ -2036,13 +2101,8 @@
       ).join('');
       renderSelectionSummary(selectedUnits);
     } else if (selectedBuildings.length > 0) {
-      if (inspectorStats && inspectorStats.dataset) inspectorStats.dataset.sig = '';
       const b = selectedBuildings[0];
-      inspectorStats.innerHTML = `
-        <span>HP: ${Math.ceil(b.hp)}/${b.maxHp}</span>
-        <span>Power: ${b.def.power >= 0 ? '+' + b.def.power : b.def.power}</span>
-        <span>Status: ${b.constructed ? 'ONLINE' : `BUILDING (${Math.round(b.buildProgress * 100)}%)`}</span>
-      `;
+      renderSingleBuildingInspectorStats(inspectorStats, b, false);
       renderProductionQueueStrip(b);
     }
 
@@ -2437,18 +2497,9 @@
 
     // CASE B: Building Selected
     const b = selectedBuildings[0];
-    const bPortraitSrc = `assets/diorama/buildings/${b.def.id.toLowerCase()}.png`;
     inspectorTitle.textContent = b.def.name;
     inspectorSub.textContent = b.def.description;
-    inspectorStats.innerHTML = `
-      <span class="inspector-building-portrait-chip">
-        <img class="inspector-building-portrait" src="${bPortraitSrc}" alt="${b.def.name}" />
-        <strong>2:1 Ligne-Claire</strong>
-      </span>
-      <span>HP: ${Math.ceil(b.hp)}/${b.maxHp}</span>
-      <span>Power: ${b.def.power >= 0 ? '+' + b.def.power : b.def.power}</span>
-      <span>Status: ${b.constructed ? 'ONLINE' : `BUILDING (${Math.round(b.buildProgress * 100)}%)`}</span>
-    `;
+    renderSingleBuildingInspectorStats(inspectorStats, b, true);
 
     // Show interactive Production Queue chips
     renderProductionQueueStrip(b);
@@ -3574,7 +3625,20 @@
             const selUnit = engine && engine.units
               ? engine.units.find(u => engine.selectedIds && engine.selectedIds.has(u.id))
               : null;
-            ZH_UNIT_STUDIO.openStudio(selUnit ? selUnit.defId : undefined);
+            const selBld = !selUnit && engine && engine.buildings
+              ? engine.buildings.find(b => engine.selectedIds && engine.selectedIds.has(b.id))
+              : null;
+            const selBunker = !selUnit && !selBld && engine && engine.garrisonBunkers
+              ? engine.garrisonBunkers.find(g => engine.selectedIds && engine.selectedIds.has(g.id))
+              : null;
+            const targetDefId = selUnit
+              ? selUnit.defId
+              : selBld
+              ? (selBld.defId || (selBld.def && selBld.def.id))
+              : selBunker
+              ? (selBunker.defId || 'CIV_GARRISON_BUNKER')
+              : undefined;
+            ZH_UNIT_STUDIO.openStudio(targetDefId);
           }
           return;
         }
@@ -3704,19 +3768,29 @@
         return;
       }
 
-      // Phase 3 SYS-19: Combat unit tactical hotkeys (G = Guard, X = Scatter, S = Stop, A = Attack-Move, K = Cycle 3D Preset)
+      // Phase 3 SYS-19: Combat unit & building tactical hotkeys (G = Guard, X = Scatter, S = Stop, A = Attack-Move, K = Cycle 3D Preset)
       const selectedUnits = engine.units.filter(u => engine.selectedIds.has(u.id) && u.team === 0);
-      if (k === 'K' && selectedUnits.length > 0 && window.ZH_UNIT_MODELS && ZH_UNIT_MODELS.cyclePreset) {
-        const primary = (selectedUnits.length > 1 && activeSubgroupDefId)
-          ? (selectedUnits.find(u => u.defId === activeSubgroupDefId) || selectedUnits[0])
-          : selectedUnits[0];
-        if (ZH_UNIT_MODELS.isDeepEngineeredUnit && ZH_UNIT_MODELS.isDeepEngineeredUnit(primary.defId)) {
-          const nextPresetKey = ZH_UNIT_MODELS.cyclePreset(primary.defId, true);
-          const entry = ZH_UNIT_MODELS.getModelEntry(primary.defId);
-          const presetObj = entry && entry.presets ? entry.presets[nextPresetKey] : null;
-          const presetLabel = presetObj ? presetObj.label : nextPresetKey;
+      const selectedBuildings = engine.buildings.filter(b => engine.selectedIds.has(b.id));
+      const selectedBunkers = (engine.garrisonBunkers || []).filter(g => engine.selectedIds.has(g.id));
+      if (k === 'K' && window.ZH_UNIT_MODELS && ZH_UNIT_MODELS.cyclePreset) {
+        const primaryEntity = selectedUnits.length > 0
+          ? ((selectedUnits.length > 1 && activeSubgroupDefId)
+              ? (selectedUnits.find(u => u.defId === activeSubgroupDefId) || selectedUnits[0])
+              : selectedUnits[0])
+          : selectedBuildings.length > 0
+          ? selectedBuildings[0]
+          : selectedBunkers.length > 0
+          ? { defId: selectedBunkers[0].defId || 'CIV_GARRISON_BUNKER', def: { shortName: 'GARRISON BUNKER' } }
+          : null;
+        const targetDefId = primaryEntity ? (primaryEntity.defId || (primaryEntity.def && primaryEntity.def.id)) : null;
+        if (targetDefId && ZH_UNIT_MODELS.isDeepEngineeredUnit && ZH_UNIT_MODELS.isDeepEngineeredUnit(targetDefId)) {
+          const cycled = ZH_UNIT_MODELS.cyclePreset(targetDefId, true);
+          const presetLabel = (cycled && cycled.preset && (cycled.preset.label || cycled.preset.name))
+            ? (cycled.preset.label || cycled.preset.name)
+            : (cycled && (cycled.key || cycled.presetKey)) || String(cycled);
           refreshCommandBar();
-          showTacticalAlert(`3D CAD PRESET [K]: ${primary.def.shortName} → ${presetLabel}`, '#38bdf8');
+          const entityName = (primaryEntity.def && (primaryEntity.def.shortName || primaryEntity.def.name)) || targetDefId;
+          showTacticalAlert(`3D CAD PRESET [K]: ${entityName} → ${presetLabel}`, '#38bdf8');
           if (window.ZH_AUDIO) ZH_AUDIO.playSFX('click');
           return;
         }
