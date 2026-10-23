@@ -24,7 +24,12 @@ A zero-dependency, native macOS (`.app`) and HTML5 Canvas/WebAudio clean-room re
 - **Complete RTS Controls, 3D Unit Studio, Seeded Determinism & Save/Load Persistence**:
   - Drag-box selection with automatic combat-unit priority filtering, double-click type selection, live armor-counter hover readouts, and **Control Groups `0–9`** (`Ctrl+0..9`, double-tap camera centering) for both units and production buildings.
   - Tactical stances: `[A]` Attack-Move, `[G]` Guard (220px leash), `[S]` Stop, `[X]` Scatter, `Ctrl+RightClick` Force-Fire, `Shift+RightClick` Chained Waypoints, `[F]` Unit Micro-Ability, `Spacebar` Jump-to-Alert.
-  - **Interactive 3D/2.5D Unit & Building Studio (`[U]`)**: Built-in parametric CAD modeler (`js/unit_models.js`, `js/unit_studio.js`) with 39/39 faction units & 38/38 structures, turntable inspection, weapon test-fire, and standalone diorama inspection sheets (`unit-studio.html`, `usa-buildings-diorama.html`, `usa-units-diorama.html`).
+  - **Interactive 3D/2.5D Unit & Building Studio (`[U]`)**: Built-in parametric CAD modeler (`js/unit_models.js`, `js/unit_studio.js`) with **55/55 faction units** (18 USA, 21 China, 16 GLA) & **38/38 structures**, turntable inspection, weapon test-fire, and standalone diorama inspection sheets (`unit-studio.html`, `usa-buildings-diorama.html`, `usa-units-diorama.html`).
+  - **Data-Driven Tactical Maps, Perceptive FoW AI, Event Bus & Translucent 3s HUD Banners**:
+    - Authored `obstacles` (canyon mesas, river gorges, glacier spires), `supplyDocks`, `techStructures`, and `garrisonBunkers` per map in `js/data.js`, rasterized into `js/nav.js` and enforced during building placement.
+    - Perceptive Fog-of-War AI (`teamMemory`, `hasDirectLineOfSight`, O(N) spatial-grid `updateTeamPerception`, `isEnemyVisibleToAI`) serialized in `.zhsave` v2.
+    - Simulation-to-Presentation Event Bus (`emitEvent`, `drainEvents`) for `burst`, `floatingText`, `radarPing`, `alert`, and `taunt` events.
+    - Translucent, click-through HUD banners (`#tactical-alert`, `#alert-log`, `#general-taunt-box`) that auto-expire after **3 seconds (`3000ms`)**.
   - Seeded simulation PRNG (`js/rng.js`, Mulberry32), deterministic fixed-timestep `gameSpeed` accumulator (`1x`, `1.5x`, `2x`, `3x`), validated command queue (`issueCommand()`, `exportReplay()`, `runReplay()`), FNV-1a state hashing (`computeStateHash()`), **Quick Save `[F5]`**, **Quick Load `[F9]`**, and **`.zhsave` JSON Export/Import**.
 
 ---
@@ -59,22 +64,22 @@ node tests/human_qa_runner.js
 # 2. Deterministic Seed, Command-Log Replay Hash, Challenge 2.0 & 80-Unit Step Benchmark (7/7 PASS)
 node tests/replay_hash_verify.js
 
-# 3. Fixed-Timestep GameSpeed Invariance (1x, 1.5x, 2x, 3x identical state hashes)
+# 3. Fixed-Timestep GameSpeed Invariance (1x, 1.5x, 2x, 3x identical state hashes, 5/5 PASS)
 node tests/game_speed_verify.js
 
-# 4. Seeded PRNG, Validated issueCommand(), Replay Export/Run & Mid-Match .zhsave Determinism
+# 4. Seeded PRNG, Validated issueCommand(), Replay Export/Run & Mid-Match .zhsave Determinism (9/9 PASS)
 node tests/determinism_verify.js
 
-# 5. 1,000-Unit Performance Budget (avg <= 6.0ms, p99 <= 12.0ms) & Blocked-Goal A* Fallback
+# 5. 1,000-Unit Performance Budget (avg <= 6.0ms, p99 <= 12.0ms) & Blocked-Goal A* Fallback (4/4 PASS)
 node tests/perf_budget.js
 
-# 6. Phase 2 Engine & AI Doctrines Suite (20/20 PASS)
+# 6. Phase 2 Engine & AI Doctrines Suite (29/29 PASS)
 node tests/phase2_verify.js
 
-# 7. Phase 3 UX, VFX & Spatial Audio Suite (26/26 PASS)
+# 7. Phase 3 UX, VFX, Spatial Audio, Data-Driven Maps, Perceptive FoW AI & 3s Banners Suite (31/31 PASS)
 node tests/phase3_verify.js
 
-# 8. Phase 4 Save/Load, 3D Model Coverage (39/39 Units, 38/38 Buildings) & 81-Slice Matrix (39/39 PASS)
+# 8. Phase 4 Save/Load, 3D Model Coverage (55/55 Units, 38/38 Buildings) & 81-Slice Matrix (39/39 PASS)
 node tests/phase4_verify.js
 
 # 9. Standalone 9x9 Sub-General AI Matchup Matrix & Full-Match Victory Check (81/81 Matchups)

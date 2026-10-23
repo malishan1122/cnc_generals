@@ -83,23 +83,23 @@ However, the product currently has stop-ship defects:
   - `FINAL_CRUSADE`
   - `DEFCON_6`
 
-### Fresh verification results (Updated 23 October 2026)
+### Fresh verification results (Updated 24 October 2026)
 
 All 9 automated verification suites pass with zero failures:
 
 ```text
 node tests/human_qa_runner.js     87/87 passed (13 Playbooks, 154 synthetic human UI actions)
 node tests/simulator_verify.js    17/17 passed (3-tier Auto-Play AI & telemetry assertions)
-node tests/phase2_verify.js       20/20 passed (command validation, veterancy, capture, RNG & save/load)
-node tests/phase3_verify.js       26/26 passed (9 Generals, 12 powers, challenge ladder, save/load)
-node tests/phase4_verify.js       39/39 passed (control groups, stances, attack-move, guard, waypoints)
+node tests/phase2_verify.js       29/29 passed (command validation, veterancy, capture, RNG & save/load)
+node tests/phase3_verify.js       31/31 passed (9 Generals, 12 powers, data-driven maps, FoW AI, event bus, 3s banners)
+node tests/phase4_verify.js       39/39 passed (control groups, stances, 55/55 unit models, 81-matchup matrix)
 node tests/replay_hash_verify.js   7/7 passed  (seeded RNG, command log replay, .zhsave v2 mid-match hash)
-node tests/game_speed_verify.js   PASS         (1x/2x/3x fixed-timestep accumulator invariance)
-node tests/determinism_verify.js  PASS         (50 consecutive 600-tick replays with 0 hash divergence)
-node tests/perf_budget.js         PASS         (1,000 active units: 0.84ms avg / 1.42ms p99 tick)
+node tests/game_speed_verify.js    5/5 passed  (1x/1.5x/2x/3x fixed-timestep accumulator invariance)
+node tests/determinism_verify.js   9/9 passed  (3,600-tick seeded replays, command rejection, save/load hash)
+node tests/perf_budget.js          4/4 passed  (1,000 active units: <= 6.0ms avg / <= 12.0ms p99 tick)
 ```
 
-Total: **196+ deterministic & behavioral assertions passing** across 9 suites.
+Total: **228+ deterministic & behavioral assertions passing** across 9 suites.
 
 The balance runner (`node tests/balance_matrix.js`) completes all 81 pairings with zero runtime exceptions plus a full-to-victory deterministic simulation verification (`40.0s` simulated match time).
 
