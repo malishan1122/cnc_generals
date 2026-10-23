@@ -959,9 +959,11 @@ window.ZH_DATA = (function () {
       isHarvester: true,
       isAir: true,
       carryCap: 600,
+      transportCapacity: 8,
+      fireports: false,
       voiceSelect: 'Chinook in the air.',
       voiceMove: 'Supply run underway.',
-      description: 'Heavy twin-rotor transport that flies directly over terrain obstacles to harvest $600 per trip.'
+      description: 'Heavy twin-rotor transport that flies directly over terrain obstacles to harvest $600 per trip and airlift 8 infantry.'
     },
     USA_RANGER: {
       id: 'USA_RANGER',
@@ -1047,6 +1049,7 @@ window.ZH_DATA = (function () {
       sight: 300,
       requiresTech: true,
       stealthedWhenStill: true,
+      detectsStealth: true,
       weapon: {
         damage: 140,
         range: 295,
@@ -1073,6 +1076,8 @@ window.ZH_DATA = (function () {
       speed: 122,
       radius: 15,
       sight: 250,
+      transportCapacity: 5,
+      fireports: true,
       weapon: {
         damage: 22,
         range: 195,
@@ -1273,6 +1278,8 @@ window.ZH_DATA = (function () {
       radius: 17,
       sight: 290,
       isAir: true,
+      maxAmmo: 4,
+      reloadTime: 3.5,
       weapon: {
         damage: 95,
         range: 265,
@@ -1301,6 +1308,8 @@ window.ZH_DATA = (function () {
       radius: 18,
       sight: 310,
       isAir: true,
+      maxAmmo: 6,
+      reloadTime: 3.5,
       generalOnly: 'USA_GRANGER',
       subGeneralExclusive: 'USA_GRANGER',
       hasPointDefenseLaser: true,
@@ -1363,6 +1372,8 @@ window.ZH_DATA = (function () {
       sight: 285,
       isAir: true,
       isHelicopter: true,
+      transportCapacity: 8,
+      fireports: true,
       generalOnly: 'USA_GRANGER',
       subGeneralExclusive: 'USA_GRANGER',
       hasPointDefenseLaser: true,
@@ -1396,6 +1407,9 @@ window.ZH_DATA = (function () {
       sight: 300,
       isAir: true,
       requiresTech: true,
+      maxAmmo: 1,
+      reloadTime: 4.5,
+      supersonicSpeedBoost: 1.65,
       weapon: {
         damage: 240,
         range: 250,
@@ -1425,6 +1439,9 @@ window.ZH_DATA = (function () {
       sight: 310,
       isAir: true,
       requiresTech: true,
+      maxAmmo: 1,
+      reloadTime: 4.5,
+      supersonicSpeedBoost: 1.65,
       generalOnly: 'USA_ALEXANDER',
       subGeneralExclusive: 'USA_ALEXANDER',
       weapon: {
@@ -1718,6 +1735,8 @@ window.ZH_DATA = (function () {
       radius: 20,
       sight: 270,
       detectsStealth: true,
+      transportCapacity: 8,
+      fireports: true,
       weapon: {
         damage: 26,
         range: 195,
@@ -1749,6 +1768,8 @@ window.ZH_DATA = (function () {
       isPropagandaCarrier: true,
       auraRadius: 190,
       detectsStealth: true,
+      transportCapacity: 8,
+      fireports: true,
       weapon: {
         damage: 42,
         range: 225,
@@ -1914,6 +1935,8 @@ window.ZH_DATA = (function () {
       radius: 17,
       sight: 285,
       isAir: true,
+      maxAmmo: 2,
+      reloadTime: 3.5,
       weapon: {
         damage: 105,
         range: 260,
@@ -1943,6 +1966,8 @@ window.ZH_DATA = (function () {
       radius: 18,
       sight: 300,
       isAir: true,
+      maxAmmo: 2,
+      reloadTime: 4.0,
       generalOnly: 'CHINA_TAO',
       subGeneralExclusive: 'CHINA_TAO',
       weapon: {
@@ -1975,6 +2000,8 @@ window.ZH_DATA = (function () {
       sight: 320,
       detectsStealth: true,
       stealthedWhenStill: true,
+      transportCapacity: 2,
+      fireports: true,
       weapon: {
         damage: 58,
         range: 225,
@@ -2032,6 +2059,8 @@ window.ZH_DATA = (function () {
       sight: 280,
       isAir: true,
       isHelicopter: true,
+      transportCapacity: 5,
+      fireports: true,
       isPropagandaCarrier: true,
       auraRadius: 175,
       weapon: {
@@ -2273,6 +2302,8 @@ window.ZH_DATA = (function () {
       radius: 15,
       sight: 245,
       canSalvage: true,
+      transportCapacity: 5,
+      fireports: true,
       weapon: {
         damage: 20,
         range: 195,
@@ -2765,6 +2796,9 @@ window.ZH_DATA = (function () {
       id: 'TOURNAMENT_DESERT',
       name: 'Tournament Desert',
       subtitle: 'Iconic Arid Canyon, Tech Oil Derricks & Central Urban Garrisons',
+      tacticalProfile: 'Open central canyon with twin flank ridges and contested urban garrison blocks',
+      chokePoints: 2,
+      supplyLayout: '2 Safe Base Depots ($30k ea) • 2 Expansion Depots ($22k ea) • 3 Contested Center Docks ($24k/$19k)',
       theme: 'DESERT',
       bgPrimary: '#c2a36b',
       bgSecondary: '#b08f54',
@@ -2776,6 +2810,9 @@ window.ZH_DATA = (function () {
       id: 'FINAL_CRUSADE',
       name: 'Final Crusade',
       subtitle: 'Temperate Valley, Tech Hospital & Central Supply Basin',
+      tacticalProfile: 'Split river valley with central bridge crossings, Tech Hospital, and high-ground flanks',
+      chokePoints: 3,
+      supplyLayout: '2 Safe Base Depots ($30k ea) • 2 River Flank Depots ($22k ea) • 3 Valley Floor Docks ($24k/$19k)',
       theme: 'TEMPERATE',
       bgPrimary: '#526f43',
       bgSecondary: '#435d36',
@@ -2787,6 +2824,9 @@ window.ZH_DATA = (function () {
       id: 'DEFCON_6',
       name: 'Defcon 6 (Arctic Stronghold)',
       subtitle: 'Frozen Mountain Pass, Tech Repair Bays & Strategic Choke Points',
+      tacticalProfile: 'Fortified glacier corridor with narrow artillery passes and central Tech Repair Bay',
+      chokePoints: 4,
+      supplyLayout: '2 Safe Base Depots ($30k ea) • 2 Ridge Expansion Depots ($22k ea) • 3 Stronghold Docks ($24k/$19k)',
       theme: 'SNOW',
       bgPrimary: '#cbd5e1',
       bgSecondary: '#94a3b8',
@@ -3098,6 +3138,39 @@ window.ZH_DATA = (function () {
   Object.values(UNIT_ABILITIES).forEach(ab => { if (!ab.icon) ab.icon = iconFor(ab); });
   Object.values(GENERALS_POWERS).forEach(pw => { if (!pw.icon) pw.icon = pw.rank === 5 ? '☢' : pw.rank === 3 ? '✈' : '🎖'; });
 
+  // P1-11: Centralized Naming Table & Rebranding Profile Hook
+  // Allows swapping all display strings (game title, factions, generals, units, buildings)
+  // from a single declarative table without changing simulation IDs.
+  const NAMING_TABLE = {
+    gameTitle: 'Zero Hour: Tactical Command (macOS Clean-Room Edition)',
+    factions: Object.fromEntries(Object.entries(FACTIONS).map(([k, v]) => [k, { name: v.name, shortName: v.shortName, tagline: v.tagline }])),
+    generals: Object.fromEntries(Object.entries(GENERALS).map(([k, v]) => [k, { name: v.name, title: v.title, specialty: v.specialty }])),
+    units: Object.fromEntries(Object.entries(UNITS).map(([k, v]) => [k, { name: v.name, shortName: v.shortName }])),
+    buildings: Object.fromEntries(Object.entries(BUILDINGS).map(([k, v]) => [k, { name: v.name, shortName: v.shortName }]))
+  };
+
+  function applyNamingProfile(profile = {}) {
+    if (!profile || typeof profile !== 'object') return NAMING_TABLE;
+    if (profile.gameTitle) NAMING_TABLE.gameTitle = String(profile.gameTitle);
+    const applyGroup = (sourceMap, targetRegistry) => {
+      if (!sourceMap || typeof sourceMap !== 'object') return;
+      Object.entries(sourceMap).forEach(([id, overrides]) => {
+        if (targetRegistry[id] && overrides && typeof overrides === 'object') {
+          if (overrides.name) targetRegistry[id].name = String(overrides.name);
+          if (overrides.shortName) targetRegistry[id].shortName = String(overrides.shortName);
+          if (overrides.title) targetRegistry[id].title = String(overrides.title);
+          if (overrides.tagline) targetRegistry[id].tagline = String(overrides.tagline);
+          if (overrides.specialty) targetRegistry[id].specialty = String(overrides.specialty);
+        }
+      });
+    };
+    applyGroup(profile.factions, FACTIONS);
+    applyGroup(profile.generals, GENERALS);
+    applyGroup(profile.units, UNITS);
+    applyGroup(profile.buildings, BUILDINGS);
+    return NAMING_TABLE;
+  }
+
   return {
     DAMAGE_MATRIX,
     VETERANCY_LEVELS,
@@ -3112,6 +3185,9 @@ window.ZH_DATA = (function () {
     GENERALS_POWERS,
     MAPS,
     CHALLENGE_LADDER,
+    NAMING_TABLE,
+    applyNamingProfile,
     iconFor
   };
 })();
+

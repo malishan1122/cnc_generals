@@ -17,6 +17,10 @@ const ZH_UNIT_MODELS = (function () {
     return Math.max(lo, Math.min(hi, v));
   }
 
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
   function hexToRgb(hex) {
     if (!hex || typeof hex !== 'string') return { r: 212, g: 176, b: 123 };
     let h = hex.trim().replace(/^#/, '');
@@ -42,23 +46,37 @@ const ZH_UNIT_MODELS = (function () {
     return `rgb(${r}, ${g}, ${b})`;
   }
 
+  const shadeCache = new Map();
+
   function shadeHex(hex, factor, alpha = 1) {
+    const qFactor = Math.round(factor * 100);
+    const cacheKey = alpha >= 0.999 ? `${hex}|${qFactor}` : null;
+    if (cacheKey) {
+      const hit = shadeCache.get(cacheKey);
+      if (hit) return hit;
+    }
     const rgb = hexToRgb(hex);
+    let out;
     if (factor >= 1) {
       const t = clamp(factor - 1, 0, 1);
-      return rgbToCss({
+      out = rgbToCss({
         r: rgb.r + (255 - rgb.r) * t,
         g: rgb.g + (255 - rgb.g) * t,
         b: rgb.b + (255 - rgb.b) * t
       }, alpha);
     } else {
       const f = clamp(factor, 0, 1);
-      return rgbToCss({
+      out = rgbToCss({
         r: rgb.r * f,
         g: rgb.g * f,
         b: rgb.b * f
       }, alpha);
     }
+    if (cacheKey) {
+      if (shadeCache.size > 4096) shadeCache.clear();
+      shadeCache.set(cacheKey, out);
+    }
+    return out;
   }
 
   function mixHex(hexA, hexB, t, alpha = 1) {
@@ -410,6 +428,13 @@ const ZH_UNIT_MODELS = (function () {
     });
   }
 
+  let activeStrokeScale = 1.0;
+
+  function setZoomStrokeScale(zoom) {
+    const z = clamp(Number(zoom) || 1.0, 0.5, 2.2);
+    activeStrokeScale = clamp(1.12 / Math.sqrt(z), 0.78, 1.38);
+  }
+
   function flushFaces(ctx, faceList) {
     faceList.sort((a, b) => a.depth - b.depth);
     for (let i = 0; i < faceList.length; i++) {
@@ -417,7 +442,8 @@ const ZH_UNIT_MODELS = (function () {
       if (f.customDraw) {
         f.customDraw(ctx);
       } else {
-        drawPolyPts(ctx, f.pts, f.fill, f.stroke, f.lineWidth);
+        const lw = f.lineWidth ? f.lineWidth * activeStrokeScale : undefined;
+        drawPolyPts(ctx, f.pts, f.fill, f.stroke, lw);
       }
     }
   }
@@ -4470,6 +4496,7 @@ const ZH_UNIT_MODELS = (function () {
     const r = rawR * (p.hullScale || 1.0);
     const L = p.hullLength || 1.0;
     const W = p.wingSpan || 1.0;
+    const H = p.extrusionDepth || 1.0;
     const hullAngle = (u && u.angle !== undefined) ? u.angle : 0;
     const turretAngle = (u && u.turretAngle !== undefined) ? u.turretAngle : hullAngle;
     const recoil = (u && u.recoilOffset) || 0;
@@ -4480,120 +4507,318 @@ const ZH_UNIT_MODELS = (function () {
 
     const oliveBase = p.armorBaseColor || '#627048';
     const oliveHi = p.armorHighlightColor || '#7f8f61';
+    const oliveDark = '#465233';
+    const oliveDeep = '#333c24';
     const seamCol = p.panelLineColor || '#26201b';
     const glassCol = p.glassColor || '#6cc0e6';
+    const sideGlassCol = '#4d7aa6';
 
     const proj = createProjector(hullAngle, pitchScale, zScale, 0, 0, 0, 0);
 
-    // Shadow
+    // Soft Warm Diorama Drop Shadow (including rotor blades & tail shadow)
     const shadowPts = [
-      proj.project(-1.32 * r * L, -0.62 * r * W, 0),
-      proj.project(1.20 * r * L, -0.62 * r * W, 0),
-      proj.project(1.20 * r * L, 0.62 * r * W, 0),
-      proj.project(-1.32 * r * L, 0.62 * r * W, 0)
-    ].map((pt) => ({ x: pt.x + 4.5, y: pt.y + 6.0 }));
+      proj.project(-1.38 * r * L, -0.58 * r * W, 0),
+      proj.project(1.24 * r * L, -0.58 * r * W, 0),
+      proj.project(1.24 * r * L, 0.58 * r * W, 0),
+      proj.project(-1.38 * r * L, 0.58 * r * W, 0)
+    ].map((pt) => ({ x: pt.x + 4.5, y: pt.y + 6.5 }));
     drawPolyPts(ctx, shadowPts, 'rgba(65, 50, 40, 0.28)', null, 0);
 
     const faces = [];
 
-    // 0. Retractable Wheeled Landing Gear (2 Front Main Wheels + Rear Tail Wheel matching usa_comanche_diorama_ref.png)
+    // ========================================================================
+    // 0. Retractable 3-Wheel Tricycle Landing Gear (2 Front Main + 1 Rear Tail Wheel)
+    // ========================================================================
     for (const side of [-1, 1]) {
-      const wy = side * 0.34 * r;
-      const wx = 0.12 * r * L;
+      const wy = side * 0.36 * r;
+      const wx = 0.24 * r * L;
       faces.push({
-        depth: proj.project(wx, wy, 0.12 * r + hoverZ).depth - 0.5,
+        depth: proj.project(wx, wy, 0.10 * r + hoverZ).depth - 0.55,
         customDraw(c) {
-          const sPt = proj.project(wx, wy * 0.85, 0.24 * r + hoverZ);
-          const wPt = proj.project(wx, wy, 0.11 * r + hoverZ);
-          c.strokeStyle = '#475569';
-          c.lineWidth = 1.5;
+          const sTop = proj.project(wx + 0.06 * r * L, wy * 0.80, 0.28 * r + hoverZ);
+          const sKnee = proj.project(wx - 0.02 * r * L, wy * 0.95, 0.18 * r + hoverZ);
+          const wPt = proj.project(wx, wy, 0.09 * r + hoverZ);
+          // Oleo strut + torque link scissor
+          c.strokeStyle = seamCol;
+          c.lineWidth = 2.6;
           c.beginPath();
-          c.moveTo(sPt.x, sPt.y);
+          c.moveTo(sTop.x, sTop.y);
+          c.lineTo(wPt.x, wPt.y);
+          c.stroke();
+          c.strokeStyle = '#64748b';
+          c.lineWidth = 1.4;
+          c.beginPath();
+          c.moveTo(sTop.x, sTop.y);
+          c.lineTo(sKnee.x, sKnee.y);
           c.lineTo(wPt.x, wPt.y);
           c.stroke();
 
+          // Rubber tire + metallic hubcap
+          const rad = Math.max(2.4, 0.105 * r);
           c.fillStyle = '#1e293b';
           c.strokeStyle = seamCol;
-          c.lineWidth = 1.0;
+          c.lineWidth = 1.1;
           c.beginPath();
-          c.arc(wPt.x, wPt.y, Math.max(2.0, 0.09 * r), 0, Math.PI * 2);
+          c.arc(wPt.x, wPt.y, rad, 0, Math.PI * 2);
           c.fill();
           c.stroke();
+          c.fillStyle = '#64748b';
+          c.beginPath();
+          c.arc(wPt.x, wPt.y, rad * 0.45, 0, Math.PI * 2);
+          c.fill();
         }
       });
     }
+    // Rear Tail Landing Gear Wheel under Fenestron base (matching usa_comanche_diorama_ref.png!)
+    faces.push({
+      depth: proj.project(-1.02 * r * L, 0, 0.22 * r + hoverZ).depth - 0.50,
+      customDraw(c) {
+        const sTop = proj.project(-0.98 * r * L, 0, 0.36 * r + hoverZ);
+        const wPt = proj.project(-1.04 * r * L, 0, 0.22 * r + hoverZ);
+        c.strokeStyle = seamCol;
+        c.lineWidth = 2.2;
+        c.beginPath();
+        c.moveTo(sTop.x, sTop.y);
+        c.lineTo(wPt.x, wPt.y);
+        c.stroke();
+        const rad = Math.max(1.8, 0.075 * r);
+        c.fillStyle = '#1e293b';
+        c.strokeStyle = seamCol;
+        c.lineWidth = 1.0;
+        c.beginPath();
+        c.arc(wPt.x, wPt.y, rad, 0, Math.PI * 2);
+        c.fill();
+        c.stroke();
+        c.fillStyle = '#64748b';
+        c.beginPath();
+        c.arc(wPt.x, wPt.y, rad * 0.42, 0, Math.PI * 2);
+        c.fill();
+      }
+    });
 
-    // 1. Stub-Wing Weapon Sponsons + Dual Under-Wing Pods (Inner 19-Tube Hydra-70 Pod + Outer Hellfire Pod)
+    // ========================================================================
+    // 1. Stub-Wing Weapon Sponsons + Dual Under-Wing Pods (Hydra-70 + Hellfire)
+    // ========================================================================
     if (p.showRocketPods !== false) {
       for (const side of [-1, 1]) {
-        const yIn = side * 0.28 * r;
-        const yOut = side * 0.84 * r * W;
+        const yIn = side * 0.26 * r;
+        const yOut = side * 0.86 * r * W;
         const yMin = Math.min(yIn, yOut);
         const yMax = Math.max(yIn, yOut);
-        // Faceted stub wing with canted tip endplate
-        pushBox3D(faces, proj, -0.18 * r * L, 0.26 * r * L, yMin, yMax, 0.30 * r + hoverZ, 0.44 * r + hoverZ, oliveBase, seamCol, 1.05, 0.1, 0.05 * r, 0.02 * r);
 
-        // Inner Pod: Cylindrical 19-tube Hydra-70 rocket pod with silver perforated front face
-        const yHydra = side * 0.50 * r * W;
-        pushTubeSegment3D(faces, proj, -0.22 * r * L, yHydra, 0.20 * r + hoverZ, 0, 0, 0.54 * r * L, 0.105 * r, 0.105 * r, '#475569', seamCol, 0.95, 0.05);
-        pushTubeSegment3D(faces, proj, 0.26 * r * L, yHydra, 0.20 * r + hoverZ, 0, 0, 0.08 * r * L, 0.105 * r, 0.095 * r, '#cbd5e1', seamCol, 0.9, 0.08);
+        // Thick 3D Faceted Stub-Wing Pylon with beveled leading edge & tip plate
+        pushBox3D(faces, proj, -0.22 * r * L, 0.24 * r * L, yMin, yMax, 0.30 * r + hoverZ, 0.43 * r + hoverZ, oliveHi, seamCol, 1.15, 0.08, 0.06 * r, 0.02 * r);
+        // Angled wingtip endplate fairing
+        const tipYMin = side < 0 ? yOut - 0.04 * r : yOut - 0.02 * r;
+        const tipYMax = side < 0 ? yOut + 0.02 * r : yOut + 0.04 * r;
+        pushBox3D(faces, proj, -0.24 * r * L, 0.26 * r * L, tipYMin, tipYMax, 0.25 * r + hoverZ, 0.45 * r + hoverZ, oliveDark, seamCol, 1.05, 0.12);
 
-        // Outer Pod: Dark-olive Hellfire / 70mm pod with yellow nose band
-        const yOuter = side * 0.74 * r * W;
+        // Inner Pod: 19-Tube Hydra-70 Cylindrical Pod with Silver Perforated Multi-Bore Faceplate
+        const yHydra = side * 0.48 * r * W;
+        const zHydra = 0.20 * r + hoverZ;
+        pushTubeSegment3D(faces, proj, -0.26 * r * L, yHydra, zHydra, 0, 0, 0.52 * r * L, 0.105 * r, 0.105 * r, '#52525b', seamCol, 1.0, 0.04);
+        pushTubeSegment3D(faces, proj, 0.22 * r * L, yHydra, zHydra, 0, 0, 0.09 * r * L, 0.105 * r, 0.098 * r, '#e2e8f0', seamCol, 0.95, 0.07);
+
+        // Outer Pod: Dark Olive Multi-Tube / AGM-114 Pod with Gold Band Collar & Dark Bore Face
+        const yOuter = side * 0.73 * r * W;
+        const zOuter = 0.20 * r + hoverZ;
         const mSlide = clamp(recoil * 0.06 * r, 0, 0.32 * r);
-        pushTubeSegment3D(faces, proj, -0.18 * r * L + mSlide, yOuter, 0.22 * r + hoverZ, 0, 0, 0.48 * r * L, 0.085 * r, 0.085 * r, '#3f4734', seamCol, 0.95, 0.06);
-        pushTubeSegment3D(faces, proj, 0.24 * r * L + mSlide, yOuter, 0.22 * r + hoverZ, 0, 0, 0.09 * r * L, 0.085 * r, 0.065 * r, '#eab308', seamCol, 0.9, 0.09);
+        pushTubeSegment3D(faces, proj, -0.24 * r * L + mSlide, yOuter, zOuter, 0, 0, 0.50 * r * L, 0.095 * r, 0.095 * r, '#3f4734', seamCol, 1.0, 0.06);
+        pushTubeSegment3D(faces, proj, 0.20 * r * L + mSlide, yOuter, zOuter, 0, 0, 0.10 * r * L, 0.095 * r, 0.088 * r, '#d97706', seamCol, 0.95, 0.09);
+
+        // Detailed front rocket-bore circles on both pods + stub-wing panel seam
+        faces.push({
+          depth: proj.project(0.32 * r * L, yOuter, zOuter).depth + 0.16,
+          customDraw(c) {
+            // Stub-wing top panel line
+            drawLine3D(c, proj, 0.02 * r * L, yIn, 0.435 * r + hoverZ, 0.02 * r * L, yOut, 0.435 * r + hoverZ, seamCol, 0.9);
+
+            // Inner Hydra-70 silver face + 7 dark micro rocket tube bores
+            const hFace = proj.project(0.315 * r * L, yHydra, zHydra);
+            const hRad = Math.max(2.0, 0.09 * r);
+            c.fillStyle = '#e2e8f0';
+            c.strokeStyle = seamCol;
+            c.lineWidth = 0.95;
+            c.beginPath();
+            c.arc(hFace.x, hFace.y, hRad, 0, Math.PI * 2);
+            c.fill();
+            c.stroke();
+            c.fillStyle = '#1e293b';
+            c.beginPath();
+            c.arc(hFace.x, hFace.y, Math.max(0.7, hRad * 0.26), 0, Math.PI * 2);
+            c.fill();
+            for (let k = 0; k < 6; k++) {
+              const ka = (k * Math.PI) / 3;
+              c.beginPath();
+              c.arc(hFace.x + Math.cos(ka) * hRad * 0.58, hFace.y + Math.sin(ka) * hRad * 0.58, Math.max(0.6, hRad * 0.22), 0, Math.PI * 2);
+              c.fill();
+            }
+
+            // Outer pod dark multi-tube face with gold rim dots
+            const oFace = proj.project(0.305 * r * L + mSlide, yOuter, zOuter);
+            const oRad = Math.max(1.8, 0.082 * r);
+            c.fillStyle = '#1e293b';
+            c.strokeStyle = '#f59e0b';
+            c.lineWidth = 1.1;
+            c.beginPath();
+            c.arc(oFace.x, oFace.y, oRad, 0, Math.PI * 2);
+            c.fill();
+            c.stroke();
+            c.fillStyle = '#94a3b8';
+            for (let k = 0; k < 5; k++) {
+              const ka = (k * Math.PI * 2) / 5;
+              c.beginPath();
+              c.arc(oFace.x + Math.cos(ka) * oRad * 0.50, oFace.y + Math.sin(ka) * oRad * 0.50, Math.max(0.55, oRad * 0.22), 0, Math.PI * 2);
+              c.fill();
+            }
+          }
+        });
       }
     }
 
-    // 2. Faceted Diamond Stealth Fuselage + Sharp Chine Line + Tapered Tail Boom
-    const fuseBot = [
-      [-1.26 * r * L, -0.10 * r, 0.34 * r + hoverZ],
-      [-0.36 * r * L, -0.40 * r, 0.22 * r + hoverZ],
-      [0.46 * r * L, -0.36 * r, 0.22 * r + hoverZ],
-      [1.10 * r * L, -0.11 * r, 0.26 * r + hoverZ],
-      [1.10 * r * L, 0.11 * r, 0.26 * r + hoverZ],
-      [0.46 * r * L, 0.36 * r, 0.22 * r + hoverZ],
-      [-0.36 * r * L, 0.40 * r, 0.22 * r + hoverZ],
-      [-1.26 * r * L, 0.10 * r, 0.34 * r + hoverZ]
+    // ========================================================================
+    // 2. Multi-Tier Faceted Stealth Fuselage, Side Chine Sponsons & Tail Boom
+    // ========================================================================
+    // Lower V-hull belly pan
+    const bellyBot = [
+      [-1.22 * r * L, -0.07 * r, 0.32 * r + hoverZ],
+      [-0.34 * r * L, -0.26 * r, 0.16 * r + hoverZ],
+      [0.52 * r * L, -0.24 * r, 0.16 * r + hoverZ],
+      [1.08 * r * L, -0.09 * r, 0.22 * r + hoverZ],
+      [1.08 * r * L, 0.09 * r, 0.22 * r + hoverZ],
+      [0.52 * r * L, 0.24 * r, 0.16 * r + hoverZ],
+      [-0.34 * r * L, 0.26 * r, 0.16 * r + hoverZ],
+      [-1.22 * r * L, 0.07 * r, 0.32 * r + hoverZ]
     ];
-    const fuseTop = [
-      [-1.22 * r * L, -0.07 * r, 0.56 * r + hoverZ],
-      [-0.28 * r * L, -0.26 * r, 0.74 * r + hoverZ],
-      [0.38 * r * L, -0.22 * r, 0.70 * r + hoverZ],
-      [0.94 * r * L, -0.08 * r, 0.42 * r + hoverZ],
-      [0.94 * r * L, 0.08 * r, 0.42 * r + hoverZ],
-      [0.38 * r * L, 0.22 * r, 0.70 * r + hoverZ],
-      [-0.28 * r * L, 0.26 * r, 0.74 * r + hoverZ],
-      [-1.22 * r * L, 0.07 * r, 0.56 * r + hoverZ]
+    // Mid-hull sharp stealth chine ridge (widest point of diamond cross-section)
+    const chineLoop = [
+      [-1.26 * r * L, -0.11 * r, 0.40 * r + hoverZ],
+      [-0.36 * r * L, -0.42 * r, 0.34 * r + hoverZ],
+      [0.48 * r * L, -0.38 * r, 0.32 * r + hoverZ],
+      [1.14 * r * L, -0.14 * r, 0.28 * r + hoverZ],
+      [1.14 * r * L, 0.14 * r, 0.28 * r + hoverZ],
+      [0.48 * r * L, 0.38 * r, 0.32 * r + hoverZ],
+      [-0.36 * r * L, 0.42 * r, 0.34 * r + hoverZ],
+      [-1.26 * r * L, 0.11 * r, 0.40 * r + hoverZ]
     ];
-    pushFrustumFaces(faces, proj, fuseBot, fuseTop, oliveBase, seamCol, 1.15, 0.35);
+    pushFrustumFaces(faces, proj, bellyBot, chineLoop, oliveDark, seamCol, 1.1, 0.22);
 
-    // Raised Dorsal Engine Doghouse Spine behind Rotor Mast
-    pushBox3D(faces, proj, -0.52 * r * L, 0.16 * r * L, -0.18 * r, 0.18 * r, 0.68 * r + hoverZ, 0.80 * r + hoverZ, oliveHi, seamCol, 1.05, 0.55, 0.06 * r, 0.03 * r);
+    // Upper faceted fuselage deck tapering inward to canopy sill & tail spine
+    const deckTop = [
+      [-1.22 * r * L, -0.08 * r, 0.58 * r + hoverZ],
+      [-0.28 * r * L, -0.28 * r, 0.66 * r + hoverZ],
+      [0.44 * r * L, -0.24 * r, 0.48 * r + hoverZ],
+      [1.04 * r * L, -0.10 * r, 0.38 * r + hoverZ],
+      [1.04 * r * L, 0.10 * r, 0.38 * r + hoverZ],
+      [0.44 * r * L, 0.24 * r, 0.48 * r + hoverZ],
+      [-0.28 * r * L, 0.28 * r, 0.66 * r + hoverZ],
+      [-1.22 * r * L, 0.08 * r, 0.58 * r + hoverZ]
+    ];
+    pushFrustumFaces(faces, proj, chineLoop, deckTop, oliveBase, seamCol, 1.2, 0.35);
 
-    // Shrouded Fenestron Tail Fin + Recessed Spinning Fan Duct + Canted T-Tail Horizontal Stabilizer
-    pushBox3D(faces, proj, -1.36 * r * L, -0.94 * r * L, -0.09 * r, 0.09 * r, 0.38 * r + hoverZ, 0.98 * r + hoverZ, oliveHi, seamCol, 1.1, 0.65, 0.06 * r, 0.01 * r);
-    pushBox3D(faces, proj, -1.38 * r * L, -1.04 * r * L, -0.38 * r, 0.38 * r, 0.95 * r + hoverZ, 1.04 * r + hoverZ, oliveHi, seamCol, 1.05, 0.78);
+    // Forward Cheek Avionics / Landing-Gear Sponson Boxes (prominent in usa_comanche_diorama_ref.png!)
+    for (const side of [-1, 1]) {
+      const yIn = side * 0.26 * r;
+      const yOut = side * 0.45 * r;
+      pushBox3D(
+        faces,
+        proj,
+        0.10 * r * L,
+        0.54 * r * L,
+        Math.min(yIn, yOut),
+        Math.max(yIn, yOut),
+        0.22 * r + hoverZ,
+        0.36 * r + hoverZ,
+        oliveHi,
+        seamCol,
+        1.1,
+        0.42,
+        0.04 * r,
+        0.02 * r
+      );
+    }
 
-    // Fenestron Shrouded Tail Rotor Duct & Spinning Fan Blades
+    // ========================================================================
+    // 3. Tall Sculpted T800 Engine Doghouse & Rotor Mast Pylon (behind Canopy)
+    // ========================================================================
+    const dogBot = [
+      [-0.64 * r * L, -0.26 * r, 0.58 * r + hoverZ],
+      [0.08 * r * L, -0.24 * r, 0.58 * r + hoverZ],
+      [0.08 * r * L, 0.24 * r, 0.58 * r + hoverZ],
+      [-0.64 * r * L, 0.26 * r, 0.58 * r + hoverZ]
+    ];
+    const dogTop = [
+      [-0.48 * r * L, -0.16 * r, 0.84 * r + hoverZ],
+      [0.04 * r * L, -0.16 * r, 0.86 * r + hoverZ],
+      [0.04 * r * L, 0.16 * r, 0.86 * r + hoverZ],
+      [-0.48 * r * L, 0.16 * r, 0.84 * r + hoverZ]
+    ];
+    pushFrustumFaces(faces, proj, dogBot, dogTop, oliveHi, seamCol, 1.15, 0.58);
+
+    // Cylindrical Rotor Mast Collar below Hub
+    pushCylinderZ3D(faces, proj, -0.06 * r * L, 0, 0.84 * r + hoverZ, 0.94 * r + hoverZ, 0.14 * r, 0.14 * r, 8, oliveDark, seamCol, 1.05, 0.72);
+
+    // ========================================================================
+    // 4. Shrouded Fenestron Tail Fin, Deep Fan Duct & Canted T-Tail Stabilizer
+    // ========================================================================
+    // Lower Thick Shrouded Fenestron Housing
+    const fenBot = [
+      [-1.42 * r * L, -0.10 * r, 0.34 * r + hoverZ],
+      [-0.94 * r * L, -0.11 * r, 0.36 * r + hoverZ],
+      [-0.94 * r * L, 0.11 * r, 0.36 * r + hoverZ],
+      [-1.42 * r * L, 0.10 * r, 0.34 * r + hoverZ]
+    ];
+    const fenMid = [
+      [-1.46 * r * L, -0.09 * r, 0.68 * r + hoverZ],
+      [-0.96 * r * L, -0.10 * r, 0.70 * r + hoverZ],
+      [-0.96 * r * L, 0.10 * r, 0.70 * r + hoverZ],
+      [-1.46 * r * L, 0.09 * r, 0.68 * r + hoverZ]
+    ];
+    pushFrustumFaces(faces, proj, fenBot, fenMid, oliveBase, seamCol, 1.15, 0.62);
+
+    // Upper Swept Vertical Fin Pylon supporting the T-Tail
+    const finTop = [
+      [-1.36 * r * L, -0.07 * r, 1.06 * r + hoverZ],
+      [-1.06 * r * L, -0.07 * r, 1.06 * r + hoverZ],
+      [-1.06 * r * L, 0.07 * r, 1.06 * r + hoverZ],
+      [-1.36 * r * L, 0.07 * r, 1.06 * r + hoverZ]
+    ];
+    pushFrustumFaces(faces, proj, fenMid, finTop, oliveHi, seamCol, 1.15, 0.68);
+
+    // Wide High-Mounted T-Tail Horizontal Stabilizer with Beveled Endplates
+    pushBox3D(faces, proj, -1.40 * r * L, -1.02 * r * L, -0.44 * r, 0.44 * r, 1.04 * r + hoverZ, 1.12 * r + hoverZ, oliveHi, seamCol, 1.15, 0.82, 0.04 * r, 0.03 * r);
+
+    // Deep Recessed Fenestron Circular Duct, Stator Vanes & 8-Blade Spinning Tail Rotor
     faces.push({
-      depth: proj.project(-1.15 * r * L, 0, 0.60 * r + hoverZ).depth + 0.72,
+      depth: proj.project(-1.20 * r * L, 0, 0.54 * r + hoverZ).depth + 0.75,
       customDraw(c) {
+        // T-Tail elevator seam line
+        drawLine3D(c, proj, -1.30 * r * L, -0.40 * r, 1.125 * r + hoverZ, -1.30 * r * L, 0.40 * r, 1.125 * r + hoverZ, seamCol, 0.9);
+        // Vertical fin panel seam
+        drawLine3D(c, proj, -1.22 * r * L, -0.08 * r, 0.72 * r + hoverZ, -1.22 * r * L, -0.07 * r, 1.03 * r + hoverZ, seamCol, 0.9);
+        drawLine3D(c, proj, -1.22 * r * L, 0.08 * r, 0.72 * r + hoverZ, -1.22 * r * L, 0.07 * r, 1.03 * r + hoverZ, seamCol, 0.9);
+
         for (const side of [-1, 1]) {
-          const fPt = proj.project(-1.15 * r * L, side * 0.10 * r, 0.58 * r + hoverZ);
-          const fRad = Math.max(2.2, 0.14 * r);
-          c.fillStyle = '#1e293b';
+          const fPt = proj.project(-1.20 * r * L, side * 0.11 * r, 0.53 * r + hoverZ);
+          const fRad = Math.max(2.6, 0.155 * r);
+          // Outer dark shroud bezel
+          c.fillStyle = oliveDeep;
           c.strokeStyle = seamCol;
-          c.lineWidth = 1.05;
+          c.lineWidth = 1.15;
           c.beginPath();
-          c.ellipse(fPt.x, fPt.y, fRad, fRad * 0.88, 0, 0, Math.PI * 2);
+          c.ellipse(fPt.x, fPt.y, fRad, fRad * 0.90, 0, 0, Math.PI * 2);
           c.fill();
           c.stroke();
 
-          // Spinning internal Fenestron fan blades
-          c.strokeStyle = '#64748b';
-          c.lineWidth = 1.0;
+          // Inner deep shadow ring
+          c.fillStyle = '#141812';
+          c.beginPath();
+          c.ellipse(fPt.x, fPt.y, fRad * 0.82, fRad * 0.74, 0, 0, Math.PI * 2);
+          c.fill();
+
+          // 8 Spinning Fenestron Fan Blades
+          c.strokeStyle = '#7c8a66';
+          c.lineWidth = 1.15;
           const fanA = phase * Math.PI * 4;
           for (let fb = 0; fb < 4; fb++) {
             const a = fanA + (fb * Math.PI) / 4;
@@ -4602,78 +4827,153 @@ const ZH_UNIT_MODELS = (function () {
             c.lineTo(fPt.x + Math.cos(a) * fRad * 0.78, fPt.y + Math.sin(a) * fRad * 0.70);
             c.stroke();
           }
+          // Central tail gearbox hub
           c.fillStyle = oliveHi;
+          c.strokeStyle = seamCol;
+          c.lineWidth = 0.9;
           c.beginPath();
-          c.arc(fPt.x, fPt.y, Math.max(1.0, fRad * 0.32), 0, Math.PI * 2);
+          c.arc(fPt.x, fPt.y, Math.max(1.2, fRad * 0.32), 0, Math.PI * 2);
           c.fill();
+          c.stroke();
         }
       }
     });
 
-    // 3. Stepped 3-Piece Tandem Armored Glass Canopy + Nose EO/IR FLIR Sensor Turret + 3-Barrel 20mm Gatling
-    // Nose EO/IR FLIR optical turret box above chin
-    pushBox3D(faces, proj, 0.88 * r * L, 1.14 * r * L, -0.11 * r, 0.11 * r, 0.28 * r + hoverZ, 0.42 * r + hoverZ, '#4a5535', seamCol, 1.05, 0.72, 0.03 * r, 0.02 * r);
+    // ========================================================================
+    // 5. 3D Stepped Tandem Cockpit Canopy (With Both Roof AND Sloped Side Windows!)
+    // ========================================================================
+    // Build true 3D canopy volume so side glass panes are clearly visible in 3/4 view!
+    const canBot = [
+      [-0.02 * r * L, -0.22 * r, 0.56 * r + hoverZ],
+      [0.44 * r * L, -0.21 * r, 0.47 * r + hoverZ],
+      [0.88 * r * L, -0.12 * r, 0.38 * r + hoverZ],
+      [0.88 * r * L, 0.12 * r, 0.38 * r + hoverZ],
+      [0.44 * r * L, 0.21 * r, 0.47 * r + hoverZ],
+      [-0.02 * r * L, 0.22 * r, 0.56 * r + hoverZ]
+    ];
+    const canTop = [
+      [-0.04 * r * L, -0.15 * r, 0.78 * r + hoverZ],
+      [0.38 * r * L, -0.15 * r, 0.69 * r + hoverZ],
+      [0.72 * r * L, -0.09 * r, 0.53 * r + hoverZ],
+      [0.72 * r * L, 0.09 * r, 0.53 * r + hoverZ],
+      [0.38 * r * L, 0.15 * r, 0.69 * r + hoverZ],
+      [-0.04 * r * L, 0.15 * r, 0.78 * r + hoverZ]
+    ];
+    pushFrustumFaces(faces, proj, canBot, canTop, oliveBase, seamCol, 1.15, 0.65);
 
-    const gunProj = createProjector(turretAngle, pitchScale, zScale, 0.92 * r * L, 0, 0.20 * r + hoverZ, hullAngle);
+    // 2-Tier Nose EO/IR TADS/PNVS Optical Sensor Turret Stack (matching usa_comanche_diorama_ref.png!)
+    pushBox3D(faces, proj, 0.88 * r * L, 1.16 * r * L, -0.13 * r, 0.13 * r, 0.25 * r + hoverZ, 0.39 * r + hoverZ, oliveBase, seamCol, 1.1, 0.72, 0.04 * r, 0.02 * r);
+    pushBox3D(faces, proj, 0.86 * r * L, 1.06 * r * L, -0.09 * r, 0.09 * r, 0.39 * r + hoverZ, 0.48 * r + hoverZ, oliveHi, seamCol, 1.05, 0.76, 0.03 * r, 0.02 * r);
+
+    const gunProj = createProjector(turretAngle, pitchScale, zScale, 0.94 * r * L, 0, 0.20 * r + hoverZ, hullAngle);
+
     faces.push({
-      depth: proj.project(0.52 * r * L, 0, 0.60 * r + hoverZ).depth + 0.88,
+      depth: proj.project(0.46 * r * L, 0, 0.68 * r + hoverZ).depth + 0.92,
       customDraw(c) {
-        // Side Turbine Air Intakes & Tail Exhaust Vents
+        // Fuselage Chines, Access Panels, Engine Intakes & Tail Boom Seams
         for (const side of [-1, 1]) {
-          const intakePts = [
-            proj.project(-0.08 * r * L, side * 0.24 * r, 0.66 * r + hoverZ),
-            proj.project(0.14 * r * L, side * 0.22 * r, 0.64 * r + hoverZ),
-            proj.project(0.08 * r * L, side * 0.20 * r, 0.74 * r + hoverZ)
-          ];
-          drawPolyPts(c, intakePts, '#1e293b', seamCol, 0.95);
+          // Sharp chine line from nose to tail
+          drawLine3D(c, proj, -1.20 * r * L, side * 0.11 * r, 0.41 * r + hoverZ, -0.34 * r * L, side * 0.42 * r, 0.35 * r + hoverZ, seamCol, 1.1);
+          drawLine3D(c, proj, -0.34 * r * L, side * 0.42 * r, 0.35 * r + hoverZ, 0.98 * r * L, side * 0.15 * r, 0.30 * r + hoverZ, seamCol, 1.1);
+          // Vertical panel ribs on tail boom & mid fuselage
+          drawLine3D(c, proj, -0.78 * r * L, side * 0.22 * r, 0.37 * r + hoverZ, -0.76 * r * L, side * 0.16 * r, 0.59 * r + hoverZ, seamCol, 0.9);
+          drawLine3D(c, proj, -0.46 * r * L, side * 0.36 * r, 0.35 * r + hoverZ, -0.44 * r * L, side * 0.24 * r, 0.62 * r + hoverZ, seamCol, 0.9);
 
-          // Tail boom IR-suppressed exhaust slit
-          drawLine3D(c, proj, -0.78 * r * L, side * 0.18 * r, 0.50 * r + hoverZ, -0.46 * r * L, side * 0.26 * r, 0.54 * r + hoverZ, '#1e293b', 2.0);
+          // Trapezoidal Dark Turbine Air Intake on Engine Doghouse Flank
+          const intakePts = [
+            proj.project(-0.18 * r * L, side * 0.25 * r, 0.56 * r + hoverZ),
+            proj.project(0.02 * r * L, side * 0.23 * r, 0.54 * r + hoverZ),
+            proj.project(-0.02 * r * L, side * 0.19 * r, 0.67 * r + hoverZ),
+            proj.project(-0.16 * r * L, side * 0.21 * r, 0.65 * r + hoverZ)
+          ];
+          drawPolyPts(c, intakePts, '#1e293b', seamCol, 1.0);
+
+          // Circular avionics cooling port on doghouse flank
+          const portPt = proj.project(-0.28 * r * L, side * 0.24 * r, 0.68 * r + hoverZ);
+          c.fillStyle = '#1e293b';
+          c.beginPath();
+          c.arc(portPt.x, portPt.y, Math.max(1.2, 0.04 * r), 0, Math.PI * 2);
+          c.fill();
+
+          // Sloped Side Cockpit Glass Windows (Rear Pilot Side Pane + Front Gunner Side Pane with White Reflection Slashes!)
+          const yBot = side * 0.215 * r;
+          const yTop = side * 0.155 * r;
+          const rearSideWin = [
+            [-0.01 * r * L, yBot, 0.57 * r + hoverZ],
+            [0.38 * r * L, yBot * 0.96, 0.49 * r + hoverZ],
+            [0.35 * r * L, yTop, 0.68 * r + hoverZ],
+            [-0.03 * r * L, yTop, 0.76 * r + hoverZ]
+          ];
+          const frontSideWin = [
+            [0.42 * r * L, yBot * 0.94, 0.48 * r + hoverZ],
+            [0.82 * r * L, side * 0.125 * r, 0.39 * r + hoverZ],
+            [0.69 * r * L, side * 0.095 * r, 0.52 * r + hoverZ],
+            [0.39 * r * L, yTop, 0.67 * r + hoverZ]
+          ];
+          drawGlassPane3D(c, proj, rearSideWin, sideGlassCol, seamCol, 1.1);
+          drawGlassPane3D(c, proj, frontSideWin, sideGlassCol, seamCol, 1.1);
         }
 
-        // Stepped Tandem Canopy: Rear Pilot Roof Pane, Mid Gunner Roof Pane, Sloped Front Windshield + Side Panes
-        const rearPane = [
-          [-0.04 * r * L, -0.19 * r, 0.72 * r + hoverZ],
-          [-0.04 * r * L, 0.19 * r, 0.72 * r + hoverZ],
-          [0.34 * r * L, 0.18 * r, 0.62 * r + hoverZ],
-          [0.34 * r * L, -0.18 * r, 0.62 * r + hoverZ]
+        // Dark square sensor aperture on front face of rotor pylon above rear canopy
+        const pylonSensor = [
+          proj.project(0.05 * r * L, -0.07 * r, 0.78 * r + hoverZ),
+          proj.project(0.05 * r * L, 0.07 * r, 0.78 * r + hoverZ),
+          proj.project(0.03 * r * L, 0.06 * r, 0.84 * r + hoverZ),
+          proj.project(0.03 * r * L, -0.06 * r, 0.84 * r + hoverZ)
         ];
-        const midPane = [
-          [0.36 * r * L, -0.18 * r, 0.61 * r + hoverZ],
-          [0.36 * r * L, 0.18 * r, 0.61 * r + hoverZ],
-          [0.64 * r * L, 0.15 * r, 0.50 * r + hoverZ],
-          [0.64 * r * L, -0.15 * r, 0.50 * r + hoverZ]
-        ];
-        const frontPane = [
-          [0.66 * r * L, -0.14 * r, 0.49 * r + hoverZ],
-          [0.66 * r * L, 0.14 * r, 0.49 * r + hoverZ],
-          [0.92 * r * L, 0.09 * r, 0.40 * r + hoverZ],
-          [0.92 * r * L, -0.09 * r, 0.40 * r + hoverZ]
-        ];
-        drawGlassPane3D(c, proj, rearPane, glassCol, seamCol, 1.05);
-        drawGlassPane3D(c, proj, midPane, glassCol, seamCol, 1.05);
-        drawGlassPane3D(c, proj, frontPane, glassCol, seamCol, 1.05);
+        drawPolyPts(c, pylonSensor, '#1e293b', seamCol, 0.9);
 
-        // Glowing amber/red FLIR optical sensor lens on nose turret
-        const flirPt = proj.project(1.14 * r * L, 0, 0.35 * r + hoverZ);
-        c.fillStyle = '#ef4444';
-        c.strokeStyle = seamCol;
-        c.lineWidth = 0.85;
-        c.beginPath();
-        c.arc(flirPt.x, flirPt.y, Math.max(1.5, 0.065 * r), 0, Math.PI * 2);
-        c.fill();
-        c.stroke();
+        // 3 Bright Sky-Blue Top Canopy Roof Panes + Sloped Front Windshield
+        const rearRoofPane = [
+          [-0.03 * r * L, -0.145 * r, 0.785 * r + hoverZ],
+          [-0.03 * r * L, 0.145 * r, 0.785 * r + hoverZ],
+          [0.36 * r * L, 0.145 * r, 0.695 * r + hoverZ],
+          [0.36 * r * L, -0.145 * r, 0.695 * r + hoverZ]
+        ];
+        const midRoofPane = [
+          [0.39 * r * L, -0.145 * r, 0.688 * r + hoverZ],
+          [0.39 * r * L, 0.145 * r, 0.688 * r + hoverZ],
+          [0.70 * r * L, 0.088 * r, 0.535 * r + hoverZ],
+          [0.70 * r * L, -0.088 * r, 0.535 * r + hoverZ]
+        ];
+        const frontWindshield = [
+          [0.72 * r * L, -0.088 * r, 0.528 * r + hoverZ],
+          [0.72 * r * L, 0.088 * r, 0.528 * r + hoverZ],
+          [0.92 * r * L, 0.105 * r, 0.39 * r + hoverZ],
+          [0.92 * r * L, -0.105 * r, 0.39 * r + hoverZ]
+        ];
+        drawGlassPane3D(c, proj, rearRoofPane, glassCol, seamCol, 1.1);
+        drawGlassPane3D(c, proj, midRoofPane, glassCol, seamCol, 1.1);
+        drawGlassPane3D(c, proj, frontWindshield, glassCol, seamCol, 1.15);
 
-        // Slewing 3-Barrel 20mm XM301 Nose Gatling Cannon
+        // Glowing Red/Orange FLIR Optical Window + Yellow Laser Brow on Nose Turret
+        const flirQuad = [
+          proj.project(1.165 * r * L, -0.06 * r, 0.27 * r + hoverZ),
+          proj.project(1.165 * r * L, 0.06 * r, 0.27 * r + hoverZ),
+          proj.project(1.155 * r * L, 0.06 * r, 0.35 * r + hoverZ),
+          proj.project(1.155 * r * L, -0.06 * r, 0.35 * r + hoverZ)
+        ];
+        drawPolyPts(c, flirQuad, '#ef4444', seamCol, 0.95);
+        drawLine3D(c, proj, 1.15 * r * L, -0.06 * r, 0.37 * r + hoverZ, 1.15 * r * L, 0.06 * r, 0.37 * r + hoverZ, '#fde047', 1.8);
+
+        // Articulated 3-Barrel 20mm XM301 Nose Gatling Cannon + Gun Cradle + Dual Barrel Bands
         if (p.showNoseGatling !== false) {
-          for (const bOff of [-0.035 * r, 0, 0.035 * r]) {
-            drawLine3D(c, gunProj, 0, bOff, 0, 0.52 * r * L, bOff, -0.05 * r, '#1e293b', 1.45);
+          const bLen = p.barrelLength || 1.0;
+          // Gun cradle housing under nose chin
+          drawLine3D(c, gunProj, -0.06 * r * L, 0, 0.02 * r, 0.16 * r * L, 0, 0, '#334155', 4.2);
+          // 3 parallel 20mm barrels
+          for (const bOff of [-0.038 * r, 0, 0.038 * r]) {
+            drawLine3D(c, gunProj, 0.04 * r * L, bOff, 0, 0.58 * r * L * bLen, bOff, -0.05 * r, seamCol, 2.2);
+            drawLine3D(c, gunProj, 0.04 * r * L, bOff, 0, 0.58 * r * L * bLen, bOff, -0.05 * r, '#475569', 1.15);
           }
-          // Barrel clamp band
-          drawLine3D(c, gunProj, 0.38 * r * L, -0.045 * r, -0.035 * r, 0.38 * r * L, 0.045 * r, -0.035 * r, '#94a3b8', 1.8);
+          // Mid & muzzle barrel clamp bands
+          for (const bx of [0.32 * r * L * bLen, 0.52 * r * L * bLen]) {
+            const bz = (-0.05 * r * bx) / (0.58 * r * L * bLen);
+            drawLine3D(c, gunProj, bx, -0.048 * r, bz, bx, 0.048 * r, bz, '#cbd5e1', 1.9);
+          }
 
           if (recoil > 0.6) {
-            const muzPt = gunProj.project(0.56 * r * L, 0, -0.05 * r);
+            const muzPt = gunProj.project(0.62 * r * L * bLen, 0, -0.055 * r);
             c.fillStyle = 'rgba(251, 191, 36, 0.92)';
             c.beginPath();
             c.arc(muzPt.x, muzPt.y, Math.max(2.6, (recoil / 6) * 0.30 * r), 0, Math.PI * 2);
@@ -4689,19 +4989,21 @@ const ZH_UNIT_MODELS = (function () {
 
     flushFaces(ctx, faces);
 
-    // 4. 3D 5-Blade Swept-Tip Stealth Main Rotor Assembly
+    // ========================================================================
+    // 6. 3D 5-Blade Swept-Tip Stealth Main Rotor Assembly & Hub Turret
+    // ========================================================================
     if (p.showMainRotor !== false) {
-      const rSpan = 1.18 * r * (p.rotorSpan || 1.0);
-      const zRotor = 0.85 * r + hoverZ;
-      const hubX = -0.04 * r * L;
+      const rSpan = 1.24 * r * (p.rotorSpan || 1.0);
+      const zRotor = 0.95 * r + hoverZ;
+      const hubX = -0.06 * r * L;
       const hubPt = proj.project(hubX, 0, zRotor);
       const baseA = phase * Math.PI * 2;
-      const chord = 0.075 * r;
+      const chord = 0.082 * r;
 
       ctx.save();
-      // Subtle rotor disc blur ring
-      ctx.strokeStyle = 'rgba(38, 32, 27, 0.18)';
-      ctx.lineWidth = 1.8;
+      // Subtle rotor motion-blur ring
+      ctx.strokeStyle = 'rgba(38, 32, 27, 0.16)';
+      ctx.lineWidth = 1.6;
       ctx.beginPath();
       ctx.ellipse(hubPt.x, hubPt.y, rSpan, rSpan * pitchScale, 0, 0, Math.PI * 2);
       ctx.stroke();
@@ -4713,32 +5015,55 @@ const ZH_UNIT_MODELS = (function () {
         const pa = -sa * chord;
         const pb = ca * chord;
 
-        // Swept-tip stealth rotor blade polygon
-        const bladePts = [
-          proj.project(hubX + ca * rSpan * 0.12 - pa * 0.45, sa * rSpan * 0.12 - pb * 0.45, zRotor),
-          proj.project(hubX + ca * rSpan * 0.85 - pa * 0.65, sa * rSpan * 0.85 - pb * 0.65, zRotor),
-          proj.project(hubX + ca * rSpan * 1.00 + pa * 0.15, sa * rSpan * 1.00 + pb * 0.15, zRotor),
-          proj.project(hubX + ca * rSpan * 0.85 + pa * 0.75, sa * rSpan * 0.85 + pb * 0.75, zRotor),
-          proj.project(hubX + ca * rSpan * 0.12 + pa * 0.45, sa * rSpan * 0.12 + pb * 0.45, zRotor)
+        // Blade root cuff fairing
+        const cuffPts = [
+          proj.project(hubX + ca * rSpan * 0.08 - pa * 0.38, sa * rSpan * 0.08 - pb * 0.38, zRotor),
+          proj.project(hubX + ca * rSpan * 0.20 - pa * 0.45, sa * rSpan * 0.20 - pb * 0.45, zRotor),
+          proj.project(hubX + ca * rSpan * 0.20 + pa * 0.45, sa * rSpan * 0.20 + pb * 0.45, zRotor),
+          proj.project(hubX + ca * rSpan * 0.08 + pa * 0.38, sa * rSpan * 0.08 + pb * 0.38, zRotor)
         ];
-        drawPolyPts(ctx, bladePts, '#2d3626', seamCol, 0.95);
-        // Tan/yellow tip marker
-        drawLine3D(ctx, proj, hubX + ca * rSpan * 0.86, sa * rSpan * 0.86, zRotor, hubX + ca * rSpan * 0.98, sa * rSpan * 0.98, zRotor, '#d4b07b', 1.6);
+        drawPolyPts(ctx, cuffPts, oliveDark, seamCol, 0.95);
+
+        // Swept-tip stealth rotor blade polygon (matching usa_comanche_diorama_ref.png!)
+        const bladePts = [
+          proj.project(hubX + ca * rSpan * 0.18 - pa * 0.48, sa * rSpan * 0.18 - pb * 0.48, zRotor),
+          proj.project(hubX + ca * rSpan * 0.88 - pa * 0.65, sa * rSpan * 0.88 - pb * 0.65, zRotor),
+          proj.project(hubX + ca * rSpan * 1.00 + pa * 0.25, sa * rSpan * 1.00 + pb * 0.25, zRotor),
+          proj.project(hubX + ca * rSpan * 0.86 + pa * 0.82, sa * rSpan * 0.86 + pb * 0.82, zRotor),
+          proj.project(hubX + ca * rSpan * 0.18 + pa * 0.48, sa * rSpan * 0.18 + pb * 0.48, zRotor)
+        ];
+        drawPolyPts(ctx, bladePts, '#475246', seamCol, 1.05);
+
+        // Leading-edge metallic erosion strip highlight
+        drawLine3D(
+          ctx,
+          proj,
+          hubX + ca * rSpan * 0.22 - pa * 0.35,
+          sa * rSpan * 0.22 - pb * 0.35,
+          zRotor,
+          hubX + ca * rSpan * 0.86 - pa * 0.50,
+          sa * rSpan * 0.86 - pb * 0.50,
+          zRotor,
+          '#7c8a7a',
+          1.15
+        );
       }
 
-      // Faceted Stealth Rotor Hub Dome
-      ctx.fillStyle = oliveHi;
+      // Sculpted 2-Tier Olive Stealth Rotor Hub Cap
+      const hubR = Math.max(3.2, 0.16 * r);
+      ctx.fillStyle = oliveBase;
       ctx.strokeStyle = seamCol;
-      ctx.lineWidth = 1.15;
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.arc(hubPt.x, hubPt.y, Math.max(2.8, 0.14 * r), 0, Math.PI * 2);
+      ctx.ellipse(hubPt.x, hubPt.y, hubR, hubR * 0.78, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = oliveBase;
+      ctx.fillStyle = oliveHi;
       ctx.beginPath();
-      ctx.arc(hubPt.x, hubPt.y, Math.max(1.4, 0.07 * r), 0, Math.PI * 2);
+      ctx.ellipse(hubPt.x, hubPt.y - 1.2, hubR * 0.78, hubR * 0.56, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.stroke();
       ctx.restore();
     }
   }
@@ -4829,6 +5154,7 @@ const ZH_UNIT_MODELS = (function () {
     const r = rawR * (p.hullScale || 1.0);
     const L = p.fuselageLength || 1.0;
     const W = p.wingSpan || 1.0;
+    const H = p.extrusionDepth || 1.0;
     const hullAngle = (u && u.angle !== undefined) ? u.angle : 0;
     const recoil = (u && u.recoilOffset) || 0;
     const phase = (u && u.treadPhase) || (typeof performance !== 'undefined' ? (performance.now() * 0.003) % 1 : 0);
@@ -4837,42 +5163,50 @@ const ZH_UNIT_MODELS = (function () {
     const zScale = opts.zScale !== undefined ? opts.zScale : 0.42;
 
     const greyBase = p.armorBaseColor || '#94a3b8';
+    const greyHi = '#cbd5e1';
     const slateCamo = p.camoPatchColor || '#64748b';
+    const slateDark = '#475569';
     const seamCol = p.panelLineColor || '#26201b';
-    const canopyCol = p.canopyColor || '#eab308';
+    const canopyCol = p.canopyColor || '#d99b26';
 
     const proj = createProjector(hullAngle, pitchScale, zScale, 0, 0, 0, 0);
 
-    // Shadow
+    // Full Jet Silhouette Ground Shadow
     const shadowPts = [
-      proj.project(-1.22 * r * L, -1.08 * r * W, 0),
-      proj.project(1.36 * r * L, 0, 0),
-      proj.project(-1.22 * r * L, 1.08 * r * W, 0)
-    ].map((pt) => ({ x: pt.x + 4.5, y: pt.y + 6.5 }));
+      proj.project(-1.26 * r * L, -1.12 * r * W, 0),
+      proj.project(1.42 * r * L, 0, 0),
+      proj.project(-1.26 * r * L, 1.12 * r * W, 0)
+    ].map((pt) => ({ x: pt.x + 5.0, y: pt.y + 7.0 }));
     drawPolyPts(ctx, shadowPts, 'rgba(65, 50, 40, 0.28)', null, 0);
 
     const faces = [];
-    const zWing = 0.28 * r + hoverZ;
+    const zWing = 0.28 * r * H + hoverZ;
 
-    // 1. 2D Thrust-Vectoring Rectangular Nozzles & Multi-Stage Amber Afterburner Cones
+    // ========================================================================
+    // 1. 2D Thrust-Vectoring Rectangular Nozzles, Central Tail Boom & Amber Afterburners
+    // ========================================================================
     for (const side of [-1, 1]) {
-      const ny = side * 0.17 * r;
-      pushBox3D(faces, proj, -1.14 * r * L, -0.92 * r * L, ny - 0.09 * r, ny + 0.09 * r, zWing - 0.01 * r, zWing + 0.11 * r, '#334155', seamCol, 1.0, 0.12);
+      const ny = side * 0.18 * r;
+      // Metallic heat-shielded rectangular vectoring nozzle petals
+      pushBox3D(faces, proj, -1.16 * r * L, -0.92 * r * L, ny - 0.10 * r, ny + 0.10 * r, zWing - 0.01 * r, zWing + 0.12 * r, '#78716c', seamCol, 1.05, 0.10, 0.03 * r, 0.02 * r);
+      pushBox3D(faces, proj, -1.22 * r * L, -1.10 * r * L, ny - 0.08 * r, ny + 0.08 * r, zWing + 0.01 * r, zWing + 0.10 * r, '#d97706', seamCol, 0.95, 0.11);
     }
+    // Central tail-sting boom between the twin nozzles (matching usa_raptor_diorama_ref.png!)
+    pushBox3D(faces, proj, -1.20 * r * L, -0.90 * r * L, -0.05 * r, 0.05 * r, zWing + 0.02 * r, zWing + 0.12 * r, greyBase, seamCol, 0.95, 0.12, 0.04 * r, 0.02 * r);
 
     if (p.showAfterburners !== false) {
       const surge = 1.0 + Math.sin(phase * Math.PI * 6) * 0.08 + clamp(recoil * 0.08, 0, 0.35);
       faces.push({
-        depth: proj.project(-1.32 * r * L, 0, zWing).depth - 0.5,
+        depth: proj.project(-1.36 * r * L, 0, zWing).depth - 0.5,
         customDraw(c) {
           for (const side of [-1, 1]) {
-            const ny = side * 0.17 * r;
-            const p0 = proj.project(-1.08 * r * L, ny, zWing + 0.04 * r);
-            const p1 = proj.project(-1.58 * r * L * surge, ny * 1.06, zWing + 0.04 * r);
-            const pMid = proj.project(-1.34 * r * L * surge, ny * 1.03, zWing + 0.04 * r);
-            // Outer orange plume
-            c.strokeStyle = 'rgba(249, 115, 22, 0.88)';
-            c.lineWidth = 4.6;
+            const ny = side * 0.18 * r;
+            const p0 = proj.project(-1.14 * r * L, ny, zWing + 0.05 * r);
+            const p1 = proj.project(-1.68 * r * L * surge, ny * 1.06, zWing + 0.05 * r);
+            const pMid = proj.project(-1.42 * r * L * surge, ny * 1.03, zWing + 0.05 * r);
+            // Outer warm orange afterburner plume
+            c.strokeStyle = 'rgba(249, 115, 22, 0.85)';
+            c.lineWidth = 5.2;
             c.lineCap = 'round';
             c.beginPath();
             c.moveTo(p0.x, p0.y);
@@ -4880,77 +5214,118 @@ const ZH_UNIT_MODELS = (function () {
             c.stroke();
             // Mid golden-amber shock cone
             c.strokeStyle = '#fbbf24';
-            c.lineWidth = 3.0;
+            c.lineWidth = 3.2;
             c.beginPath();
             c.moveTo(p0.x, p0.y);
             c.lineTo(pMid.x, pMid.y);
             c.stroke();
-            // White-hot core
+            // White-hot shock diamond core
             c.strokeStyle = '#fef9c3';
             c.lineWidth = 1.6;
             c.beginPath();
             c.moveTo(p0.x, p0.y);
-            c.lineTo((p0.x + pMid.x) * 0.5, (p0.y + pMid.y) * 0.5);
+            c.lineTo((p0.x + pMid.x) * 0.55, (p0.y + pMid.y) * 0.55);
             c.stroke();
           }
         }
       });
     }
 
-    // 2. Dual Under-Wing Ordnance: Outer White AIM-9X Sidewinders + Inner Olive/Orange JDAM/AMRAAMs
+    // ========================================================================
+    // 2. Under-Wing Ordnance: Outer White Finned AIM-9X + Inner Slate/Amber AMRAAM/JDAM
+    // ========================================================================
     if (p.showWingMissiles !== false) {
       const mSlide = clamp(recoil * 0.09 * r, 0, 0.45 * r);
       for (const side of [-1, 1]) {
-        // Inner Heavy Strike Missile / Bomb (Olive body + Orange nose tip, slides forward on fire!)
-        const yIn = side * 0.52 * r * W;
-        pushTubeSegment3D(faces, proj, -0.44 * r * L + mSlide, yIn, zWing - 0.06 * r, 0, 0, 0.54 * r * L, 0.065 * r, 0.065 * r, '#475569', seamCol, 0.9, 0.05);
-        pushTubeSegment3D(faces, proj, 0.08 * r * L + mSlide, yIn, zWing - 0.06 * r, 0, 0, 0.14 * r * L, 0.065 * r, 0.035 * r, '#f97316', seamCol, 0.85, 0.08);
+        // Inner Heavy Strike Missile / JDAM (Slate body + Golden-Amber nose cone protruding ahead of leading edge!)
+        const yIn = side * 0.54 * r * W;
+        pushTubeSegment3D(faces, proj, -0.34 * r * L + mSlide, yIn, zWing - 0.06 * r, 0, 0, 0.58 * r * L, 0.062 * r, 0.062 * r, '#475569', seamCol, 0.95, 0.04);
+        pushTubeSegment3D(faces, proj, 0.22 * r * L + mSlide, yIn, zWing - 0.06 * r, 0, 0, 0.16 * r * L, 0.062 * r, 0.025 * r, '#f59e0b', seamCol, 0.9, 0.06);
 
-        // Outer AIM-9X White Air-to-Air Missile with Red Seeker Tip & Fins
-        const yOut = side * 0.80 * r * W;
+        // Outer AIM-9X White Air-to-Air Missile with Cruciform Forward Canard Fins & Seeker Tip
+        const yOut = side * 0.78 * r * W;
+        pushTubeSegment3D(faces, proj, -0.36 * r * L, yOut, zWing - 0.05 * r, 0, 0, 0.62 * r * L, 0.048 * r, 0.048 * r, '#f8fafc', seamCol, 0.95, 0.05);
         faces.push({
-          depth: proj.project(-0.20 * r * L, yOut, zWing - 0.08 * r).depth - 0.18,
+          depth: proj.project(0.20 * r * L, yOut, zWing - 0.05 * r).depth - 0.12,
           customDraw(c) {
-            drawLine3D(c, proj, -0.52 * r * L, yOut, zWing - 0.05 * r, 0.18 * r * L, yOut, zWing - 0.05 * r, seamCol, 3.4);
-            drawLine3D(c, proj, -0.50 * r * L, yOut, zWing - 0.05 * r, 0.14 * r * L, yOut, zWing - 0.05 * r, '#f8fafc', 2.2);
-            drawLine3D(c, proj, 0.10 * r * L, yOut, zWing - 0.05 * r, 0.20 * r * L, yOut, zWing - 0.05 * r, '#ef4444', 2.2);
+            // Forward cruciform steering fins on AIM-9X (visible in usa_raptor_diorama_ref.png!)
+            drawLine3D(c, proj, 0.14 * r * L, yOut - 0.08 * r, zWing - 0.05 * r, 0.08 * r * L, yOut + 0.08 * r, zWing - 0.05 * r, seamCol, 1.5);
+            drawLine3D(c, proj, 0.14 * r * L, yOut, zWing - 0.11 * r, 0.08 * r * L, yOut, zWing + 0.01 * r, seamCol, 1.5);
+            // Dark seeker tip
+            drawLine3D(c, proj, 0.24 * r * L, yOut, zWing - 0.05 * r, 0.30 * r * L, yOut, zWing - 0.05 * r, seamCol, 2.2);
           }
         });
       }
     }
 
-    // 3. Swept Horizontal Tailerons (Aft of Main Delta Wings)
+    // ========================================================================
+    // 3. Swept Horizontal Tailerons (with Two-Tone Slate Camo Patch)
+    // ========================================================================
     for (const side of [-1, 1]) {
       const tBot = [
-        [-1.18 * r * L, side * 0.28 * r * W, zWing - 0.02 * r],
-        [-1.08 * r * L, side * 0.72 * r * W, zWing - 0.02 * r],
-        [-0.82 * r * L, side * 0.62 * r * W, zWing - 0.02 * r],
-        [-0.76 * r * L, side * 0.28 * r * W, zWing - 0.02 * r]
+        [-1.20 * r * L, side * 0.24 * r * W, zWing - 0.02 * r],
+        [-1.08 * r * L, side * 0.78 * r * W, zWing - 0.02 * r],
+        [-0.78 * r * L, side * 0.68 * r * W, zWing - 0.02 * r],
+        [-0.70 * r * L, side * 0.24 * r * W, zWing - 0.02 * r]
       ];
       if (side < 0) tBot.reverse();
-      const tTop = tBot.map((v) => [v[0], v[1], v[2] + 0.05 * r]);
-      pushFrustumFaces(faces, proj, tBot, tTop, slateCamo, seamCol, 1.05, 0.16);
+      const tTop = tBot.map((v) => [v[0], v[1], v[2] + 0.055 * r]);
+      pushFrustumFaces(faces, proj, tBot, tTop, greyBase, seamCol, 1.1, 0.15);
+
+      faces.push({
+        depth: proj.project(-0.95 * r * L, side * 0.50 * r * W, zWing + 0.04 * r).depth + 0.18,
+        customDraw(c) {
+          const tCamo = [
+            proj.project(-1.12 * r * L, side * 0.32 * r * W, zWing + 0.038 * r),
+            proj.project(-1.04 * r * L, side * 0.68 * r * W, zWing + 0.038 * r),
+            proj.project(-0.84 * r * L, side * 0.58 * r * W, zWing + 0.038 * r),
+            proj.project(-0.80 * r * L, side * 0.30 * r * W, zWing + 0.038 * r)
+          ];
+          drawPolyPts(c, tCamo, slateCamo, null, 0);
+        }
+      });
     }
 
-    // 4. Diamond Delta Main Wings + Caretaker Cheek Air Intakes
+    // ========================================================================
+    // 4. Deep Caretaker Cheek Air Intakes & Forward Chined Fuselage Trunk
+    // ========================================================================
     for (const side of [-1, 1]) {
-      const iy = side * 0.30 * r * W;
-      pushBox3D(faces, proj, 0.08 * r * L, 0.56 * r * L, iy - 0.10 * r, iy + 0.10 * r, zWing - 0.10 * r, zWing + 0.02 * r, '#1e293b', seamCol, 1.0, 0.15);
+      const iy = side * 0.28 * r * W;
+      // Outer intake housing box under forward wing root
+      pushBox3D(faces, proj, -0.08 * r * L, 0.58 * r * L, iy - 0.12 * r, iy + 0.12 * r, zWing - 0.13 * r, zWing + 0.02 * r, slateDark, seamCol, 1.15, 0.16);
+      // Dark recessed intake mouth on front face (matching usa_raptor_diorama_ref.png!)
+      faces.push({
+        depth: proj.project(0.59 * r * L, iy, zWing - 0.06 * r).depth + 0.20,
+        customDraw(c) {
+          const mPts = [
+            proj.project(0.585 * r * L, iy - 0.09 * r, zWing - 0.11 * r),
+            proj.project(0.585 * r * L, iy + 0.09 * r, zWing - 0.11 * r),
+            proj.project(0.565 * r * L, iy + 0.09 * r, zWing - 0.01 * r),
+            proj.project(0.565 * r * L, iy - 0.09 * r, zWing - 0.01 * r)
+          ];
+          drawPolyPts(c, mPts, '#0f172a', seamCol, 1.0);
+        }
+      });
     }
 
+    // ========================================================================
+    // 5. Diamond Delta Main Wings + Chined Forward Fuselage
+    // ========================================================================
     const wingBot = [
-      [-0.96 * r * L, -0.46 * r * W, zWing - 0.03 * r],
-      [-0.56 * r * L, -1.18 * r * W, zWing - 0.02 * r],
-      [-0.12 * r * L, -1.10 * r * W, zWing - 0.02 * r],
-      [0.46 * r * L, -0.32 * r * W, zWing],
-      [1.38 * r * L, 0, zWing],
-      [0.46 * r * L, 0.32 * r * W, zWing],
-      [-0.12 * r * L, 1.10 * r * W, zWing - 0.02 * r],
-      [-0.56 * r * L, 1.18 * r * W, zWing - 0.02 * r],
-      [-0.96 * r * L, 0.46 * r * W, zWing - 0.03 * r]
+      [-0.96 * r * L, -0.44 * r * W, zWing - 0.02 * r],
+      [-0.56 * r * L, -1.20 * r * W, zWing - 0.02 * r],
+      [-0.14 * r * L, -1.12 * r * W, zWing - 0.02 * r],
+      [0.44 * r * L, -0.36 * r * W, zWing],
+      [0.84 * r * L, -0.22 * r * W, zWing],
+      [1.40 * r * L, 0, zWing],
+      [0.84 * r * L, 0.22 * r * W, zWing],
+      [0.44 * r * L, 0.36 * r * W, zWing],
+      [-0.14 * r * L, 1.12 * r * W, zWing - 0.02 * r],
+      [-0.56 * r * L, 1.20 * r * W, zWing - 0.02 * r],
+      [-0.96 * r * L, 0.44 * r * W, zWing - 0.02 * r]
     ];
     const wingTop = wingBot.map((v) => [v[0], v[1], v[2] + 0.08 * r]);
-    pushFrustumFaces(faces, proj, wingBot, wingTop, greyBase, seamCol, 1.15, 0.22);
+    pushFrustumFaces(faces, proj, wingBot, wingTop, greyBase, seamCol, 1.2, 0.24);
 
     // King Raptor Forward Canards
     if (p.showCanards || isKing) {
@@ -4970,91 +5345,196 @@ const ZH_UNIT_MODELS = (function () {
       }
     }
 
-    // 5. Raised Spine Fuselage + Two-Tone Slate Camo Patches, Nose Radome & USAF Wing Roundel
-    pushBox3D(faces, proj, -0.96 * r * L, 0.90 * r * L, -0.26 * r, 0.26 * r, zWing + 0.06 * r, zWing + 0.27 * r, slateCamo, seamCol, 1.05, 0.45, 0.24 * r * L, 0.06 * r);
+    // ========================================================================
+    // 6. Sculpted Raised Spine + Twin F119 Engine Nacelle Humps
+    // ========================================================================
+    const spineBot = [
+      [-0.96 * r * L, -0.28 * r, zWing + 0.07 * r],
+      [0.36 * r * L, -0.28 * r, zWing + 0.07 * r],
+      [0.98 * r * L, -0.14 * r, zWing + 0.07 * r],
+      [0.98 * r * L, 0.14 * r, zWing + 0.07 * r],
+      [0.36 * r * L, 0.28 * r, zWing + 0.07 * r],
+      [-0.96 * r * L, 0.28 * r, zWing + 0.07 * r]
+    ];
+    const spineTop = [
+      [-0.92 * r * L, -0.20 * r, zWing + 0.23 * r],
+      [0.28 * r * L, -0.20 * r, zWing + 0.25 * r],
+      [0.88 * r * L, -0.10 * r, zWing + 0.16 * r],
+      [0.88 * r * L, 0.10 * r, zWing + 0.16 * r],
+      [0.28 * r * L, 0.20 * r, zWing + 0.25 * r],
+      [-0.92 * r * L, 0.20 * r, zWing + 0.23 * r]
+    ];
+    pushFrustumFaces(faces, proj, spineBot, spineTop, greyBase, seamCol, 1.1, 0.44);
 
+    // ========================================================================
+    // 7. Rich Wing & Spine Camo Patches, Flaperons, Louvers, Radome & USAF Insignia
+    // ========================================================================
     faces.push({
-      depth: proj.project(0.10 * r * L, 0, zWing + 0.12 * r).depth + 0.36,
+      depth: proj.project(0.05 * r * L, 0, zWing + 0.25 * r).depth + 0.56,
       customDraw(c) {
-        // Geometric Slate-Blue Stealth Camo Patches on Both Wings + Flap Hinge Lines
-        for (const side of [-1, 1]) {
-          const patchPts = [
-            proj.project(-0.66 * r * L, side * 0.44 * r * W, zWing + 0.085 * r),
-            proj.project(-0.46 * r * L, side * 0.94 * r * W, zWing + 0.085 * r),
-            proj.project(-0.18 * r * L, side * 0.88 * r * W, zWing + 0.085 * r),
-            proj.project(0.08 * r * L, side * 0.38 * r * W, zWing + 0.085 * r)
-          ];
-          drawPolyPts(c, patchPts, slateCamo, seamCol, 0.85);
+        // Central Slate-Blue Camo Saddle across Mid-Spine & Wing Roots
+        const centerCamo = [
+          proj.project(-0.42 * r * L, -0.20 * r, zWing + 0.24 * r),
+          proj.project(0.28 * r * L, -0.20 * r, zWing + 0.25 * r),
+          proj.project(0.28 * r * L, 0.20 * r, zWing + 0.25 * r),
+          proj.project(-0.42 * r * L, 0.20 * r, zWing + 0.24 * r)
+        ];
+        drawPolyPts(c, centerCamo, slateCamo, null, 0);
 
-          // Trailing-edge flaperon seam
-          drawLine3D(c, proj, -0.82 * r * L, side * 0.48 * r * W, zWing + 0.085 * r, -0.52 * r * L, side * 1.06 * r * W, zWing + 0.085 * r, seamCol, 0.85);
+        // Light Gull-Grey Dorsal Spine Strip between Twin Tails (matching usa_raptor_diorama_ref.png!)
+        const aftStrip = [
+          proj.project(-0.92 * r * L, -0.07 * r, zWing + 0.245 * r),
+          proj.project(-0.34 * r * L, -0.07 * r, zWing + 0.245 * r),
+          proj.project(-0.34 * r * L, 0.07 * r, zWing + 0.245 * r),
+          proj.project(-0.92 * r * L, 0.07 * r, zWing + 0.245 * r)
+        ];
+        drawPolyPts(c, aftStrip, greyHi, seamCol, 0.85);
+        // Dark circular fuel/APU cap at front of dorsal strip
+        const apuPt = proj.project(-0.38 * r * L, 0, zWing + 0.25 * r);
+        c.fillStyle = '#334155';
+        c.beginPath();
+        c.arc(apuPt.x, apuPt.y, Math.max(1.5, 0.05 * r), 0, Math.PI * 2);
+        c.fill();
+
+        // Dark Trapezoidal Auxiliary Louver / Airbrake Panel directly behind Canopy
+        const louverBack = [
+          proj.project(0.06 * r * L, -0.09 * r, zWing + 0.255 * r),
+          proj.project(0.18 * r * L, -0.08 * r, zWing + 0.255 * r),
+          proj.project(0.18 * r * L, 0.08 * r, zWing + 0.255 * r),
+          proj.project(0.06 * r * L, 0.09 * r, zWing + 0.255 * r)
+        ];
+        drawPolyPts(c, louverBack, '#334155', seamCol, 0.85);
+
+        for (const side of [-1, 1]) {
+          // Large Multi-Point Slate-Blue Camo Patch on Each Delta Wing
+          const wingCamo = [
+            proj.project(-0.68 * r * L, side * 0.42 * r * W, zWing + 0.085 * r),
+            proj.project(-0.48 * r * L, side * 0.96 * r * W, zWing + 0.085 * r),
+            proj.project(-0.18 * r * L, side * 0.90 * r * W, zWing + 0.085 * r),
+            proj.project(0.14 * r * L, side * 0.42 * r * W, zWing + 0.085 * r),
+            proj.project(-0.14 * r * L, side * 0.34 * r * W, zWing + 0.085 * r)
+          ];
+          drawPolyPts(c, wingCamo, slateCamo, null, 0);
+
+          // Leading-edge flap seam, wingtip aileron box, and trailing-edge flaperon seams
+          drawLine3D(c, proj, 0.38 * r * L, side * 0.36 * r * W, zWing + 0.086 * r, -0.12 * r * L, side * 1.04 * r * W, zWing + 0.086 * r, seamCol, 0.85);
+          drawLine3D(c, proj, -0.18 * r * L, side * 1.08 * r * W, zWing + 0.086 * r, -0.52 * r * L, side * 1.14 * r * W, zWing + 0.086 * r, seamCol, 0.9);
+          drawLine3D(c, proj, -0.84 * r * L, side * 0.46 * r * W, zWing + 0.086 * r, -0.54 * r * L, side * 1.08 * r * W, zWing + 0.086 * r, seamCol, 0.9);
+
+          // White rectangular wing-root formation light / access blister (matching usa_raptor_diorama_ref.png!)
+          const rectBlister = [
+            proj.project(-0.24 * r * L, side * 0.48 * r * W, zWing + 0.088 * r),
+            proj.project(-0.14 * r * L, side * 0.48 * r * W, zWing + 0.088 * r),
+            proj.project(-0.14 * r * L, side * 0.56 * r * W, zWing + 0.088 * r),
+            proj.project(-0.24 * r * L, side * 0.56 * r * W, zWing + 0.088 * r)
+          ];
+          drawPolyPts(c, rectBlister, '#e2e8f0', seamCol, 0.75);
+
+          // Semi-recessed circular cooling exhaust port on engine shoulder
+          const ventPt = proj.project(-0.36 * r * L, side * 0.28 * r * W, zWing + 0.14 * r);
+          c.fillStyle = '#f8fafc';
+          c.strokeStyle = seamCol;
+          c.lineWidth = 0.8;
+          c.beginPath();
+          c.arc(ventPt.x, ventPt.y, Math.max(1.5, 0.055 * r), 0, Math.PI * 2);
+          c.fill();
+          c.stroke();
+          c.fillStyle = '#1e293b';
+          c.beginPath();
+          c.arc(ventPt.x, ventPt.y, Math.max(0.8, 0.03 * r), 0, Math.PI * 2);
+          c.fill();
+
+          // Dark gun-port & avionics vents on forward cheek ahead of intake
+          drawLine3D(c, proj, 0.46 * r * L, side * 0.24 * r, zWing + 0.12 * r, 0.54 * r * L, side * 0.22 * r, zWing + 0.14 * r, '#1e293b', 1.8);
+          drawLine3D(c, proj, 0.32 * r * L, side * 0.26 * r, zWing + 0.12 * r, 0.38 * r * L, side * 0.25 * r, zWing + 0.15 * r, '#1e293b', 1.6);
         }
 
-        // Lighter Gull-Grey Radar Nose Radome Cone + Pitot Tip
-        const radomePts = [
-          proj.project(0.92 * r * L, -0.17 * r * W, zWing + 0.085 * r),
-          proj.project(1.38 * r * L, 0, zWing + 0.085 * r),
-          proj.project(0.92 * r * L, 0.17 * r * W, zWing + 0.085 * r),
-          proj.project(0.98 * r * L, 0, zWing + 0.14 * r)
-        ];
-        drawPolyPts(c, radomePts, '#e2e8f0', seamCol, 0.95);
-        drawLine3D(c, proj, 1.36 * r * L, 0, zWing + 0.05 * r, 1.50 * r * L, 0, zWing + 0.05 * r, seamCol, 1.2);
-
-        // USAF Roundel on Port Wing
-        const rPt = proj.project(-0.34 * r * L, -0.72 * r * W, zWing + 0.09 * r);
-        c.fillStyle = '#1e3a8a';
-        c.strokeStyle = '#f8fafc';
-        c.lineWidth = 0.8;
+        // USAF Low-Vis Star-and-Bars Insignia on Port Outer Wing (matching usa_raptor_diorama_ref.png!)
+        const insX = -0.44 * r * L;
+        const insY = 0.86 * r * W;
+        const insPt = proj.project(insX, insY, zWing + 0.09 * r);
+        drawLine3D(c, proj, insX - 0.02 * r, insY - 0.12 * r, zWing + 0.09 * r, insX + 0.02 * r, insY + 0.12 * r, zWing + 0.09 * r, '#cbd5e1', 1.5);
+        c.fillStyle = '#64748b';
+        c.strokeStyle = '#cbd5e1';
+        c.lineWidth = 1.1;
         c.beginPath();
-        c.arc(rPt.x, rPt.y, Math.max(1.8, 0.085 * r), 0, Math.PI * 2);
+        c.arc(insPt.x, insPt.y, Math.max(1.8, 0.065 * r), 0, Math.PI * 2);
         c.fill();
         c.stroke();
+
+        // Lighter Gull-Grey Sawtooth Nose Radome Cone
+        const radomePts = [
+          proj.project(1.02 * r * L, -0.14 * r * W, zWing + 0.085 * r),
+          proj.project(1.40 * r * L, 0, zWing + 0.085 * r),
+          proj.project(1.02 * r * L, 0.14 * r * W, zWing + 0.085 * r),
+          proj.project(1.08 * r * L, 0, zWing + 0.13 * r)
+        ];
+        drawPolyPts(c, radomePts, greyHi, seamCol, 1.0);
       }
     });
 
-    // 6. 3D Golden-Amber Bubble Canopy with Frame Bow & Double White Specular Slashes
+    // ========================================================================
+    // 8. 3D Teardrop Golden-Amber Bubble Canopy with Crown Highlight & Frame Sill
+    // ========================================================================
     const canBot = [
-      [0.10 * r * L, -0.18 * r, zWing + 0.23 * r],
-      [0.86 * r * L, -0.09 * r, zWing + 0.14 * r],
-      [0.86 * r * L, 0.09 * r, zWing + 0.14 * r],
-      [0.10 * r * L, 0.18 * r, zWing + 0.23 * r]
+      [0.14 * r * L, -0.17 * r, zWing + 0.23 * r],
+      [0.54 * r * L, -0.16 * r, zWing + 0.20 * r],
+      [0.92 * r * L, -0.08 * r, zWing + 0.15 * r],
+      [0.92 * r * L, 0.08 * r, zWing + 0.15 * r],
+      [0.54 * r * L, 0.16 * r, zWing + 0.20 * r],
+      [0.14 * r * L, 0.17 * r, zWing + 0.23 * r]
     ];
     const canTop = [
-      [0.22 * r * L, -0.11 * r, zWing + 0.45 * r],
-      [0.70 * r * L, -0.06 * r, zWing + 0.35 * r],
-      [0.70 * r * L, 0.06 * r, zWing + 0.35 * r],
-      [0.22 * r * L, 0.11 * r, zWing + 0.45 * r]
+      [0.24 * r * L, -0.10 * r, zWing + 0.44 * r],
+      [0.54 * r * L, -0.10 * r, zWing + 0.45 * r],
+      [0.78 * r * L, -0.05 * r, zWing + 0.34 * r],
+      [0.78 * r * L, 0.05 * r, zWing + 0.34 * r],
+      [0.54 * r * L, 0.10 * r, zWing + 0.45 * r],
+      [0.24 * r * L, 0.10 * r, zWing + 0.44 * r]
     ];
-    pushFrustumFaces(faces, proj, canBot, canTop, canopyCol, seamCol, 1.05, 0.75);
+    pushFrustumFaces(faces, proj, canBot, canTop, canopyCol, seamCol, 1.15, 0.76);
+
     faces.push({
-      depth: proj.project(0.48 * r * L, 0, zWing + 0.46 * r).depth + 0.9,
+      depth: proj.project(0.52 * r * L, 0, zWing + 0.46 * r).depth + 0.90,
       customDraw(c) {
-        // Canopy bow frame arch
-        drawLine3D(c, proj, 0.44 * r * L, -0.14 * r, zWing + 0.21 * r, 0.46 * r * L, 0, zWing + 0.41 * r, seamCol, 1.15);
-        drawLine3D(c, proj, 0.46 * r * L, 0, zWing + 0.41 * r, 0.44 * r * L, 0.14 * r, zWing + 0.21 * r, seamCol, 1.15);
-        // Specular slashes
-        drawLine3D(c, proj, 0.26 * r * L, -0.04 * r, zWing + 0.43 * r, 0.42 * r * L, -0.02 * r, zWing + 0.39 * r, 'rgba(255,255,255,0.88)', 1.5);
-        drawLine3D(c, proj, 0.50 * r * L, -0.03 * r, zWing + 0.38 * r, 0.66 * r * L, -0.01 * r, zWing + 0.34 * r, 'rgba(255,255,255,0.85)', 1.4);
+        // Pale-gold crown specular highlight oval along top of bubble canopy
+        const specPts = [
+          proj.project(0.32 * r * L, -0.06 * r, zWing + 0.445 * r),
+          proj.project(0.68 * r * L, -0.04 * r, zWing + 0.39 * r),
+          proj.project(0.68 * r * L, 0.03 * r, zWing + 0.39 * r),
+          proj.project(0.32 * r * L, 0.04 * r, zWing + 0.445 * r)
+        ];
+        drawPolyPts(c, specPts, '#fde68a', null, 0);
+        // Crisp white diagonal reflection slash
+        drawLine3D(c, proj, 0.42 * r * L, -0.03 * r, zWing + 0.445 * r, 0.64 * r * L, -0.01 * r, zWing + 0.395 * r, '#ffffff', 1.6);
       }
     });
 
-    // 7. Canted Twin Vertical Tail Stabilizers with Rudder Seams & Top Fin Caps
+    // ========================================================================
+    // 9. Canted Twin Vertical Tail Stabilizers with Slate Camo Center & Rudder Seams
+    // ========================================================================
     for (const side of [-1, 1]) {
-      const yBase = side * 0.26 * r;
+      const yBase = side * 0.24 * r;
       const yTip = side * 0.48 * r;
       const finPts = [
-        proj.project(-0.98 * r * L, yBase, zWing + 0.12 * r),
-        proj.project(-0.34 * r * L, yBase, zWing + 0.12 * r),
-        proj.project(-0.56 * r * L, yTip, zWing + 0.70 * r),
-        proj.project(-0.94 * r * L, yTip, zWing + 0.70 * r)
+        proj.project(-0.98 * r * L, yBase, zWing + 0.14 * r),
+        proj.project(-0.32 * r * L, yBase, zWing + 0.14 * r),
+        proj.project(-0.54 * r * L, yTip, zWing + 0.74 * r),
+        proj.project(-0.94 * r * L, yTip, zWing + 0.74 * r)
+      ];
+      const finCamo = [
+        proj.project(-0.88 * r * L, yBase * 1.15, zWing + 0.22 * r),
+        proj.project(-0.46 * r * L, yBase * 1.15, zWing + 0.22 * r),
+        proj.project(-0.60 * r * L, yTip * 0.88, zWing + 0.62 * r),
+        proj.project(-0.86 * r * L, yTip * 0.88, zWing + 0.62 * r)
       ];
       faces.push({
-        depth: proj.project(-0.68 * r * L, yTip, zWing + 0.45 * r).depth + 0.95,
+        depth: proj.project(-0.68 * r * L, yTip, zWing + 0.48 * r).depth + 0.98,
         customDraw(c) {
-          drawPolyPts(c, finPts, slateCamo, seamCol, 1.15);
-          // Contrasting top fin tip band & rudder seam
-          drawLine3D(c, proj, -0.92 * r * L, yTip * 0.96, zWing + 0.64 * r, -0.57 * r * L, yTip * 0.96, zWing + 0.64 * r, greyBase, 1.8);
-          drawLine3D(c, proj, -0.84 * r * L, yBase * 1.05, zWing + 0.16 * r, -0.82 * r * L, yTip * 0.92, zWing + 0.60 * r, seamCol, 0.9);
+          drawPolyPts(c, finPts, greyBase, seamCol, 1.2);
+          drawPolyPts(c, finCamo, slateCamo, null, 0);
+          // Rudder hinge seam line
+          drawLine3D(c, proj, -0.82 * r * L, yBase * 1.05, zWing + 0.16 * r, -0.80 * r * L, yTip * 0.94, zWing + 0.70 * r, seamCol, 0.95);
         }
       });
     }
@@ -5142,6 +5622,7 @@ const ZH_UNIT_MODELS = (function () {
     const r = rawR * (p.hullScale || 1.0);
     const L = p.fuselageLength || 1.0;
     const W = p.wingSpan || 1.0;
+    const H = p.extrusionDepth || 1.0;
     const hullAngle = (u && u.angle !== undefined) ? u.angle : 0;
     const recoil = (u && u.recoilOffset) || 0;
     const phase = (u && u.treadPhase) || (typeof performance !== 'undefined' ? (performance.now() * 0.003) % 1 : 0);
@@ -5150,6 +5631,7 @@ const ZH_UNIT_MODELS = (function () {
     const zScale = opts.zScale !== undefined ? opts.zScale : 0.42;
 
     const bodyCol = p.armorBaseColor || '#f8fafc';
+    const bodyShade = '#dde5ef';
     const stripeCol = p.stripeColor || '#2563eb';
     const seamCol = p.panelLineColor || '#26201b';
     const glowCol = p.scramjetColor || '#22d3ee';
@@ -5158,33 +5640,37 @@ const ZH_UNIT_MODELS = (function () {
 
     // Shadow
     const shadowPts = [
-      proj.project(-1.16 * r * L, -1.10 * r * W, 0),
-      proj.project(1.56 * r * L, 0, 0),
-      proj.project(-1.16 * r * L, 1.10 * r * W, 0)
-    ].map((pt) => ({ x: pt.x + 4.5, y: pt.y + 6.5 }));
+      proj.project(-1.18 * r * L, -1.14 * r * W, 0),
+      proj.project(1.62 * r * L, 0, 0),
+      proj.project(-1.18 * r * L, 1.14 * r * W, 0)
+    ].map((pt) => ({ x: pt.x + 4.8, y: pt.y + 6.8 }));
     drawPolyPts(ctx, shadowPts, 'rgba(65, 50, 40, 0.28)', null, 0);
 
     const faces = [];
-    const zWing = 0.26 * r + hoverZ;
+    const zWing = 0.26 * r * H + hoverZ;
 
-    // 1. Twin Segmented Metallic Exhaust Nozzles & Pulsing Cyan Shock-Diamond Scramjet Plumes
+    // ========================================================================
+    // 1. Twin Multi-Ring Segmented Titanium Exhaust Nozzles & Cyan Shock Plumes
+    // ========================================================================
     for (const side of [-1, 1]) {
-      const ny = side * 0.22 * r;
-      pushTubeSegment3D(faces, proj, -1.16 * r * L, ny, zWing + 0.09 * r, 0, 0, 0.20 * r * L, 0.10 * r, 0.12 * r, '#334155', seamCol, 1.0, 0.15);
+      const ny = side * 0.24 * r;
+      // Outer metallic collar + inner dark turkey-feather nozzle cone
+      pushTubeSegment3D(faces, proj, -1.08 * r * L, ny, zWing + 0.11 * r, 0, 0, 0.14 * r * L, 0.12 * r, 0.125 * r, '#64748b', seamCol, 1.0, 0.14);
+      pushTubeSegment3D(faces, proj, -1.22 * r * L, ny, zWing + 0.11 * r, 0, 0, 0.16 * r * L, 0.105 * r, 0.12 * r, '#334155', seamCol, 1.05, 0.15);
     }
 
     if (p.showScramjetGlow !== false) {
       const surge = 1.0 + Math.sin(phase * Math.PI * 8) * 0.09 + clamp(recoil * 0.10, 0, 0.40);
       faces.push({
-        depth: proj.project(-1.32 * r * L, 0, zWing).depth - 0.5,
+        depth: proj.project(-1.36 * r * L, 0, zWing).depth - 0.5,
         customDraw(c) {
           for (const side of [-1, 1]) {
-            const ny = side * 0.22 * r;
-            const p0 = proj.project(-1.12 * r * L, ny, zWing + 0.09 * r);
-            const p1 = proj.project(-1.66 * r * L * surge, ny * 1.08, zWing + 0.09 * r);
-            const pMid = proj.project(-1.38 * r * L * surge, ny * 1.04, zWing + 0.09 * r);
+            const ny = side * 0.24 * r;
+            const p0 = proj.project(-1.18 * r * L, ny, zWing + 0.11 * r);
+            const p1 = proj.project(-1.74 * r * L * surge, ny * 1.08, zWing + 0.11 * r);
+            const pMid = proj.project(-1.46 * r * L * surge, ny * 1.04, zWing + 0.11 * r);
             c.strokeStyle = glowCol;
-            c.lineWidth = 5.0;
+            c.lineWidth = 5.4;
             c.lineCap = 'round';
             c.beginPath();
             c.moveTo(p0.x, p0.y);
@@ -5192,127 +5678,217 @@ const ZH_UNIT_MODELS = (function () {
             c.stroke();
 
             c.strokeStyle = '#bae6fd';
-            c.lineWidth = 3.0;
+            c.lineWidth = 3.2;
             c.beginPath();
             c.moveTo(p0.x, p0.y);
             c.lineTo(pMid.x, pMid.y);
             c.stroke();
 
             c.strokeStyle = '#ffffff';
-            c.lineWidth = 1.6;
+            c.lineWidth = 1.8;
             c.beginPath();
             c.moveTo(p0.x, p0.y);
-            c.lineTo((p0.x + pMid.x) * 0.55, (p0.y + pMid.y) * 0.55);
+            c.lineTo((p0.x + pMid.x) * 0.58, (p0.y + pMid.y) * 0.58);
             c.stroke();
           }
         }
       });
     }
 
-    // 2. Ventral Blue-Trimmed Scramjet Wedge Air Intakes (beneath forward wing roots)
+    // ========================================================================
+    // 2. Ventral Royal-Blue Scramjet Wedge Air Intakes (beneath forward wing roots)
+    // ========================================================================
     for (const side of [-1, 1]) {
       const iy = side * 0.26 * r * W;
-      pushBox3D(faces, proj, 0.16 * r * L, 0.68 * r * L, iy - 0.09 * r, iy + 0.09 * r, zWing - 0.09 * r, zWing + 0.01 * r, stripeCol, seamCol, 1.0, 0.12);
+      pushBox3D(faces, proj, 0.08 * r * L, 0.58 * r * L, iy - 0.10 * r, iy + 0.10 * r, zWing - 0.11 * r, zWing + 0.01 * r, stripeCol, seamCol, 1.1, 0.12, 0.05 * r, 0.02 * r);
+      faces.push({
+        depth: proj.project(0.58 * r * L, iy, zWing - 0.06 * r).depth + 0.15,
+        customDraw(c) {
+          const vMouth = [
+            proj.project(0.57 * r * L, iy - 0.08 * r, zWing - 0.09 * r),
+            proj.project(0.57 * r * L, iy + 0.08 * r, zWing - 0.09 * r),
+            proj.project(0.55 * r * L, iy + 0.08 * r, zWing - 0.01 * r),
+            proj.project(0.55 * r * L, iy - 0.08 * r, zWing - 0.01 * r)
+          ];
+          drawPolyPts(c, vMouth, '#0f172a', seamCol, 0.95);
+        }
+      });
     }
 
-    // 3. Sleek Needle-Nosed Cranked-Delta Wave-Rider Airframe (matching usa_aurora_diorama_ref.png!)
+    // ========================================================================
+    // 3. Needle-Nosed Cranked-Delta Wave-Rider Airframe & Central Tail Cone
+    // ========================================================================
     const deltaBot = [
-      [-1.04 * r * L, -0.38 * r * W, zWing],
-      [-0.80 * r * L, -1.18 * r * W, zWing],
-      [-0.26 * r * L, -1.04 * r * W, zWing],
-      [0.44 * r * L, -0.28 * r * W, zWing],
-      [1.56 * r * L, 0, zWing],
-      [0.44 * r * L, 0.28 * r * W, zWing],
-      [-0.26 * r * L, 1.04 * r * W, zWing],
-      [-0.80 * r * L, 1.18 * r * W, zWing],
-      [-1.04 * r * L, 0.38 * r * W, zWing]
+      [-1.18 * r * L, 0, zWing],
+      [-1.02 * r * L, -0.38 * r * W, zWing],
+      [-0.78 * r * L, -1.20 * r * W, zWing],
+      [-0.56 * r * L, -1.22 * r * W, zWing],
+      [0.36 * r * L, -0.34 * r * W, zWing],
+      [0.82 * r * L, -0.18 * r * W, zWing],
+      [1.58 * r * L, 0, zWing],
+      [0.82 * r * L, 0.18 * r * W, zWing],
+      [0.36 * r * L, 0.34 * r * W, zWing],
+      [-0.56 * r * L, 1.22 * r * W, zWing],
+      [-0.78 * r * L, 1.20 * r * W, zWing],
+      [-1.02 * r * L, 0.38 * r * W, zWing]
     ];
-    const deltaTop = deltaBot.map((v) => [v[0], v[1], v[2] + 0.09 * r]);
-    pushFrustumFaces(faces, proj, deltaBot, deltaTop, bodyCol, seamCol, 1.15, 0.22);
+    const deltaTop = deltaBot.map((v) => [v[0], v[1], v[2] + 0.085 * r]);
+    pushFrustumFaces(faces, proj, deltaBot, deltaTop, bodyCol, seamCol, 1.2, 0.22);
 
-    // 4. Raised Central Scramjet Spine + Twin Dorsal Cylindrical Engine Nacelle Humps
-    pushBox3D(faces, proj, -0.96 * r * L, 1.12 * r * L, -0.20 * r, 0.20 * r, zWing + 0.08 * r, zWing + 0.28 * r, bodyCol, seamCol, 1.1, 0.45, 0.36 * r * L, 0.06 * r);
+    // ========================================================================
+    // 4. Sculpted Central Spine & Twin Dorsal Box-to-Cylindrical Scramjet Nacelles
+    //    (With Forward Dark Intake Mouths on Top of Wing Roots!)
+    // ========================================================================
+    const spineBot = [
+      [-1.16 * r * L, -0.12 * r, zWing + 0.08 * r],
+      [0.36 * r * L, -0.20 * r, zWing + 0.08 * r],
+      [1.18 * r * L, -0.09 * r, zWing + 0.08 * r],
+      [1.18 * r * L, 0.09 * r, zWing + 0.08 * r],
+      [0.36 * r * L, 0.20 * r, zWing + 0.08 * r],
+      [-1.16 * r * L, 0.12 * r, zWing + 0.08 * r]
+    ];
+    const spineTop = [
+      [-1.12 * r * L, -0.04 * r, zWing + 0.24 * r],
+      [0.32 * r * L, -0.13 * r, zWing + 0.29 * r],
+      [0.98 * r * L, -0.06 * r, zWing + 0.17 * r],
+      [0.98 * r * L, 0.06 * r, zWing + 0.17 * r],
+      [0.32 * r * L, 0.13 * r, zWing + 0.29 * r],
+      [-1.12 * r * L, 0.04 * r, zWing + 0.24 * r]
+    ];
+    pushFrustumFaces(faces, proj, spineBot, spineTop, bodyCol, seamCol, 1.15, 0.44);
+
+    // Twin Dorsal Scramjet Engine Nacelles (Forward Boxy Intake Shoulders + Aft Cylindrical Tunnels)
     for (const side of [-1, 1]) {
-      const ny = side * 0.22 * r;
-      pushTubeSegment3D(faces, proj, -1.00 * r * L, ny, zWing + 0.12 * r, 0, 0, 0.92 * r * L, 0.115 * r, 0.085 * r, bodyCol, seamCol, 1.05, 0.48);
+      const ny = side * 0.24 * r;
+      // Forward boxy intake fairing on wing root (matching usa_aurora_diorama_ref.png!)
+      pushBox3D(faces, proj, -0.22 * r * L, 0.30 * r * L, ny - 0.10 * r, ny + 0.10 * r, zWing + 0.08 * r, zWing + 0.23 * r, bodyShade, seamCol, 1.05, 0.46, 0.04 * r, 0.02 * r);
+      // Aft rounded scramjet nacelle tunnel
+      pushTubeSegment3D(faces, proj, -0.96 * r * L, ny, zWing + 0.12 * r, 0, 0, 0.80 * r * L, 0.12 * r, 0.11 * r, bodyCol, seamCol, 1.1, 0.48);
+
+      // Dark rectangular dorsal intake mouth at x = 0.30 * r * L
+      faces.push({
+        depth: proj.project(0.31 * r * L, ny, zWing + 0.16 * r).depth + 0.52,
+        customDraw(c) {
+          const dIntake = [
+            proj.project(0.305 * r * L, ny - 0.08 * r, zWing + 0.09 * r),
+            proj.project(0.305 * r * L, ny + 0.08 * r, zWing + 0.09 * r),
+            proj.project(0.285 * r * L, ny + 0.07 * r, zWing + 0.21 * r),
+            proj.project(0.285 * r * L, ny - 0.07 * r, zWing + 0.21 * r)
+          ];
+          drawPolyPts(c, dIntake, '#1e293b', seamCol, 1.0);
+        }
+      });
     }
 
-    // 5. Royal-Blue Livery Stripes, Needle-Nose Pitot, Thermal Nose Cone & 3-Pane Cockpit Visor
+    // ========================================================================
+    // 5. Royal-Blue Livery Stripes, Wing Elevon Grid, Nose Cone & 3-Pane Visor
+    // ========================================================================
     faces.push({
-      depth: proj.project(0.24 * r * L, 0, zWing + 0.30 * r).depth + 0.68,
+      depth: proj.project(0.20 * r * L, 0, zWing + 0.30 * r).depth + 0.72,
       customDraw(c) {
-        // Thermal-shielded grey nose tip cone + hypersonic needle pitot probe
+        // Thermal-shielded grey nose cone + long hypersonic needle pitot boom
         const nosePts = [
-          proj.project(1.22 * r * L, -0.09 * r * W, zWing + 0.09 * r),
-          proj.project(1.56 * r * L, 0, zWing + 0.09 * r),
-          proj.project(1.22 * r * L, 0.09 * r * W, zWing + 0.09 * r)
+          proj.project(1.24 * r * L, -0.09 * r * W, zWing + 0.09 * r),
+          proj.project(1.58 * r * L, 0, zWing + 0.09 * r),
+          proj.project(1.24 * r * L, 0.09 * r * W, zWing + 0.09 * r),
+          proj.project(1.20 * r * L, 0, zWing + 0.14 * r)
         ];
-        drawPolyPts(c, nosePts, '#94a3b8', seamCol, 0.95);
-        drawLine3D(c, proj, 1.54 * r * L, 0, zWing + 0.05 * r, 1.80 * r * L, 0, zWing + 0.05 * r, seamCol, 1.35);
+        drawPolyPts(c, nosePts, '#94a3b8', seamCol, 1.0);
+        drawLine3D(c, proj, 1.56 * r * L, 0, zWing + 0.06 * r, 1.84 * r * L, 0, zWing + 0.04 * r, seamCol, 1.5);
 
         if (p.showRacingStripes !== false) {
-          // Dorsal spine racing stripe with white mid-avionics hatch cutout
+          // Dorsal spine racing stripe tapering to aft tail-cone tip
           const spineStripe = [
-            proj.project(-0.88 * r * L, -0.10 * r, zWing + 0.29 * r),
-            proj.project(1.06 * r * L, -0.05 * r, zWing + 0.17 * r),
-            proj.project(1.06 * r * L, 0.05 * r, zWing + 0.17 * r),
-            proj.project(-0.88 * r * L, 0.10 * r, zWing + 0.29 * r)
+            proj.project(-0.88 * r * L, 0, zWing + 0.255 * r),
+            proj.project(0.36 * r * L, -0.10 * r, zWing + 0.295 * r),
+            proj.project(0.56 * r * L, -0.09 * r, zWing + 0.26 * r),
+            proj.project(0.56 * r * L, 0.09 * r, zWing + 0.26 * r),
+            proj.project(0.36 * r * L, 0.10 * r, zWing + 0.295 * r)
           ];
-          drawPolyPts(c, spineStripe, stripeCol, seamCol, 0.85);
+          drawPolyPts(c, spineStripe, stripeCol, null, 0);
 
-          // White avionics hatch cutout on spine
+          // White rounded-rectangle dorsal avionics hatch inside the blue spine stripe!
           const hatchPts = [
-            proj.project(-0.14 * r * L, -0.05 * r, zWing + 0.295 * r),
-            proj.project(0.18 * r * L, -0.05 * r, zWing + 0.295 * r),
-            proj.project(0.18 * r * L, 0.05 * r, zWing + 0.295 * r),
-            proj.project(-0.14 * r * L, 0.05 * r, zWing + 0.295 * r)
+            proj.project(-0.02 * r * L, -0.06 * r, zWing + 0.298 * r),
+            proj.project(0.24 * r * L, -0.06 * r, zWing + 0.298 * r),
+            proj.project(0.24 * r * L, 0.06 * r, zWing + 0.298 * r),
+            proj.project(-0.02 * r * L, 0.06 * r, zWing + 0.298 * r)
           ];
-          drawPolyPts(c, hatchPts, bodyCol, seamCol, 0.8);
+          drawPolyPts(c, hatchPts, bodyCol, seamCol, 0.85);
 
-          // Double Geometric L-Shaped Wing Stripes + Elevon Hinge Seams
           for (const side of [-1, 1]) {
-            drawLine3D(c, proj, -0.74 * r * L, side * 1.06 * r * W, zWing + 0.095 * r, -0.26 * r * L, side * 0.92 * r * W, zWing + 0.095 * r, stripeCol, 2.5);
-            drawLine3D(c, proj, -0.74 * r * L, side * 1.06 * r * W, zWing + 0.095 * r, -0.74 * r * L, side * 0.46 * r * W, zWing + 0.095 * r, stripeCol, 2.2);
-            drawLine3D(c, proj, -0.54 * r * L, side * 0.90 * r * W, zWing + 0.095 * r, -0.10 * r * L, side * 0.68 * r * W, zWing + 0.095 * r, stripeCol, 1.6);
-            // Trailing-edge elevon panel line
-            drawLine3D(c, proj, -0.90 * r * L, side * 0.42 * r * W, zWing + 0.095 * r, -0.76 * r * L, side * 1.12 * r * W, zWing + 0.095 * r, seamCol, 0.85);
+            // Cheek stripe stepping up from below cockpit visor to dorsal spine
+            drawLine3D(c, proj, 0.86 * r * L, side * 0.12 * r, zWing + 0.12 * r, 0.56 * r * L, side * 0.16 * r, zWing + 0.16 * r, stripeCol, 1.8);
+            drawLine3D(c, proj, 0.56 * r * L, side * 0.16 * r, zWing + 0.16 * r, 0.44 * r * L, side * 0.09 * r, zWing + 0.28 * r, stripeCol, 1.8);
+
+            // Bold Leading-Edge Wing Stripe + Double Parallel Trailing-Edge Chevron Bars (matching usa_aurora_diorama_ref.png!)
+            drawLine3D(c, proj, 0.22 * r * L, side * 0.36 * r * W, zWing + 0.092 * r, -0.58 * r * L, side * 1.06 * r * W, zWing + 0.092 * r, stripeCol, 2.5);
+            drawLine3D(c, proj, -0.34 * r * L, side * 0.82 * r * W, zWing + 0.092 * r, -0.76 * r * L, side * 0.62 * r * W, zWing + 0.092 * r, stripeCol, 2.2);
+            drawLine3D(c, proj, -0.42 * r * L, side * 0.89 * r * W, zWing + 0.092 * r, -0.82 * r * L, side * 0.70 * r * W, zWing + 0.092 * r, stripeCol, 1.5);
           }
         }
 
-        // 3-Pane Curved Flush Hypersonic Cockpit Visor with Specular Glint
-        const visorPts = [
-          proj.project(0.62 * r * L, -0.15 * r, zWing + 0.27 * r),
-          proj.project(0.96 * r * L, -0.08 * r, zWing + 0.18 * r),
-          proj.project(0.96 * r * L, 0.08 * r, zWing + 0.18 * r),
-          proj.project(0.62 * r * L, 0.15 * r, zWing + 0.27 * r)
+        // Wing Elevon & Leading-Edge Flap Structural Panel Grid
+        for (const side of [-1, 1]) {
+          drawLine3D(c, proj, -0.92 * r * L, side * 0.42 * r * W, zWing + 0.092 * r, -0.70 * r * L, side * 1.12 * r * W, zWing + 0.092 * r, seamCol, 0.9);
+          drawLine3D(c, proj, -0.82 * r * L, side * 0.78 * r * W, zWing + 0.092 * r, -0.94 * r * L, side * 0.78 * r * W, zWing + 0.092 * r, seamCol, 0.85);
+          // Nacelle ring seam
+          drawLine3D(c, proj, -0.48 * r * L, side * 0.16 * r, zWing + 0.24 * r, -0.48 * r * L, side * 0.32 * r, zWing + 0.20 * r, seamCol, 0.85);
+        }
+
+        // Small circular astro-tracker dome on spine behind cockpit
+        const astroPt = proj.project(0.50 * r * L, 0, zWing + 0.275 * r);
+        c.strokeStyle = seamCol;
+        c.lineWidth = 0.85;
+        c.beginPath();
+        c.arc(astroPt.x, astroPt.y, Math.max(1.4, 0.045 * r), 0, Math.PI * 2);
+        c.stroke();
+
+        // 3-Pane Curved Flush Dark Hypersonic Cockpit Visor with Frame Mullions & Glint
+        for (const side of [-1, 1]) {
+          const sideVisor = [
+            proj.project(0.62 * r * L, side * 0.14 * r, zWing + 0.21 * r),
+            proj.project(0.84 * r * L, side * 0.11 * r, zWing + 0.17 * r),
+            proj.project(0.84 * r * L, side * 0.04 * r, zWing + 0.20 * r),
+            proj.project(0.66 * r * L, side * 0.05 * r, zWing + 0.25 * r)
+          ];
+          drawPolyPts(c, sideVisor, '#334155', seamCol, 1.0);
+        }
+        const centerVisor = [
+          proj.project(0.66 * r * L, -0.05 * r, zWing + 0.25 * r),
+          proj.project(0.86 * r * L, -0.04 * r, zWing + 0.20 * r),
+          proj.project(0.86 * r * L, 0.04 * r, zWing + 0.20 * r),
+          proj.project(0.66 * r * L, 0.05 * r, zWing + 0.25 * r)
         ];
-        drawPolyPts(c, visorPts, '#1e293b', seamCol, 1.05);
-        drawLine3D(c, proj, 0.68 * r * L, -0.06 * r, zWing + 0.26 * r, 0.88 * r * L, -0.02 * r, zWing + 0.20 * r, '#bae6fd', 1.3);
+        drawPolyPts(c, centerVisor, '#1e293b', seamCol, 1.05);
+        drawLine3D(c, proj, 0.70 * r * L, -0.08 * r, zWing + 0.22 * r, 0.82 * r * L, -0.03 * r, zWing + 0.19 * r, '#bae6fd', 1.2);
       }
     });
 
+    // ========================================================================
     // 6. Twin Canted Tail Fins with Blue/Gold Upper Tip Caps & Rudder Seams
+    // ========================================================================
     for (const side of [-1, 1]) {
-      const yBase = side * 0.28 * r;
-      const yTip = side * 0.44 * r;
+      const yBase = side * 0.30 * r;
+      const yTip = side * 0.46 * r;
       const finPts = [
-        proj.project(-1.00 * r * L, yBase, zWing + 0.14 * r),
-        proj.project(-0.42 * r * L, yBase, zWing + 0.14 * r),
-        proj.project(-0.62 * r * L, yTip, zWing + 0.66 * r),
-        proj.project(-0.96 * r * L, yTip, zWing + 0.66 * r)
+        proj.project(-0.98 * r * L, yBase, zWing + 0.14 * r),
+        proj.project(-0.38 * r * L, yBase, zWing + 0.14 * r),
+        proj.project(-0.58 * r * L, yTip, zWing + 0.68 * r),
+        proj.project(-0.94 * r * L, yTip, zWing + 0.68 * r)
       ];
       const capPts = [
-        proj.project(-0.95 * r * L, yTip * 0.94, zWing + 0.52 * r),
-        proj.project(-0.57 * r * L, yTip * 0.94, zWing + 0.52 * r),
-        proj.project(-0.62 * r * L, yTip, zWing + 0.66 * r),
-        proj.project(-0.96 * r * L, yTip, zWing + 0.66 * r)
+        proj.project(-0.93 * r * L, yTip * 0.94, zWing + 0.54 * r),
+        proj.project(-0.53 * r * L, yTip * 0.94, zWing + 0.54 * r),
+        proj.project(-0.58 * r * L, yTip, zWing + 0.68 * r),
+        proj.project(-0.94 * r * L, yTip, zWing + 0.68 * r)
       ];
       faces.push({
-        depth: proj.project(-0.72 * r * L, yTip, zWing + 0.42 * r).depth + 0.88,
+        depth: proj.project(-0.72 * r * L, yTip, zWing + 0.44 * r).depth + 0.92,
         customDraw(c) {
           drawPolyPts(c, finPts, bodyCol, seamCol, 1.15);
-          drawPolyPts(c, capPts, stripeCol, seamCol, 1.0);
-          drawLine3D(c, proj, -0.86 * r * L, yBase * 1.04, zWing + 0.16 * r, -0.84 * r * L, yTip * 0.90, zWing + 0.52 * r, seamCol, 0.85);
+          drawPolyPts(c, capPts, stripeCol, seamCol, 1.05);
+          drawLine3D(c, proj, -0.84 * r * L, yBase * 1.04, zWing + 0.16 * r, -0.82 * r * L, yTip * 0.90, zWing + 0.54 * r, seamCol, 0.9);
         }
       });
     }
@@ -5461,11 +6037,19 @@ const ZH_UNIT_MODELS = (function () {
     const upperProj = createProjector(turretAngle, pitchScale, zScale, 0, 0, 0, angle);
 
     // Oval Ground Contact Shadow
-    const basePt = proj.project(0, 0, 0);
+    const basePt = proj.project(isWorker ? 0.25 * r : 0, 0, 0);
     ctx.save();
     ctx.fillStyle = 'rgba(75, 58, 46, 0.34)';
     ctx.beginPath();
-    ctx.ellipse(basePt.x, basePt.y + 2.0, r * (isMob ? 1.05 : 0.72), r * (isMob ? 0.65 : 0.45) * pitchScale, 0, 0, Math.PI * 2);
+    ctx.ellipse(
+      basePt.x,
+      basePt.y + 2.0,
+      r * (isWorker ? 1.18 : isMob ? 1.05 : 0.72),
+      r * (isWorker ? 0.58 : isMob ? 0.65 : 0.45) * pitchScale,
+      0,
+      0,
+      Math.PI * 2
+    );
     ctx.fill();
     ctx.restore();
 
@@ -5506,17 +6090,47 @@ const ZH_UNIT_MODELS = (function () {
     }
 
     // Satchel Bag / C4 Pack / Terrorist Dynamite Straps / Hacker Backpack / Black Lotus Hip Satchel
-    if (isPathfinder || isBurton || isHacker || isLotus || isTerrorist || isWorker) {
-      const packCol = isTerrorist ? '#ef4444' : isLotus ? '#18181b' : isHacker ? '#4a5434' : isWorker ? '#b45309' : '#925e36';
+    if (isPathfinder || isBurton || isHacker || isLotus || isTerrorist) {
+      const packCol = isTerrorist ? '#ef4444' : isLotus ? '#18181b' : isHacker ? '#4a5434' : '#785238';
       pushBox3D(faces, upperProj, -0.30 * r, 0.16 * r, 0.28 * r, 0.48 * r, (isLotus ? 0.38 : 0.48) * r + bob, (isLotus ? 0.80 : 0.88) * r + bob, packCol, seamCol, 1.05, 0.72);
     }
 
-    // 3. Chibi-Tactical Head & Rounded Kevlar Helmet / Maroon Beret / Black Lotus Hair / GLA Keffiyeh
+    // GLA Worker 3D Wooden Supply Crate with Timber Frame & Diagonal Cross-Brace (matching gla_worker_diorama_ref.png!)
+    if (isWorker) {
+      const cx0 = 0.26 * r, cx1 = 0.98 * r * wScale;
+      const cy0 = -0.38 * r, cy1 = 0.38 * r;
+      const cz0 = 0.06 * r + bob * 0.4, cz1 = 0.80 * r + bob * 0.4;
+      // Main wooden supply box
+      pushBox3D(faces, upperProj, cx0, cx1, cy0, cy1, cz0, cz1, '#c69f68', seamCol, 1.18, 1.35);
+      // Top timber rim cap
+      pushBox3D(faces, upperProj, cx0 - 0.02 * r, cx1 + 0.02 * r, cy0 - 0.02 * r, cy1 + 0.02 * r, cz1, cz1 + 0.09 * r, '#a67c46', seamCol, 1.12, 1.48);
+      // Worker's outstretched olive arms gripping top-rear corners of crate
+      for (const side of [-1, 1]) {
+        pushBox3D(faces, upperProj, 0.10 * r, 0.38 * r, side * 0.24 * r, side * 0.38 * r, 0.76 * r + bob, 0.96 * r + bob, uniformCol, seamCol, 1.05, 1.52);
+      }
+      // Diagonal wooden cross-braces on crate sides & front
+      faces.push({
+        depth: upperProj.project((cx0 + cx1) * 0.5, cy1, (cz0 + cz1) * 0.5).depth + 1.55,
+        customDraw(c) {
+          drawLine3D(c, upperProj, cx0 + 0.05 * r, cy1 + 0.01 * r, cz0 + 0.05 * r, cx1 - 0.05 * r, cy1 + 0.01 * r, cz1 - 0.05 * r, '#785230', 1.8);
+          drawLine3D(c, upperProj, cx0 + 0.05 * r, cy1 + 0.01 * r, cz1 - 0.05 * r, cx1 - 0.05 * r, cy1 + 0.01 * r, cz0 + 0.05 * r, '#785230', 1.8);
+          drawLine3D(c, upperProj, cx1 + 0.01 * r, cy0 + 0.05 * r, cz0 + 0.05 * r, cx1 + 0.01 * r, cy1 - 0.05 * r, cz1 - 0.05 * r, '#785230', 1.8);
+          drawLine3D(c, upperProj, cx1 + 0.01 * r, cy0 + 0.05 * r, cz1 - 0.05 * r, cx1 + 0.01 * r, cy1 - 0.05 * r, cz0 + 0.05 * r, '#785230', 1.8);
+        }
+      });
+    }
+
+    // 3. Chibi-Tactical Head & Rounded Kevlar Helmet / Maroon Beret / Black Lotus Hair / GLA Field Cap
     const zHeadBot = 1.16 * r + bob;
     const zHeadMid = 1.54 * r * hScale + bob;
-    const zHelmetTop = (isBurton || isLotus ? 1.82 : 1.92) * r * hScale + bob;
+    const zHelmetTop = (isBurton || isLotus || isWorker ? 1.82 : 1.92) * r * hScale + bob;
     pushCylinderZ3D(faces, upperProj, 0.04 * r, 0, zHeadBot, zHeadMid, 0.34 * r * hScale, 0.36 * r * hScale, 8, skinCol, seamCol, 1.1, 1.1);
     pushCylinderZ3D(faces, upperProj, isBurton ? -0.04 * r : 0, isBurton ? 0.05 * r : 0, zHeadMid - 0.08 * r, zHelmetTop, isLotus ? 0.42 * r * hScale : 0.46 * r * hScale, (isBurton || isGla) ? 0.42 * r * hScale : 0.36 * r * hScale, 8, helmetCol, seamCol, 1.15, 1.25);
+
+    // Protruding Front Visor Bill for GLA Worker's Olive Field Cap
+    if (isWorker) {
+      pushBox3D(faces, upperProj, 0.22 * r * hScale, 0.56 * r * hScale, -0.28 * r * hScale, 0.28 * r * hScale, zHeadMid - 0.06 * r, zHeadMid + 0.04 * r, helmetCol, seamCol, 1.05, 1.32);
+    }
 
     // Facial eyes, tactical sunglasses, China Red Star badge, Hacker glasses, or Helmet Ballistic Goggles
     faces.push({
@@ -5574,9 +6188,9 @@ const ZH_UNIT_MODELS = (function () {
     // 4. Oversized Readable Diorama Weapons / Tools with 3D Recoil & Muzzle Flash
     const recDist = clamp(recoil * 0.04 * r, 0, 0.18 * r);
     if (isMissile) {
-      // Heavy Shoulder-Fired Anti-Tank Rocket Tube with Flared Front & Rear Bell Collars (matching china_tank_hunter_diorama_ref.png!)
-      const tubeCol = isGla ? '#854d0e' : isChina ? '#5c6b43' : '#6b7a52';
-      const collarCol = isGla ? '#451a03' : '#3b4230';
+      // Heavy Shoulder-Fired Anti-Tank Rocket Tube / RPG-7 Launcher (matching china_tank_hunter_diorama_ref.png & gla_rpg_trooper_diorama_ref.png!)
+      const tubeCol = isGla ? '#5c6e46' : isChina ? '#5c6b43' : '#6b7a52';
+      const collarCol = isGla ? '#78350f' : '#3b4230';
       pushTubeSegment3D(
         faces,
         upperProj,
@@ -5593,9 +6207,14 @@ const ZH_UNIT_MODELS = (function () {
         1.15,
         1.65
       );
-      // Flared Front & Rear Launch Tube Collars
-      pushTubeSegment3D(faces, upperProj, -0.68 * r * wScale - recDist, 0.34 * r, 1.15 * r + bob, -0.08, 0, 0.20 * r * wScale, 0.24 * r * wScale, 0.22 * r * wScale, collarCol, seamCol, 1.1, 1.68);
-      pushTubeSegment3D(faces, upperProj, 0.72 * r * wScale - recDist, 0.34 * r, 1.03 * r + bob, -0.08, 0, 0.22 * r * wScale, 0.22 * r * wScale, 0.25 * r * wScale, collarCol, seamCol, 1.15, 1.72);
+      // Flared Rear Exhaust Cone & Front Launch Collar / PG-7V Conical Warhead
+      pushTubeSegment3D(faces, upperProj, -0.68 * r * wScale - recDist, 0.34 * r, 1.15 * r + bob, -0.08, 0, 0.22 * r * wScale, 0.25 * r * wScale, 0.21 * r * wScale, collarCol, seamCol, 1.1, 1.68);
+      if (isGla) {
+        // Protruding conical PG-7V RPG warhead nosecone (matching gla_rpg_trooper_diorama_ref.png!)
+        pushTubeSegment3D(faces, upperProj, 0.68 * r * wScale - recDist, 0.34 * r, 1.03 * r + bob, -0.08, 0, 0.42 * r * wScale, 0.24 * r * wScale, 0.07 * r * wScale, '#4b5938', seamCol, 1.15, 1.72);
+      } else {
+        pushTubeSegment3D(faces, upperProj, 0.72 * r * wScale - recDist, 0.34 * r, 1.03 * r + bob, -0.08, 0, 0.22 * r * wScale, 0.22 * r * wScale, 0.25 * r * wScale, collarCol, seamCol, 1.15, 1.72);
+      }
     } else if (isMinigunner) {
       pushTubeSegment3D(faces, upperProj, -0.10 * r, 0.32 * r, 0.78 * r + bob, 0, 0, 1.15 * r * wScale, 0.16 * r * wScale, 0.15 * r * wScale, '#334155', seamCol, 1.1, 1.65);
     } else if (isHacker) {
@@ -5610,12 +6229,12 @@ const ZH_UNIT_MODELS = (function () {
       customDraw(c) {
         let muzPt = null;
         if (isMissile) {
-          const mTip = upperProj.project(0.90 * r * wScale - recDist, 0.34 * r, 1.01 * r + bob);
-          c.fillStyle = isGla ? '#b91c1c' : '#1e293b';
+          const mTip = upperProj.project((isGla ? 1.06 : 0.90) * r * wScale - recDist, 0.34 * r, 1.00 * r + bob);
+          c.fillStyle = isGla ? '#3b462b' : '#1e293b';
           c.strokeStyle = seamCol;
           c.lineWidth = 1.2;
           c.beginPath();
-          c.arc(mTip.x, mTip.y, Math.max(2.0, 0.17 * r * wScale), 0, Math.PI * 2);
+          c.arc(mTip.x, mTip.y, Math.max(1.8, (isGla ? 0.11 : 0.17) * r * wScale), 0, Math.PI * 2);
           c.fill();
           c.stroke();
           muzPt = mTip;
@@ -5627,26 +6246,25 @@ const ZH_UNIT_MODELS = (function () {
           c.arc(lidLogo.x, lidLogo.y, Math.max(1.4, 0.055 * r), 0, Math.PI * 2);
           c.fill();
         } else if (isPathfinder) {
-          drawLine3D(c, upperProj, -0.10 * r - recDist, 0.26 * r, 0.86 * r + bob, 1.28 * r * wScale - recDist, 0.12 * r, 0.82 * r + bob, seamCol, 2.8);
-          drawLine3D(c, upperProj, 0.15 * r - recDist, 0.22 * r, 0.98 * r + bob, 0.62 * r * wScale - recDist, 0.18 * r, 0.96 * r + bob, '#475569', 2.2);
-          muzPt = upperProj.project(1.28 * r * wScale - recDist, 0.12 * r, 0.82 * r + bob);
+          // Long-Barreled Sniper Rifle with Telescopic Scope (matching gla_jarmen_kell_diorama_ref.png & usa_pathfinder_diorama_ref.png!)
+          const bodyCol = isGla ? '#4b5938' : '#334155';
+          drawLine3D(c, upperProj, -0.14 * r - recDist, 0.26 * r, 0.88 * r + bob, 1.34 * r * wScale - recDist, 0.12 * r, 0.82 * r + bob, seamCol, 3.8);
+          drawLine3D(c, upperProj, -0.14 * r - recDist, 0.26 * r, 0.88 * r + bob, 1.34 * r * wScale - recDist, 0.12 * r, 0.82 * r + bob, bodyCol, 2.2);
+          drawLine3D(c, upperProj, 0.12 * r - recDist, 0.22 * r, 1.00 * r + bob, 0.64 * r * wScale - recDist, 0.18 * r, 0.98 * r + bob, '#334155', 2.5);
+          muzPt = upperProj.project(1.34 * r * wScale - recDist, 0.12 * r, 0.82 * r + bob);
         } else if (isBurton) {
           drawLine3D(c, upperProj, -0.18 * r - recDist, 0.28 * r, 0.88 * r + bob, 1.08 * r * wScale - recDist, 0.14 * r, 0.80 * r + bob, '#3f4d34', 3.4);
           drawLine3D(c, upperProj, -0.18 * r - recDist, 0.28 * r, 0.88 * r + bob, 1.08 * r * wScale - recDist, 0.14 * r, 0.80 * r + bob, seamCol, 1.2);
           muzPt = upperProj.project(1.08 * r * wScale - recDist, 0.14 * r, 0.80 * r + bob);
-        } else if (isWorker) {
-          // Pickaxe / Hammer across shoulder
-          drawLine3D(c, upperProj, -0.10 * r, 0.30 * r, 0.72 * r + bob, 0.76 * r * wScale, 0.22 * r, 1.18 * r + bob, '#78350f', 2.6);
-          drawLine3D(c, upperProj, 0.62 * r * wScale, 0.22 * r, 1.32 * r + bob, 0.88 * r * wScale, 0.22 * r, 1.02 * r + bob, '#64748b', 3.0);
         } else if (isTerrorist) {
           // Detonator switch in raised hand
           drawLine3D(c, upperProj, 0.18 * r, 0.30 * r, 0.92 * r + bob, 0.56 * r, 0.32 * r, 1.32 * r + bob, '#dc2626', 2.8);
         } else if (isHijacker) {
-          // Curved tactical blade
+          // Curved tactical breaching tool / blade
           drawLine3D(c, upperProj, 0.18 * r, 0.28 * r, 0.84 * r + bob, 0.78 * r * wScale, 0.16 * r, 0.92 * r + bob, '#cbd5e1', 2.6);
-        } else if (!isLotus) {
-          // M4A1 / Type-81 / AK-47 Assault Rifle held across chest (matching china_red_guard_diorama_ref.png!)
-          const gunCol = isGla ? '#78350f' : '#334155';
+        } else if (!isLotus && !isWorker) {
+          // M4A1 / Type-81 / AK-47 Assault Rifle held across chest (matching china_red_guard_diorama_ref.png & gla_rebel_diorama_ref.png!)
+          const gunCol = isGla ? '#334155' : '#334155';
           drawLine3D(c, upperProj, -0.14 * r - recDist, 0.26 * r, 0.88 * r + bob, 0.98 * r * wScale - recDist, 0.16 * r, 0.78 * r + bob, seamCol, 4.0);
           drawLine3D(c, upperProj, -0.14 * r - recDist, 0.26 * r, 0.88 * r + bob, 0.98 * r * wScale - recDist, 0.16 * r, 0.78 * r + bob, gunCol, 2.5);
           drawLine3D(c, upperProj, 0.32 * r - recDist, 0.22 * r, 0.82 * r + bob, 0.40 * r - recDist, 0.22 * r, 0.60 * r + bob, seamCol, 2.4);
@@ -5669,8 +6287,8 @@ const ZH_UNIT_MODELS = (function () {
     flushFaces(ctx, faces);
 
     // 5. Floating Ligne-Claire Comic Status Callout Bubble above Soldier
-    //    (Matches China & USA reference cards: Red Guard crosshair, Tank Hunter rocket, Hacker wifi, Black Lotus flower!)
-    if (p.showStatusBubble !== false && (opts.pitchScale !== undefined && opts.pitchScale < 0.95)) {
+    //    (Matches China, USA & GLA reference cards: Red Guard/Rebel crosshair, RPG Trooper blue shield, Jarmen Kell wrench, Tank Hunter rocket, Hacker wifi, Black Lotus flower!)
+    if (!isWorker && p.showStatusBubble !== false && (opts.pitchScale !== undefined && opts.pitchScale < 0.95)) {
       const bubbleTop = upperProj.project(0, 0, zHelmetTop + 0.85 * r);
       const bx = bubbleTop.x;
       const by = bubbleTop.y;
@@ -5709,6 +6327,38 @@ const ZH_UNIT_MODELS = (function () {
         ctx.beginPath();
         ctx.arc(cx + ir * 0.55, cy - ir * 0.55, ir * 0.28, 0, Math.PI * 2);
         ctx.fill();
+      } else if (defId === 'GLA_RPG_TROOPER' || defId === 'USA_MISSILE_DEFENDER') {
+        // Light-Blue Heater Shield Vector Icon (matching gla_rpg_trooper_diorama_ref.png & usa_missile_defender_diorama_ref.png!)
+        ctx.fillStyle = '#60a5fa';
+        ctx.strokeStyle = seamCol;
+        ctx.lineWidth = 1.25;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - ir * 0.85);
+        ctx.lineTo(cx + ir * 0.72, cy - ir * 0.52);
+        ctx.lineTo(cx + ir * 0.62, cy + ir * 0.18);
+        ctx.lineTo(cx, cy + ir * 0.88);
+        ctx.lineTo(cx - ir * 0.62, cy + ir * 0.18);
+        ctx.lineTo(cx - ir * 0.72, cy - ir * 0.52);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      } else if (defId === 'GLA_JARMEN_KELL' || defId === 'GLA_HIJACKER') {
+        // Diagonal Grey Wrench Vector Icon (matching gla_jarmen_kell_diorama_ref.png!)
+        ctx.strokeStyle = '#475569';
+        ctx.fillStyle = '#94a3b8';
+        ctx.lineWidth = 2.0;
+        ctx.beginPath();
+        ctx.moveTo(cx - ir * 0.65, cy + ir * 0.65);
+        ctx.lineTo(cx + ir * 0.45, cy - ir * 0.45);
+        ctx.stroke();
+        ctx.lineWidth = 1.25;
+        ctx.beginPath();
+        ctx.arc(cx + ir * 0.52, cy - ir * 0.52, ir * 0.34, 0.3, Math.PI * 1.65);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx - ir * 0.62, cy + ir * 0.62, ir * 0.22, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
       } else if (isHacker) {
         // Wireless signal arcs ((•)) (matching china_hacker_diorama_ref.png!)
         ctx.fillStyle = '#475569';
@@ -5737,8 +6387,8 @@ const ZH_UNIT_MODELS = (function () {
           ctx.stroke();
           ctx.restore();
         }
-      } else if (defId === 'CHINA_RED_GUARD' || defId === 'USA_RANGER') {
-        // Red Crosshair Reticle Icon (matching china_red_guard_diorama_ref.png!)
+      } else if (defId === 'CHINA_RED_GUARD' || defId === 'USA_RANGER' || defId === 'GLA_REBEL') {
+        // Red Crosshair Reticle Icon (matching china_red_guard_diorama_ref.png & gla_rebel_diorama_ref.png!)
         ctx.strokeStyle = '#dc2626';
         ctx.lineWidth = 1.35;
         ctx.beginPath();
@@ -5752,7 +6402,7 @@ const ZH_UNIT_MODELS = (function () {
         ctx.font = `${Math.max(10, Math.round(r * 0.62))}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const icon = isMissile ? '🛡️' : isPathfinder ? '🔭' : isBurton ? '💣' : isWorker ? '⛏️' : isTerrorist ? '🧨' : isMob ? '🔥' : '🎯';
+        const icon = isPathfinder ? '🔭' : isBurton ? '💣' : isTerrorist ? '🧨' : isMob ? '🔥' : '🎯';
         ctx.fillText(icon, cx, cy);
       }
       ctx.restore();
@@ -6269,7 +6919,7 @@ const ZH_UNIT_MODELS = (function () {
   function renderStealthFighterModel(ctx, u, faction, customParams, options) {
     const p = Object.assign({}, RAPTOR_DEFAULT_PARAMS, {
       armorBaseColor: '#334155',
-      armorHighlightColor: '#475569',
+      armorHighlightColor: '#4c586e',
       armorShadowColor: '#1e293b',
       glassColor: '#f59e0b',
       houseColor: '#dc2626'
@@ -6290,37 +6940,62 @@ const ZH_UNIT_MODELS = (function () {
     const zScale = opts.zScale !== undefined ? opts.zScale : 0.42;
 
     const armorBase = p.armorBaseColor || '#334155';
-    const armorHi = p.armorHighlightColor || '#475569';
+    const armorMid = '#3b4659';
+    const armorHi = p.armorHighlightColor || '#4c586e';
     const armorDark = p.armorShadowColor || '#1e293b';
     const seamCol = p.panelLineColor || '#26201b';
     const glassCol = p.glassColor || '#f59e0b';
 
     const proj = createProjector(hullAngle, pitchScale, zScale, 0, 0, 0, 0);
 
-    // Ground Contact Shadow
+    // Ground Contact Shadow (sharp W-tail delta silhouette)
     const shadowPts = [
-      proj.project(-1.08 * r * L, -1.28 * r * W, 0),
-      proj.project(1.40 * r * L, 0, 0),
-      proj.project(-1.08 * r * L, 1.28 * r * W, 0)
+      proj.project(-1.08 * r * L, -1.30 * r * W, 0),
+      proj.project(1.42 * r * L, 0, 0),
+      proj.project(-1.08 * r * L, 1.30 * r * W, 0),
+      proj.project(-0.88 * r * L, 0, 0)
     ].map((pt) => ({ x: pt.x + 5.0, y: pt.y + 7.0 }));
     drawPolyPts(ctx, shadowPts, 'rgba(30, 41, 59, 0.30)', null, 0);
 
     const faces = [];
     const zAir = 0.30 * r * H + hoverZ;
 
-    // 0. Tricycle Landing Gear Wheels + Twin GBU-27 Paveway III Bunker-Buster Laser-Guided Bombs
+    // 0. Tricycle Landing Gear (Nose Wheel + 2 Main Gear Wheels) & Finned GBU-27 Paveway III Bunker-Buster Bombs
     const mSlide = clamp(recoil * 0.09 * r, 0, 0.48 * r);
+    // Forward Nose Landing Gear Wheel under cockpit nose
+    faces.push({
+      depth: proj.project(0.56 * r * L, 0, zAir - 0.15 * r).depth - 0.50,
+      customDraw(c) {
+        const sPt = proj.project(0.58 * r * L, 0, zAir);
+        const wPt = proj.project(0.56 * r * L, 0, zAir - 0.15 * r);
+        c.strokeStyle = '#94a3b8';
+        c.lineWidth = 1.4;
+        c.beginPath();
+        c.moveTo(sPt.x, sPt.y);
+        c.lineTo(wPt.x, wPt.y);
+        c.stroke();
+
+        c.fillStyle = '#0f172a';
+        c.strokeStyle = seamCol;
+        c.lineWidth = 1.0;
+        c.beginPath();
+        c.arc(wPt.x, wPt.y, Math.max(1.8, 0.075 * r), 0, Math.PI * 2);
+        c.fill();
+        c.stroke();
+      }
+    });
+
     for (const side of [-1, 1]) {
-      // Main landing gear wheel under inner wing root
+      // Main landing gear wheel + oleo strut under inner wing root
       const wy = side * 0.38 * r * W;
       const wx = -0.22 * r * L;
       faces.push({
-        depth: proj.project(wx, wy, zAir - 0.14 * r).depth - 0.45,
+        depth: proj.project(wx, wy, zAir - 0.15 * r).depth - 0.45,
         customDraw(c) {
-          const sPt = proj.project(wx, wy * 0.9, zAir);
-          const wPt = proj.project(wx, wy, zAir - 0.14 * r);
-          c.strokeStyle = '#64748b';
-          c.lineWidth = 1.5;
+          const sPt = proj.project(wx, wy * 0.88, zAir);
+          const wPt = proj.project(wx, wy, zAir - 0.15 * r);
+          c.strokeStyle = '#94a3b8';
+          c.lineWidth = 1.6;
           c.beginPath();
           c.moveTo(sPt.x, sPt.y);
           c.lineTo(wPt.x, wPt.y);
@@ -6328,142 +7003,268 @@ const ZH_UNIT_MODELS = (function () {
 
           c.fillStyle = '#0f172a';
           c.strokeStyle = seamCol;
-          c.lineWidth = 1.0;
+          c.lineWidth = 1.05;
           c.beginPath();
-          c.arc(wPt.x, wPt.y, Math.max(2.0, 0.09 * r), 0, Math.PI * 2);
+          c.arc(wPt.x, wPt.y, Math.max(2.2, 0.095 * r), 0, Math.PI * 2);
           c.fill();
           c.stroke();
+
+          c.fillStyle = '#64748b';
+          c.beginPath();
+          c.arc(wPt.x, wPt.y, Math.max(0.9, 0.038 * r), 0, Math.PI * 2);
+          c.fill();
         }
       });
 
-      // Under-wing / Internal Bay GBU-27 Bunker-Buster Bomb (Olive/Slate casing + Yellow live-ordnance band + Paveway seeker tip)
+      // Under-wing / Internal Bay GBU-27 Paveway III Bunker-Buster Bomb with Cruciform Tail Fins & Seeker Nose
       if (p.showWingMissiles !== false) {
         const my = side * 0.64 * r * W;
-        pushTubeSegment3D(faces, proj, -0.48 * r * L + mSlide, my, zAir - 0.06 * r * H, 0, 0, 0.62 * r * L, 0.075 * r, 0.075 * r, '#475569', seamCol, 0.95, 0.08);
-        pushTubeSegment3D(faces, proj, 0.10 * r * L + mSlide, my, zAir - 0.06 * r * H, 0, 0, 0.18 * r * L, 0.075 * r, 0.035 * r, '#eab308', seamCol, 0.9, 0.10);
+        const mz = zAir - 0.07 * r * H;
+        pushTubeSegment3D(faces, proj, -0.50 * r * L + mSlide, my, mz, 0, 0, 0.60 * r * L, 0.078 * r, 0.078 * r, '#475569', seamCol, 0.95, 0.08);
+        // Yellow live-ordnance band + Paveway guidance collar + seeker nose tip
+        pushTubeSegment3D(faces, proj, 0.08 * r * L + mSlide, my, mz, 0, 0, 0.14 * r * L, 0.078 * r, 0.062 * r, '#eab308', seamCol, 0.9, 0.10);
+        pushTubeSegment3D(faces, proj, 0.22 * r * L + mSlide, my, mz, 0, 0, 0.14 * r * L, 0.058 * r, 0.020 * r, '#b45309', seamCol, 0.85, 0.12);
+        faces.push({
+          depth: proj.project(-0.46 * r * L + mSlide, my, mz).depth + 0.13,
+          customDraw(c) {
+            drawPolyPts(c, [
+              proj.project(-0.52 * r * L + mSlide, my - 0.13 * r * W, mz),
+              proj.project(-0.36 * r * L + mSlide, my, mz),
+              proj.project(-0.52 * r * L + mSlide, my + 0.13 * r * W, mz)
+            ], '#334155', seamCol, 0.85);
+          }
+        });
       }
     }
 
-    // 1. Sharp Swept F-117A Faceted Stealth Delta Wings (with W-shaped trailing edge matching usa_stealth_fighter_diorama_ref.png!)
+    // 1. Sharp Swept F-117A Faceted Stealth Delta Wings (with W-shaped trailing edge & beaver-tail center)
     const wingBot = [
       [-0.86 * r * L, 0, zAir],
-      [-1.04 * r * L, -0.44 * r * W, zAir],
-      [-0.82 * r * L, -1.28 * r * W, zAir],
+      [-1.06 * r * L, -0.44 * r * W, zAir],
+      [-0.82 * r * L, -1.30 * r * W, zAir],
       [0.36 * r * L, -0.36 * r * W, zAir],
-      [1.38 * r * L, 0, zAir],
+      [1.40 * r * L, 0, zAir],
       [0.36 * r * L, 0.36 * r * W, zAir],
-      [-0.82 * r * L, 1.28 * r * W, zAir],
-      [-1.04 * r * L, 0.44 * r * W, zAir]
+      [-0.82 * r * L, 1.30 * r * W, zAir],
+      [-1.06 * r * L, 0.44 * r * W, zAir]
     ];
     const wingTop = wingBot.map((pt) => [pt[0], pt[1], zAir + 0.11 * r * H]);
     pushFrustumFaces(faces, proj, wingBot, wingTop, armorBase, seamCol, 1.2, 0.20);
 
-    // 2. Angular Pyramid Faceted Stealth Fuselage Spine
+    // 2. Angular Pyramid Faceted Stealth Fuselage Spine (Forward Chined Nose + Upper Cockpit Pyramid + Flat-Sided Aft Engine Box)
     const fuseBot = [
-      [-0.92 * r * L, -0.36 * r * W, zAir + 0.11 * r * H],
-      [0.36 * r * L, -0.34 * r * W, zAir + 0.11 * r * H],
-      [1.26 * r * L, 0, zAir + 0.11 * r * H],
-      [0.36 * r * L, 0.34 * r * W, zAir + 0.11 * r * H],
-      [-0.92 * r * L, 0.36 * r * W, zAir + 0.11 * r * H]
+      [-0.96 * r * L, -0.40 * r * W, zAir + 0.11 * r * H],
+      [0.36 * r * L, -0.36 * r * W, zAir + 0.11 * r * H],
+      [1.36 * r * L, 0, zAir + 0.11 * r * H],
+      [0.36 * r * L, 0.36 * r * W, zAir + 0.11 * r * H],
+      [-0.96 * r * L, 0.40 * r * W, zAir + 0.11 * r * H]
     ];
     const fuseTop = [
-      [-0.56 * r * L, -0.14 * r * W, zAir + 0.44 * r * H],
-      [0.10 * r * L, -0.16 * r * W, zAir + 0.48 * r * H],
-      [0.64 * r * L, 0, zAir + 0.42 * r * H],
-      [0.10 * r * L, 0.16 * r * W, zAir + 0.48 * r * H],
-      [-0.56 * r * L, 0.14 * r * W, zAir + 0.44 * r * H]
+      [-0.60 * r * L, -0.16 * r * W, zAir + 0.44 * r * H],
+      [0.08 * r * L, -0.18 * r * W, zAir + 0.50 * r * H],
+      [0.64 * r * L, 0, zAir + 0.43 * r * H],
+      [0.08 * r * L, 0.18 * r * W, zAir + 0.50 * r * H],
+      [-0.60 * r * L, 0.16 * r * W, zAir + 0.44 * r * H]
     ];
     pushFrustumFaces(faces, proj, fuseBot, fuseTop, armorHi, seamCol, 1.2, 0.55);
 
-    // 3. Faceted Stealth Ridge Lines, Gridded Over-Wing Intakes, FLIR Sensor Well, Twin Pitot Prongs & 5-Pane Serrated Golden Canopy
-    const canDepth = proj.project(0.38 * r * L, 0, zAir + 0.48 * r * H).depth + 0.88;
+    // 3. Multi-Tone Origami Planar Facets, Cross-Hatched Over-Wing Intakes, FLIR Sensor Well, Stepped Pitot Prongs, USAF Insignia & 5-Pane Serrated Golden Canopy
+    const canDepth = proj.project(0.32 * r * L, 0, zAir + 0.50 * r * H).depth + 0.88;
     faces.push({
       depth: canDepth,
       customDraw(c) {
-        // Twin Nose Pitot Prongs at Diamond Apex
+        const zW = zAir + 0.115 * r * H;
+
+        // 3A. Stepped Twin Nose Pitot Prongs at Diamond Apex
         for (const side of [-1, 1]) {
-          drawLine3D(c, proj, 1.34 * r * L, side * 0.05 * r * W, zAir + 0.08 * r * H, 1.56 * r * L, side * 0.05 * r * W, zAir + 0.08 * r * H, seamCol, 1.3);
+          drawLine3D(c, proj, 1.34 * r * L, side * 0.045 * r * W, zAir + 0.09 * r * H, 1.58 * r * L, side * 0.045 * r * W, zAir + 0.09 * r * H, seamCol, 1.35);
+          drawLine3D(c, proj, 1.44 * r * L, side * 0.045 * r * W, zAir + 0.09 * r * H, 1.48 * r * L, side * 0.075 * r * W, zAir + 0.11 * r * H, '#64748b', 1.0);
         }
 
-        // Faceted Stealth Wing Triangles & Diagonal Ridge Seams
+        // 3B. Multi-Tone Planar Wing & Fuselage Origami Facets + Elevons + USAF Insignia
         for (const side of [-1, 1]) {
-          const outerFacet = [
-            proj.project(0.36 * r * L, side * 0.36 * r * W, zAir + 0.115 * r * H),
-            proj.project(-0.82 * r * L, side * 1.28 * r * W, zAir + 0.115 * r * H),
-            proj.project(-0.94 * r * L, side * 0.78 * r * W, zAir + 0.115 * r * H)
-          ];
-          drawPolyPts(c, outerFacet, armorDark, seamCol, 0.95);
+          // Outer Wing Mid-Slate Triangle Facet
+          drawPolyPts(c, [
+            proj.project(0.36 * r * L, side * 0.36 * r * W, zW),
+            proj.project(-0.42 * r * L, side * 0.94 * r * W, zW),
+            proj.project(-0.74 * r * L, side * 0.52 * r * W, zW)
+          ], armorMid, seamCol, 0.95);
 
-          // Ridge crease from fuselage shoulder to wingtip & trailing edge
-          drawLine3D(c, proj, 0.10 * r * L, side * 0.16 * r * W, zAir + 0.48 * r * H, 0.36 * r * L, side * 0.34 * r * W, zAir + 0.12 * r * H, seamCol, 1.05);
-          drawLine3D(c, proj, -0.56 * r * L, side * 0.14 * r * W, zAir + 0.44 * r * H, -0.92 * r * L, side * 0.36 * r * W, zAir + 0.12 * r * H, seamCol, 1.05);
+          // Wingtip Dark-Charcoal Triangle Facet
+          drawPolyPts(c, [
+            proj.project(-0.42 * r * L, side * 0.94 * r * W, zW),
+            proj.project(-0.82 * r * L, side * 1.30 * r * W, zW),
+            proj.project(-0.94 * r * L, side * 0.84 * r * W, zW),
+            proj.project(-0.74 * r * L, side * 0.52 * r * W, zW)
+          ], armorDark, seamCol, 0.95);
 
-          // Gridded Over-Wing Engine Intake Grille flanking the cockpit pyramid
-          const intakePts = [
-            proj.project(0.08 * r * L, side * 0.20 * r * W, zAir + 0.26 * r * H),
-            proj.project(0.30 * r * L, side * 0.28 * r * W, zAir + 0.18 * r * H),
-            proj.project(0.16 * r * L, side * 0.32 * r * W, zAir + 0.14 * r * H),
-            proj.project(-0.04 * r * L, side * 0.24 * r * W, zAir + 0.22 * r * H)
-          ];
-          drawPolyPts(c, intakePts, '#0f172a', seamCol, 1.0);
+          // Inboard & Outboard Trailing-Edge Elevon Control Surfaces
+          drawPolyPts(c, [
+            proj.project(-0.74 * r * L, side * 0.44 * r * W, zW),
+            proj.project(-0.82 * r * L, side * 0.84 * r * W, zW),
+            proj.project(-0.94 * r * L, side * 0.84 * r * W, zW),
+            proj.project(-1.05 * r * L, side * 0.44 * r * W, zW)
+          ], armorHi, seamCol, 0.90);
+          drawPolyPts(c, [
+            proj.project(-0.72 * r * L, side * 0.84 * r * W, zW),
+            proj.project(-0.74 * r * L, side * 1.22 * r * W, zW),
+            proj.project(-0.82 * r * L, side * 1.28 * r * W, zW),
+            proj.project(-0.94 * r * L, side * 0.84 * r * W, zW)
+          ], armorBase, seamCol, 0.90);
 
-          // Wide Flat Slot-Type Stealth Exhaust Trough at Trailing Edge
-          drawLine3D(c, proj, -0.88 * r * L, side * 0.08 * r * W, zAir + 0.12 * r * H, -1.00 * r * L, side * 0.40 * r * W, zAir + 0.12 * r * H, '#0f172a', 2.4);
+          // Forward Nose Cheek Planar Triangle Facet (Directional Lighting Contrast!)
+          drawPolyPts(c, [
+            proj.project(1.36 * r * L, 0, zW),
+            proj.project(0.64 * r * L, 0, zAir + 0.43 * r * H),
+            proj.project(0.36 * r * L, side * 0.36 * r * W, zW)
+          ], side > 0 ? armorHi : armorMid, seamCol, 1.05);
+
+          // Mid-Fuselage Shoulder Facet & Aft Flat-Sided Engine Box Facet
+          drawPolyPts(c, [
+            proj.project(0.36 * r * L, side * 0.36 * r * W, zW),
+            proj.project(0.08 * r * L, side * 0.18 * r * W, zAir + 0.50 * r * H),
+            proj.project(-0.60 * r * L, side * 0.16 * r * W, zAir + 0.44 * r * H),
+            proj.project(-0.96 * r * L, side * 0.40 * r * W, zW)
+          ], side > 0 ? armorMid : armorDark, seamCol, 1.05);
+
+          // Ridge creases across pyramid hull
+          drawLine3D(c, proj, 0.64 * r * L, 0, zAir + 0.43 * r * H, 0.36 * r * L, side * 0.36 * r * W, zW, seamCol, 1.1);
+          drawLine3D(c, proj, 0.08 * r * L, side * 0.18 * r * W, zAir + 0.50 * r * H, 0.36 * r * L, side * 0.36 * r * W, zW, seamCol, 1.1);
+          drawLine3D(c, proj, -0.32 * r * L, side * 0.17 * r * W, zAir + 0.47 * r * H, -0.44 * r * L, side * 0.38 * r * W, zW, seamCol, 0.95);
+          drawLine3D(c, proj, -0.60 * r * L, side * 0.16 * r * W, zAir + 0.44 * r * H, -0.96 * r * L, side * 0.40 * r * W, zW, seamCol, 1.1);
+
+          // Large Rectangular Cross-Hatched Over-Wing Engine Intake Grille on Pyramid Shoulder
+          const ix0 = 0.00 * r * L;
+          const ix1 = 0.32 * r * L;
+          const iy0 = side * 0.20 * r * W;
+          const iy1 = side * 0.34 * r * W;
+          const iz0 = zAir + 0.28 * r * H;
+          const iz1 = zAir + 0.14 * r * H;
+          drawPolyPts(c, [
+            proj.project(ix0, iy0, iz0),
+            proj.project(ix1, iy0 * 0.95, iz0 - 0.02 * r * H),
+            proj.project(ix1 - 0.04 * r * L, iy1, iz1),
+            proj.project(ix0 - 0.06 * r * L, iy1 * 0.96, iz1 + 0.02 * r * H)
+          ], '#0f172a', seamCol, 1.05);
+          // Cross-hatch grille bars inside intake
+          for (const t of [0.28, 0.52, 0.76]) {
+            const gx = lerp(ix0, ix1, t);
+            drawLine3D(c, proj, gx, iy0, iz0 - 0.01 * r * H, gx - 0.04 * r * L, iy1, iz1 + 0.01 * r * H, '#475569', 0.85);
+          }
+          drawLine3D(c, proj, ix0 - 0.02 * r * L, (iy0 + iy1) * 0.5, (iz0 + iz1) * 0.5, ix1 - 0.02 * r * L, (iy0 + iy1) * 0.5, (iz0 + iz1) * 0.5, '#475569', 0.85);
+
+          // Wide Flat Beaver-Tail Slot Exhaust Trough at Trailing Edge + Subtle Amber Heat Shimmer
+          drawPolyPts(c, [
+            proj.project(-0.88 * r * L, side * 0.05 * r * W, zAir + 0.14 * r * H),
+            proj.project(-1.03 * r * L, side * 0.42 * r * W, zAir + 0.14 * r * H),
+            proj.project(-1.06 * r * L, side * 0.42 * r * W, zAir + 0.09 * r * H),
+            proj.project(-0.91 * r * L, side * 0.05 * r * W, zAir + 0.09 * r * H)
+          ], '#0f172a', seamCol, 1.0);
+          drawLine3D(c, proj, -0.90 * r * L, side * 0.08 * r * W, zAir + 0.115 * r * H, -1.03 * r * L, side * 0.39 * r * W, zAir + 0.115 * r * H, recoil > 0.2 ? '#fbbf24' : '#d97706', 1.4);
+
+          // Low-Vis USAF Star-and-Bars Insignia on Outer Wing & Aft Fuselage Side Facet
+          const wStar = proj.project(-0.62 * r * L, side * 0.72 * r * W, zW + 0.005 * r * H);
+          drawLine3D(c, proj, -0.62 * r * L, side * 0.63 * r * W, zW + 0.005 * r * H, -0.62 * r * L, side * 0.81 * r * W, zW + 0.005 * r * H, '#94a3b8', 1.6);
+          c.fillStyle = '#cbd5e1';
+          c.strokeStyle = seamCol;
+          c.lineWidth = 0.75;
+          c.beginPath();
+          c.arc(wStar.x, wStar.y, Math.max(1.6, 0.058 * r), 0, Math.PI * 2);
+          c.fill();
+          c.stroke();
+
+          // Fuselage Side Star-and-Bars + Squadron Shield Badge
+          const fStar = proj.project(-0.46 * r * L, side * 0.28 * r * W, zAir + 0.26 * r * H);
+          drawLine3D(c, proj, -0.54 * r * L, side * 0.28 * r * W, zAir + 0.26 * r * H, -0.38 * r * L, side * 0.28 * r * W, zAir + 0.26 * r * H, '#94a3b8', 1.4);
+          c.fillStyle = '#94a3b8';
+          c.beginPath();
+          c.arc(fStar.x, fStar.y, Math.max(1.4, 0.048 * r), 0, Math.PI * 2);
+          c.fill();
+
+          const badgePt = proj.project(-0.18 * r * L, side * 0.25 * r * W, zAir + 0.30 * r * H);
+          c.fillStyle = '#cbd5e1';
+          c.beginPath();
+          c.arc(badgePt.x, badgePt.y, Math.max(1.2, 0.040 * r), 0, Math.PI * 2);
+          c.fill();
+
+          // Red-Bordered White Rescue Triangle & Red Cheek Warning Stencils below Cockpit
+          const triPt = proj.project(0.46 * r * L, side * 0.21 * r * W, zAir + 0.24 * r * H);
+          c.fillStyle = '#fef2f2';
+          c.strokeStyle = '#dc2626';
+          c.lineWidth = 1.0;
+          c.beginPath();
+          c.arc(triPt.x, triPt.y, Math.max(1.5, 0.048 * r), 0, Math.PI * 2);
+          c.fill();
+          c.stroke();
+          drawLine3D(c, proj, 0.62 * r * L, side * 0.16 * r * W, zAir + 0.22 * r * H, 0.72 * r * L, side * 0.19 * r * W, zAir + 0.19 * r * H, '#dc2626', 1.3);
         }
 
-        // Central Nose Spine Ridge Line & Recessed Golden FLIR Sensor Well ahead of Canopy
-        drawLine3D(c, proj, 0.64 * r * L, 0, zAir + 0.42 * r * H, 1.38 * r * L, 0, zAir + 0.11 * r * H, seamCol, 1.15);
-        const flirPt = proj.project(0.84 * r * L, 0, zAir + 0.29 * r * H);
-        c.fillStyle = glassCol;
-        c.strokeStyle = seamCol;
-        c.lineWidth = 0.9;
+        // 3C. Central Nose Spine Ridge Line & Recessed Diamond Golden FLIR Sensor Turret Well ahead of Canopy
+        drawLine3D(c, proj, 0.64 * r * L, 0, zAir + 0.43 * r * H, 1.38 * r * L, 0, zAir + 0.11 * r * H, seamCol, 1.25);
+        drawPolyPts(c, [
+          proj.project(0.96 * r * L, 0, zAir + 0.25 * r * H),
+          proj.project(0.84 * r * L, -0.07 * r * W, zAir + 0.29 * r * H),
+          proj.project(0.74 * r * L, 0, zAir + 0.34 * r * H),
+          proj.project(0.84 * r * L, 0.07 * r * W, zAir + 0.29 * r * H)
+        ], '#0f172a', seamCol, 0.95);
+        const flirPt = proj.project(0.84 * r * L, 0, zAir + 0.30 * r * H);
+        c.fillStyle = '#fbbf24';
         c.beginPath();
-        c.arc(flirPt.x, flirPt.y, Math.max(1.6, 0.065 * r), 0, Math.PI * 2);
-        c.fill();
-        c.stroke();
-
-        // Red Rescue/Danger Triangle Marking below Cockpit Cheek
-        const redPt = proj.project(0.52 * r * L, -0.22 * r * W, zAir + 0.22 * r * H);
-        c.fillStyle = '#dc2626';
-        c.beginPath();
-        c.arc(redPt.x, redPt.y, Math.max(1.5, 0.055 * r), 0, Math.PI * 2);
+        c.arc(flirPt.x, flirPt.y, Math.max(1.5, 0.052 * r), 0, Math.PI * 2);
         c.fill();
 
-        // 5-Pane Serrated Golden-Amber Stealth Canopy (Front V-Panes + Side Trapezoid Panes)
+        // 3D. 5-Pane Serrated Golden-Amber Stealth Canopy (2 Front V-Windshield Panes + 2 Side Trapezoid Panes + 1 Top Crown Triangle Pane)
         for (const side of [-1, 1]) {
           const frontPane = [
-            [0.34 * r * L, side * 0.02 * r * W, zAir + 0.45 * r * H],
-            [0.34 * r * L, side * 0.18 * r * W, zAir + 0.27 * r * H],
-            [0.64 * r * L, side * 0.11 * r * W, zAir + 0.23 * r * H],
-            [0.62 * r * L, side * 0.02 * r * W, zAir + 0.41 * r * H]
+            [0.34 * r * L, side * 0.025 * r * W, zAir + 0.46 * r * H],
+            [0.34 * r * L, side * 0.185 * r * W, zAir + 0.27 * r * H],
+            [0.64 * r * L, side * 0.115 * r * W, zAir + 0.23 * r * H],
+            [0.62 * r * L, side * 0.020 * r * W, zAir + 0.42 * r * H]
           ];
           const sidePane = [
-            [0.06 * r * L, side * 0.03 * r * W, zAir + 0.47 * r * H],
-            [0.06 * r * L, side * 0.21 * r * W, zAir + 0.28 * r * H],
-            [0.31 * r * L, side * 0.18 * r * W, zAir + 0.27 * r * H],
-            [0.31 * r * L, side * 0.03 * r * W, zAir + 0.45 * r * H]
+            [0.04 * r * L, side * 0.035 * r * W, zAir + 0.48 * r * H],
+            [0.04 * r * L, side * 0.215 * r * W, zAir + 0.28 * r * H],
+            [0.31 * r * L, side * 0.185 * r * W, zAir + 0.27 * r * H],
+            [0.31 * r * L, side * 0.030 * r * W, zAir + 0.46 * r * H]
           ];
-          drawGlassPane3D(c, proj, sidePane, glassCol, seamCol, 1.1);
-          drawGlassPane3D(c, proj, frontPane, '#fbbf24', seamCol, 1.1);
+          drawGlassPane3D(c, proj, sidePane, glassCol, seamCol, 1.15);
+          drawGlassPane3D(c, proj, frontPane, '#fbbf24', seamCol, 1.15);
         }
+        // Top Rear 5th Triangular Crown Pane + Red Dorsal Rescue Stencil
+        const topCrownPane = [
+          [-0.14 * r * L, 0, zAir + 0.48 * r * H],
+          [0.04 * r * L, -0.09 * r * W, zAir + 0.49 * r * H],
+          [0.26 * r * L, 0, zAir + 0.49 * r * H],
+          [0.04 * r * L, 0.09 * r * W, zAir + 0.49 * r * H]
+        ];
+        drawGlassPane3D(c, proj, topCrownPane, '#fef08a', seamCol, 1.05);
+        drawLine3D(c, proj, -0.26 * r * L, -0.05 * r * W, zAir + 0.47 * r * H, -0.26 * r * L, 0.05 * r * W, zAir + 0.47 * r * H, '#dc2626', 1.4);
       }
     });
 
-    // 4. Canted V-Tail Butterfly Stabilizers
+    // 4. Tall Canted V-Tail Butterfly Stabilizers (with Multi-Faceted Crease & Rudder Seam)
     for (const side of [-1, 1]) {
-      const yBase = side * 0.18 * r * W;
-      const yTip = side * 0.44 * r * W;
+      const yBase = side * 0.16 * r * W;
+      const yTip = side * 0.46 * r * W;
       const finPts = [
-        proj.project(-0.96 * r * L, yBase, zAir + 0.14 * r * H),
-        proj.project(-0.48 * r * L, yBase, zAir + 0.18 * r * H),
-        proj.project(-0.66 * r * L, yTip, zAir + 0.66 * r * H),
-        proj.project(-0.98 * r * L, yTip, zAir + 0.62 * r * H)
+        proj.project(-0.96 * r * L, yBase, zAir + 0.16 * r * H),
+        proj.project(-0.46 * r * L, yBase, zAir + 0.20 * r * H),
+        proj.project(-0.64 * r * L, yTip, zAir + 0.70 * r * H),
+        proj.project(-0.98 * r * L, yTip, zAir + 0.65 * r * H)
+      ];
+      const finAftPts = [
+        proj.project(-0.96 * r * L, yBase, zAir + 0.16 * r * H),
+        proj.project(-0.76 * r * L, yBase, zAir + 0.18 * r * H),
+        proj.project(-0.82 * r * L, yTip, zAir + 0.67 * r * H),
+        proj.project(-0.98 * r * L, yTip, zAir + 0.65 * r * H)
       ];
       faces.push({
-        depth: proj.project(-0.74 * r * L, yTip, zAir + 0.46 * r * H).depth + 1.05,
+        depth: proj.project(-0.74 * r * L, yTip, zAir + 0.48 * r * H).depth + 1.05,
         customDraw(c) {
-          drawPolyPts(c, finPts, armorDark, seamCol, 1.15);
-          drawLine3D(c, proj, -0.78 * r * L, yBase, zAir + 0.16 * r * H, -0.82 * r * L, yTip, zAir + 0.64 * r * H, seamCol, 0.95);
+          drawPolyPts(c, finPts, side > 0 ? armorMid : armorDark, seamCol, 1.15);
+          drawPolyPts(c, finAftPts, armorDark, seamCol, 0.95);
+          // Fin tip cap highlight
+          drawLine3D(c, proj, -0.64 * r * L, yTip, zAir + 0.70 * r * H, -0.98 * r * L, yTip, zAir + 0.65 * r * H, '#94a3b8', 1.3);
         }
       });
     }
@@ -7500,13 +8301,17 @@ const ZH_UNIT_MODELS = (function () {
   }
 
   function renderGlaTankModel(ctx, u, faction, customParams, options) {
+    const defId = String((u && u.defId) || 'GLA_SCORPION');
+    const isOliveDefault = defId === 'GLA_MARAUDER' || defId === 'GLA_QUAD_CANNON' || defId === 'GLA_TOXIN_TRACTOR';
     const p = Object.assign({
       hullScale: 1.0, hullLength: 1.0, hullWidth: 1.0, extrusionDepth: 1.0,
       turretScale: 1.0, barrelLength: 1.0, ScrapLevel: true, ShowUpgradeKit: true,
-      armorBaseColor: '#c4ab72', armorHighlightColor: '#dcbf84', armorShadowColor: '#8c7444', houseColor: '#587838'
+      armorBaseColor: isOliveDefault ? '#637349' : '#d6b278',
+      armorHighlightColor: isOliveDefault ? '#7a8c5b' : '#e8c992',
+      armorShadowColor: isOliveDefault ? '#445032' : '#9c7a44',
+      houseColor: '#587838'
     }, customParams || {});
     const opts = options || {};
-    const defId = String((u && u.defId) || 'GLA_SCORPION');
     const rawR = (u && u.radius) || 18;
     const r = rawR * (p.hullScale || 1.0);
     const L = p.hullLength || 1.0, W = p.hullWidth || 1.0, H = p.extrusionDepth || 1.0;
@@ -7519,78 +8324,319 @@ const ZH_UNIT_MODELS = (function () {
     const pitchScale = opts.pitchScale !== undefined ? opts.pitchScale : 1.0;
     const zScale = opts.zScale !== undefined ? opts.zScale : 0.42;
 
-    const sandBase = p.armorBaseColor || '#c4ab72';
-    const sandHi   = p.armorHighlightColor || '#dcbf84';
-    const sandDark = p.armorShadowColor || '#8c7444';
-    const olive    = p.houseColor || '#587838';
-    const seamCol  = '#241c12';
+    const baseCol = p.armorBaseColor || (isOliveDefault ? '#637349' : '#d6b278');
+    const hiCol   = p.armorHighlightColor || (isOliveDefault ? '#7a8c5b' : '#e8c992');
+    const darkCol = p.armorShadowColor || (isOliveDefault ? '#445032' : '#9c7a44');
+    const olive   = p.houseColor || '#587838';
+    const seamCol = '#241c12';
 
     const hullProj = createProjector(hullAngle, pitchScale, zScale, 0, 0, 0, 0);
     const shadowPts = [
-      hullProj.project(-1.10 * r * L, -0.82 * r * W, 0),
-      hullProj.project( 1.10 * r * L, -0.82 * r * W, 0),
-      hullProj.project( 1.10 * r * L,  0.82 * r * W, 0),
-      hullProj.project(-1.10 * r * L,  0.82 * r * W, 0)
+      hullProj.project(-1.14 * r * L, -0.84 * r * W, 0),
+      hullProj.project( 1.14 * r * L, -0.84 * r * W, 0),
+      hullProj.project( 1.14 * r * L,  0.84 * r * W, 0),
+      hullProj.project(-1.14 * r * L,  0.84 * r * W, 0)
     ].map((pt) => ({ x: pt.x + 3.0, y: pt.y + 4.0 }));
     drawPolyPts(ctx, shadowPts, 'rgba(60, 48, 32, 0.35)', null, 0);
 
     const hullFaces = [];
-    pushTrackedSuspension3D(hullFaces, hullProj, r, -1.04 * r * L, 1.04 * r * L, 0.46 * r * W, 0.80 * r * W, 0.24 * r * H, 5, sandDark, seamCol, treadPhase, true, -2.0);
-    pushBox3D(hullFaces, hullProj, -1.02 * r * L, 1.02 * r * L, -0.76 * r * W, 0.76 * r * W, 0.16 * r * H, 0.44 * r * H, sandBase, seamCol, 1.15, 0, 0.10 * r * L, 0.05 * r * W);
-
-    if (defId === 'GLA_MARAUDER') {
-      // Front Salvage Scrap Dozer Shield
-      pushBox3D(hullFaces, hullProj, 0.96 * r * L, 1.14 * r * L, -0.84 * r * W, 0.84 * r * W, 0.12 * r * H, 0.42 * r * H, olive, seamCol, 1.15, 0.45);
-    } else if (defId === 'GLA_TOXIN_TRACTOR') {
-      // Twin Glowing Lime-Green Anthrax Vats on Rear Deck
-      for (const side of [-1, 1]) {
-        pushBox3D(hullFaces, hullProj, -0.94 * r * L, -0.12 * r * L, side * 0.14 * r * W, side * 0.70 * r * W, 0.44 * r * H, 0.78 * r * H, '#65a30d', seamCol, 1.15, 0.55);
-      }
-    }
-    flushFaces(ctx, hullFaces);
-
-    const turProj = createProjector(turretAngle, pitchScale, zScale, 0.02 * r * L, 0, 0, hullAngle);
-    const turFaces = [];
-    const zTurBot = 0.44 * r * H;
-    const zTurTop = 0.78 * r * H;
     const recDist = clamp(recoil * 0.04 * r, 0, 0.22 * r);
 
+    // =========================================================================
+    // CASE A: GLA TOXIN TRACTOR (6-Wheeled Tractor Truck + 3 Glowing Anthrax Vats)
+    //         Matches assets/refs/gla_toxin_tractor_diorama_ref.png
+    // =========================================================================
+    if (defId === 'GLA_TOXIN_TRACTOR') {
+      // 3 Axles (6 heavy off-road wheels with olive hubs)
+      for (const ax of [-0.78, -0.20, 0.64]) {
+        pushWheelAxle3D(hullFaces, hullProj, ax * r * L, 0.64 * r * W, 0.29 * r, 0.22 * r * W, '#242220', darkCol, seamCol, treadPhase, -1.6);
+      }
+      // Lower flatbed chassis frame
+      pushBox3D(hullFaces, hullProj, -1.08 * r * L, 1.04 * r * L, -0.72 * r * W, 0.72 * r * W, 0.16 * r * H, 0.40 * r * H, baseCol, seamCol, 1.15, 0, 0.04 * r * L, 0.03 * r * W);
+      // Front wheel fenders (lighter olive-tan trim)
+      for (const side of [-1, 1]) {
+        pushBox3D(hullFaces, hullProj, 0.42 * r * L, 0.88 * r * L, side * 0.56 * r * W, side * 0.78 * r * W, 0.28 * r * H, 0.44 * r * H, hiCol, seamCol, 1.05, 0.22);
+      }
+      // Forward armored tractor engine & cab block
+      pushBox3D(hullFaces, hullProj, 0.22 * r * L, 1.04 * r * L, -0.58 * r * W, 0.58 * r * W, 0.40 * r * H, 0.82 * r * H, hiCol, seamCol, 1.18, 0.35, 0.06 * r * L, 0.04 * r * W);
+      // Front bumper bar & dark radiator grille
+      pushBox3D(hullFaces, hullProj, 1.00 * r * L, 1.10 * r * L, -0.68 * r * W, 0.68 * r * W, 0.14 * r * H, 0.28 * r * H, darkCol, seamCol, 1.1, 0.42);
+      hullFaces.push({
+        depth: hullProj.project(1.05 * r * L, 0, 0.58 * r * H).depth + 0.55,
+        customDraw(c) {
+          // Dark vertical-slat front radiator grille
+          const gQuad = [
+            [1.05 * r * L, -0.38 * r * W, 0.42 * r * H],
+            [1.05 * r * L,  0.38 * r * W, 0.42 * r * H],
+            [1.05 * r * L,  0.36 * r * W, 0.72 * r * H],
+            [1.05 * r * L, -0.36 * r * W, 0.72 * r * H]
+          ];
+          drawGlassPane3D(c, hullProj, gQuad, '#1e293b', seamCol, 1.1);
+          // Side cab vision slit
+          for (const side of [-1, 1]) {
+            const sQuad = [
+              [0.36 * r * L, side * 0.59 * r * W, 0.56 * r * H],
+              [0.68 * r * L, side * 0.59 * r * W, 0.56 * r * H],
+              [0.66 * r * L, side * 0.59 * r * W, 0.72 * r * H],
+              [0.38 * r * L, side * 0.59 * r * W, 0.72 * r * H]
+            ];
+            drawGlassPane3D(c, hullProj, sQuad, '#334155', seamCol, 1.0);
+          }
+        }
+      });
+
+      // Three Tall Vertical Cylindrical Glowing Neon-Green Anthrax Vats on Rear Flatbed
+      const vatPositions = [
+        [-0.78 * r * L, -0.34 * r * W],
+        [-0.78 * r * L,  0.34 * r * W],
+        [-0.22 * r * L, -0.34 * r * W]
+      ];
+      for (let i = 0; i < vatPositions.length; i++) {
+        const [vx, vy] = vatPositions[i];
+        const dOff = 0.65 + i * 0.08;
+        // Bottom metal pedestal ring
+        pushCylinderZ3D(hullFaces, hullProj, vx, vy, 0.40 * r * H, 0.48 * r * H, 0.24 * r, 0.24 * r, 10, '#64748b', seamCol, 1.05, dOff);
+        // Glowing neon-green glass bio-toxin cylinder
+        pushCylinderZ3D(hullFaces, hullProj, vx, vy, 0.48 * r * H, 1.08 * r * H, 0.22 * r, 0.22 * r, 10, '#4ade80', seamCol, 1.15, dOff + 0.05);
+        // Stepped grey metal top cap & valve dome
+        pushCylinderZ3D(hullFaces, hullProj, vx, vy, 1.08 * r * H, 1.18 * r * H, 0.24 * r, 0.20 * r, 10, '#94a3b8', seamCol, 1.1, dOff + 0.12);
+        pushCylinderZ3D(hullFaces, hullProj, vx, vy, 1.18 * r * H, 1.26 * r * H, 0.12 * r, 0.10 * r, 8, '#475569', seamCol, 1.0, dOff + 0.16);
+        // Bio-bubbles inside each glowing green vat
+        hullFaces.push({
+          depth: hullProj.project(vx + 0.12 * r, vy + 0.12 * r, 0.78 * r * H).depth + dOff + 0.09,
+          customDraw(c) {
+            for (const [bz, br] of [[0.64, 0.045], [0.82, 0.06], [0.95, 0.038]]) {
+              const bPt = hullProj.project(vx + 0.08 * r, vy + 0.08 * r, bz * r * H);
+              c.fillStyle = '#bbf7d0';
+              c.beginPath();
+              c.arc(bPt.x, bPt.y, Math.max(1.3, br * r), 0, Math.PI * 2);
+              c.fill();
+            }
+          }
+        });
+      }
+      flushFaces(ctx, hullFaces);
+
+      // Slewing Bio-Toxin Sprayer Nozzle mounted on right-rear deck / cab shoulder
+      const turProj = createProjector(turretAngle, pitchScale, zScale, 0.18 * r * L, 0.26 * r * W, 0, hullAngle);
+      const turFaces = [];
+      pushCylinderZ3D(turFaces, turProj, 0, 0, 0.42 * r * H, 0.78 * r * H, 0.18 * r * TS, 0.15 * r * TS, 8, baseCol, seamCol, 1.1, 1.0);
+      pushTubeSegment3D(turFaces, turProj, 0.10 * r * TS, 0, 0.66 * r * H, 0.05, 0, 0.92 * r * BL, 0.085 * r, 0.11 * r, '#4ade80', seamCol, 1.15, 1.45);
+      flushFaces(ctx, turFaces);
+      return;
+    }
+
+    // =========================================================================
+    // CASE B: GLA QUAD CANNON (Armored Half-Track + Twin Boxy Quad-AA Pods)
+    //         Matches assets/refs/gla_quad_cannon_diorama_ref.png
+    // =========================================================================
     if (defId === 'GLA_QUAD_CANNON') {
-      pushBox3D(turFaces, turProj, -0.44 * r * TS, 0.36 * r * TS, -0.48 * r * TS, 0.48 * r * TS, zTurBot, zTurTop + 0.12 * r * H, olive, seamCol, 1.15, 1.0, 0.05 * r, 0.05 * r);
-      for (const sy of [-0.22 * r * TS, 0.22 * r * TS]) {
-        for (const sz of [zTurBot + 0.14 * r * H, zTurBot + 0.32 * r * H]) {
-          pushTubeSegment3D(turFaces, turProj, 0.18 * r * TS - recDist, sy, sz, 0.12, 0, 0.96 * r * BL, 0.055 * r, 0.048 * r, '#334155', seamCol, 1.0, 1.45);
+      // Rear 4-wheel tracked bogie (-1.08*r..0.24*r) + Front steered rubber wheel axle (0.72*r)
+      pushTrackedSuspension3D(hullFaces, hullProj, r, -1.08 * r * L, 0.24 * r * L, 0.46 * r * W, 0.78 * r * W, 0.24 * r * H, 4, darkCol, seamCol, treadPhase, true, -2.0);
+      pushWheelAxle3D(hullFaces, hullProj, 0.72 * r * L, 0.62 * r * W, 0.28 * r, 0.20 * r * W, '#242220', '#9c9458', seamCol, treadPhase, -1.5);
+
+      // Rear flatbed deck + Front engine hood & armored half-track cab
+      pushBox3D(hullFaces, hullProj, -1.08 * r * L, 0.28 * r * L, -0.74 * r * W, 0.74 * r * W, 0.18 * r * H, 0.42 * r * H, baseCol, seamCol, 1.15, 0, 0.04 * r * L, 0.04 * r * W);
+      // Warm olive-tan front wheel fenders
+      for (const side of [-1, 1]) {
+        pushBox3D(hullFaces, hullProj, 0.46 * r * L, 0.98 * r * L, side * 0.52 * r * W, side * 0.78 * r * W, 0.26 * r * H, 0.42 * r * H, '#9c9458', seamCol, 1.08, 0.18);
+      }
+      // Long front engine hood (x = 0.28*r..1.08*r)
+      pushBox3D(hullFaces, hullProj, 0.28 * r * L, 1.08 * r * L, -0.52 * r * W, 0.52 * r * W, 0.20 * r * H, 0.56 * r * H, baseCol, seamCol, 1.15, 0.28, 0.06 * r * L, 0.04 * r * W);
+      // Armored enclosed cab behind hood (x = -0.22*r..0.34*r)
+      pushBox3D(hullFaces, hullProj, -0.22 * r * L, 0.34 * r * L, -0.60 * r * W, 0.60 * r * W, 0.40 * r * H, 0.80 * r * H, hiCol, seamCol, 1.18, 0.45, 0.08 * r * L, 0.05 * r * W);
+
+      // Split 2-pane blue-grey windshield, side windows, front grille & headlights
+      hullFaces.push({
+        depth: hullProj.project(0.36 * r * L, 0, 0.62 * r * H).depth + 0.58,
+        customDraw(c) {
+          for (const side of [-1, 1]) {
+            const wQuad = [
+              [0.35 * r * L, side * 0.05 * r * W, 0.46 * r * H],
+              [0.35 * r * L, side * 0.50 * r * W, 0.46 * r * H],
+              [0.27 * r * L, side * 0.46 * r * W, 0.72 * r * H],
+              [0.27 * r * L, side * 0.05 * r * W, 0.72 * r * H]
+            ];
+            drawGlassPane3D(c, hullProj, wQuad, '#64748b', seamCol, 1.05);
+          }
+          // Front radiator grille & headlights on nose
+          const gQuad = [
+            [1.09 * r * L, -0.34 * r * W, 0.24 * r * H],
+            [1.09 * r * L,  0.34 * r * W, 0.24 * r * H],
+            [1.09 * r * L,  0.32 * r * W, 0.50 * r * H],
+            [1.09 * r * L, -0.32 * r * W, 0.50 * r * H]
+          ];
+          drawGlassPane3D(c, hullProj, gQuad, '#334155', seamCol, 1.05);
+          for (const side of [-1, 1]) {
+            const hl = hullProj.project(1.09 * r * L, side * 0.42 * r * W, 0.40 * r * H);
+            c.fillStyle = '#fef3c7';
+            c.strokeStyle = seamCol;
+            c.lineWidth = 1.0;
+            c.beginPath();
+            c.arc(hl.x, hl.y, Math.max(1.5, 0.055 * r), 0, Math.PI * 2);
+            c.fill();
+            c.stroke();
+          }
+        }
+      });
+      flushFaces(ctx, hullFaces);
+
+      // Rear-Mounted 360° Slewing Quad-AA Turret (Twin Boxy Olive Weapon Pods + Recessed Copper/Red Quad Muzzles)
+      const turProj = createProjector(turretAngle, pitchScale, zScale, -0.58 * r * L, 0, 0, hullAngle);
+      const turFaces = [];
+      const zTurBot = 0.42 * r * H;
+      pushCylinderZ3D(turFaces, turProj, 0, 0, zTurBot, zTurBot + 0.16 * r * H, 0.34 * r * TS, 0.30 * r * TS, 10, darkCol, seamCol, 1.1, 0.9);
+      // Central trunnion pillar
+      pushBox3D(turFaces, turProj, -0.26 * r * TS, 0.18 * r * TS, -0.14 * r * TS, 0.14 * r * TS, zTurBot + 0.14 * r * H, zTurBot + 0.62 * r * H, baseCol, seamCol, 1.12, 1.05);
+      // Twin Large Boxy Rectangular Weapon Pods (left & right of trunnion)
+      for (const side of [-1, 1]) {
+        const py0 = side < 0 ? -0.50 * r * TS : 0.14 * r * TS;
+        const py1 = side < 0 ? -0.14 * r * TS : 0.50 * r * TS;
+        pushBox3D(turFaces, turProj, -0.44 * r * TS - recDist * 0.5, 0.42 * r * TS - recDist * 0.5, py0, py1, zTurBot + 0.18 * r * H, zTurBot + 0.68 * r * H, hiCol, seamCol, 1.18, 1.2, 0.03 * r, 0.02 * r);
+        // Recessed copper-red front muzzle plate on each pod
+        turFaces.push({
+          depth: turProj.project(0.43 * r * TS - recDist * 0.5, (py0 + py1) * 0.5, zTurBot + 0.43 * r * H).depth + 1.32,
+          customDraw(c) {
+            const mQuad = [
+              [0.43 * r * TS - recDist * 0.5, py0 + 0.04 * r * TS, zTurBot + 0.24 * r * H],
+              [0.43 * r * TS - recDist * 0.5, py1 - 0.04 * r * TS, zTurBot + 0.24 * r * H],
+              [0.43 * r * TS - recDist * 0.5, py1 - 0.04 * r * TS, zTurBot + 0.62 * r * H],
+              [0.43 * r * TS - recDist * 0.5, py0 + 0.04 * r * TS, zTurBot + 0.62 * r * H]
+            ];
+            drawGlassPane3D(c, turProj, mQuad, '#9a3412', seamCol, 1.05);
+          }
+        });
+        // 4 Dual-Tier AA Barrels protruding from the two pods
+        for (const sz of [zTurBot + 0.30 * r * H, zTurBot + 0.52 * r * H]) {
+          pushTubeSegment3D(turFaces, turProj, 0.38 * r * TS - recDist, (py0 + py1) * 0.5, sz, 0.10, 0, 0.52 * r * BL, 0.048 * r, 0.042 * r, '#334155', seamCol, 1.0, 1.48);
         }
       }
-    } else if (defId === 'GLA_TOXIN_TRACTOR') {
-      pushBox3D(turFaces, turProj, -0.18 * r * TS, 0.42 * r * TS, -0.36 * r * TS, 0.36 * r * TS, zTurBot, zTurTop, olive, seamCol, 1.15, 1.0);
-      pushTubeSegment3D(turFaces, turProj, 0.36 * r * TS, 0, (zTurBot + zTurTop) * 0.52, 0.04, 0, 0.88 * r * BL, 0.095 * r, 0.12 * r, '#84cc16', seamCol, 1.15, 1.45);
-    } else if (defId === 'GLA_MARAUDER') {
-      pushBox3D(turFaces, turProj, -0.48 * r * TS, 0.48 * r * TS, -0.54 * r * TS, 0.54 * r * TS, zTurBot, zTurTop + 0.06 * r * H, sandHi, seamCol, 1.18, 1.0, 0.08 * r, 0.06 * r);
+      flushFaces(ctx, turFaces);
+      return;
+    }
+
+    // =========================================================================
+    // CASE C: GLA SCORPION LIGHT TANK & GLA MARAUDER HEAVY TANK
+    //         Matches assets/refs/gla_scorpion_diorama_ref.png & gla_marauder_diorama_ref.png
+    // =========================================================================
+    const isMarauder = defId === 'GLA_MARAUDER';
+    const numWheels = isMarauder ? 6 : 5;
+    pushTrackedSuspension3D(hullFaces, hullProj, r, -1.06 * r * L, 1.06 * r * L, 0.48 * r * W, 0.82 * r * W, 0.25 * r * H, numWheels, darkCol, seamCol, treadPhase, true, -2.0);
+
+    // Lower armored hull & side skirts
+    pushBox3D(hullFaces, hullProj, -1.04 * r * L, 1.06 * r * L, -0.78 * r * W, 0.78 * r * W, 0.16 * r * H, 0.46 * r * H, baseCol, seamCol, 1.18, 0, 0.12 * r * L, 0.05 * r * W);
+    // Upper sloped glacis & engine deck
+    pushBox3D(hullFaces, hullProj, -0.96 * r * L, 0.92 * r * L, -0.68 * r * W, 0.68 * r * W, 0.44 * r * H, 0.54 * r * H, hiCol, seamCol, 1.12, 0.25, 0.08 * r * L, 0.04 * r * W);
+
+    // Front glacis details: driver hatch, headlights, tow shackles, side skirt seams & Scorpion '6' numeral
+    hullFaces.push({
+      depth: hullProj.project(0.96 * r * L, 0, 0.44 * r * H).depth + 0.42,
+      customDraw(c) {
+        // Side skirt vertical armor panel seams
+        for (const sx of [-0.55, -0.10, 0.35, 0.75]) {
+          drawLine3D(c, hullProj, sx * r * L, 0.79 * r * W, 0.18 * r * H, sx * r * L, 0.79 * r * W, 0.44 * r * H, seamCol, 1.0);
+        }
+        // Front driver viewport / hatch on glacis
+        const dQuad = [
+          [0.64 * r * L, -0.26 * r * W, 0.48 * r * H],
+          [0.64 * r * L,  0.12 * r * W, 0.48 * r * H],
+          [0.86 * r * L,  0.10 * r * W, 0.42 * r * H],
+          [0.86 * r * L, -0.24 * r * W, 0.42 * r * H]
+        ];
+        drawGlassPane3D(c, hullProj, dQuad, darkCol, seamCol, 1.05);
+        // Front headlights
+        for (const side of [-1, 1]) {
+          const hl = hullProj.project(0.98 * r * L, side * 0.56 * r * W, 0.40 * r * H);
+          c.fillStyle = '#fef3c7';
+          c.strokeStyle = seamCol;
+          c.lineWidth = 1.0;
+          c.beginPath();
+          c.arc(hl.x, hl.y, Math.max(1.5, 0.055 * r), 0, Math.PI * 2);
+          c.fill();
+          c.stroke();
+        }
+        // Scorpion front-right fender '6' tactical stencil marking
+        if (!isMarauder) {
+          const numPt = hullProj.project(0.84 * r * L, 0.44 * r * W, 0.46 * r * H);
+          c.fillStyle = seamCol;
+          c.font = `bold ${Math.max(7, Math.round(r * 0.34))}px sans-serif`;
+          c.textAlign = 'center';
+          c.textBaseline = 'middle';
+          c.fillText('6', numPt.x, numPt.y);
+        }
+      }
+    });
+    flushFaces(ctx, hullFaces);
+
+    const turProj = createProjector(turretAngle, pitchScale, zScale, (isMarauder ? -0.04 : -0.02) * r * L, 0, 0, hullAngle);
+    const turFaces = [];
+    const zTurBot = 0.52 * r * H;
+    const zTurTop = (isMarauder ? 0.88 : 0.84) * r * H;
+
+    if (isMarauder) {
+      // Heavy Welded Olive Casemate/Turret + Commander Cupola + Loader Hatch + Whip Antenna + Twin Heavy Barrels
+      pushBox3D(turFaces, turProj, -0.58 * r * TS, 0.52 * r * TS, -0.58 * r * TS, 0.58 * r * TS, zTurBot, zTurTop, hiCol, seamCol, 1.2, 1.0, 0.12 * r * TS, 0.08 * r * TS);
+      // Wide armored front gun mantlet
+      pushBox3D(turFaces, turProj, 0.42 * r * TS, 0.62 * r * TS, -0.38 * r * TS, 0.38 * r * TS, zTurBot + 0.06 * r * H, zTurTop - 0.04 * r * H, baseCol, seamCol, 1.15, 1.15);
+      // Raised commander cupola & optics block on turret roof
+      pushBox3D(turFaces, turProj, -0.34 * r * TS, 0.08 * r * TS, -0.38 * r * TS, -0.04 * r * TS, zTurTop, zTurTop + 0.16 * r * H, baseCol, seamCol, 1.12, 1.28);
+      // Circular loader hatch on right turret roof
+      pushCylinderZ3D(turFaces, turProj, -0.14 * r * TS, 0.24 * r * TS, zTurTop, zTurTop + 0.08 * r * H, 0.16 * r * TS, 0.15 * r * TS, 8, baseCol, seamCol, 1.08, 1.30);
+      // Twin parallel heavy olive cannon barrels with bore evacuators & muzzle collars
       const bSides = p.ScrapLevel !== false ? [-0.20 * r * TS, 0.20 * r * TS] : [0];
       for (const by of bSides) {
-        pushTubeSegment3D(turFaces, turProj, 0.36 * r * TS - recDist, by, (zTurBot + zTurTop) * 0.54, 0.03, 0, 1.16 * r * BL, 0.095 * r, 0.082 * r, olive, seamCol, 1.15, 1.45);
+        const zB = (zTurBot + zTurTop) * 0.52;
+        pushTubeSegment3D(turFaces, turProj, 0.52 * r * TS - recDist, by, zB, 0.03, 0, 1.18 * r * BL, 0.095 * r, 0.084 * r, baseCol, seamCol, 1.18, 1.45);
+        pushTubeSegment3D(turFaces, turProj, 0.92 * r * TS - recDist, by, zB + 0.01 * r, 0.03, 0, 0.26 * r * BL, 0.115 * r, 0.112 * r, hiCol, seamCol, 1.12, 1.50);
       }
+      // Rear vertical whip antenna
+      turFaces.push({
+        depth: turProj.project(-0.52 * r * TS, -0.44 * r * TS, zTurTop).depth + 1.55,
+        customDraw(c) {
+          drawLine3D(c, turProj, -0.52 * r * TS, -0.44 * r * TS, zTurTop, -0.58 * r * TS, -0.44 * r * TS, zTurTop + 0.68 * r * H, seamCol, 1.4);
+        }
+      });
     } else {
-      // Scorpion Light Tank + Overhead Scorpion Rocket Launcher
-      pushBox3D(turFaces, turProj, -0.42 * r * TS, 0.38 * r * TS, -0.42 * r * TS, 0.42 * r * TS, zTurBot, zTurTop, sandHi, seamCol, 1.15, 1.0, 0.08 * r, 0.06 * r);
-      pushTubeSegment3D(turFaces, turProj, 0.32 * r * TS - recDist, 0, (zTurBot + zTurTop) * 0.52, 0.03, 0, 0.96 * r * BL, 0.078 * r, 0.068 * r, sandBase, seamCol, 1.12, 1.35);
-      if (p.ShowUpgradeKit !== false) {
-        pushTubeSegment3D(turFaces, turProj, -0.28 * r * TS, -0.18 * r * TS, zTurTop + 0.14 * r * H, 0.16, 0, 0.84 * r * BL, 0.095 * r, 0.075 * r, '#dc2626', seamCol, 1.1, 1.65);
+      // Scorpion Light Tank: Faceted Octagonal Desert-Tan Turret + Twin Roof Hatches + Whip Antenna + 90mm Cannon + Optional Scorpion Rocket
+      pushBox3D(turFaces, turProj, -0.50 * r * TS, 0.46 * r * TS, -0.48 * r * TS, 0.48 * r * TS, zTurBot, zTurTop, hiCol, seamCol, 1.18, 1.0, 0.12 * r * TS, 0.08 * r * TS);
+      // Sloped front mantlet collar
+      pushBox3D(turFaces, turProj, 0.38 * r * TS, 0.56 * r * TS, -0.22 * r * TS, 0.22 * r * TS, zTurBot + 0.05 * r * H, zTurTop - 0.05 * r * H, baseCol, seamCol, 1.12, 1.15);
+      // Twin circular commander & gunner roof hatches (matching gla_scorpion_diorama_ref.png!)
+      for (const hy of [-0.18 * r * TS, 0.18 * r * TS]) {
+        pushCylinderZ3D(turFaces, turProj, -0.10 * r * TS, hy, zTurTop, zTurTop + 0.08 * r * H, 0.14 * r * TS, 0.13 * r * TS, 8, baseCol, seamCol, 1.08, 1.28);
       }
+      // Single 90mm desert-tan main cannon barrel with mid-barrel fume extractor
+      const zB = (zTurBot + zTurTop) * 0.52;
+      pushTubeSegment3D(turFaces, turProj, 0.48 * r * TS - recDist, 0, zB, 0.03, 0, 1.06 * r * BL, 0.082 * r, 0.072 * r, baseCol, seamCol, 1.15, 1.40);
+      pushTubeSegment3D(turFaces, turProj, 0.84 * r * TS - recDist, 0, zB + 0.01 * r, 0.03, 0, 0.22 * r * BL, 0.102 * r, 0.100 * r, hiCol, seamCol, 1.10, 1.45);
+      // Optional Scorpion Rocket Upgrade Tube on roof
+      if (p.ShowUpgradeKit === true && customParams && customParams.ShowUpgradeKit === true) {
+        pushTubeSegment3D(turFaces, turProj, -0.28 * r * TS, -0.22 * r * TS, zTurTop + 0.16 * r * H, 0.14, 0, 0.80 * r * BL, 0.090 * r, 0.075 * r, olive, seamCol, 1.1, 1.65);
+      }
+      // Rear vertical whip antenna
+      turFaces.push({
+        depth: turProj.project(-0.44 * r * TS, -0.36 * r * TS, zTurTop).depth + 1.55,
+        customDraw(c) {
+          drawLine3D(c, turProj, -0.44 * r * TS, -0.36 * r * TS, zTurTop, -0.50 * r * TS, -0.36 * r * TS, zTurTop + 0.66 * r * H, seamCol, 1.4);
+        }
+      });
     }
 
     flushFaces(ctx, turFaces);
   }
 
   function renderGlaWheeledModel(ctx, u, faction, customParams, options) {
+    const defId = String((u && u.defId) || 'GLA_TECHNICAL');
+    const isOliveDefault = defId === 'GLA_SCUD_LAUNCHER' || defId === 'GLA_COMBAT_CYCLE';
     const p = Object.assign({
       hullScale: 1.0, hullLength: 1.0, hullWidth: 1.0, extrusionDepth: 1.0,
       weaponScale: 1.0, payloadPitch: 0.34,
-      armorBaseColor: '#c4ab72', armorHighlightColor: '#dcbf84', armorShadowColor: '#8c7444', houseColor: '#587838'
+      armorBaseColor: isOliveDefault ? '#637349' : '#c8a064',
+      armorHighlightColor: isOliveDefault ? '#7a8c5b' : '#dfb87c',
+      armorShadowColor: isOliveDefault ? '#445032' : '#8c6b3c',
+      houseColor: '#5c6e46'
     }, customParams || {});
     const opts = options || {};
-    const defId = String((u && u.defId) || 'GLA_TECHNICAL');
     const rawR = (u && u.radius) || 16;
     const r = rawR * (p.hullScale || 1.0);
     const L = p.hullLength || 1.0, W = p.hullWidth || 1.0, H = p.extrusionDepth || 1.0, WS = p.weaponScale || 1.0;
@@ -7598,86 +8644,335 @@ const ZH_UNIT_MODELS = (function () {
     const hullAngle = (u && u.angle !== undefined) ? u.angle : 0;
     const turretAngle = (u && u.turretAngle !== undefined) ? u.turretAngle : hullAngle;
     const treadPhase = (u && u.treadPhase) || 0;
+    const recoil = (u && u.recoilOffset) || 0;
     const pitchScale = opts.pitchScale !== undefined ? opts.pitchScale : 1.0;
     const zScale = opts.zScale !== undefined ? opts.zScale : 0.42;
 
-    const sandBase = p.armorBaseColor || '#c4ab72';
-    const sandHi   = p.armorHighlightColor || '#dcbf84';
-    const olive    = p.houseColor || '#587838';
-    const seamCol  = '#241c12';
+    const baseCol = p.armorBaseColor || (isOliveDefault ? '#637349' : '#c8a064');
+    const hiCol   = p.armorHighlightColor || (isOliveDefault ? '#7a8c5b' : '#dfb87c');
+    const darkCol = p.armorShadowColor || (isOliveDefault ? '#445032' : '#8c6b3c');
+    const olive   = p.houseColor || '#5c6e46';
+    const seamCol = '#241c12';
 
     const hullProj = createProjector(hullAngle, pitchScale, zScale, 0, 0, 0, 0);
+    const shadowW = defId === 'GLA_COMBAT_CYCLE' ? 0.38 : 0.78;
     const shadowPts = [
-      hullProj.project(-1.08 * r * L, -0.76 * r * W, 0),
-      hullProj.project( 1.08 * r * L, -0.76 * r * W, 0),
-      hullProj.project( 1.08 * r * L,  0.76 * r * W, 0),
-      hullProj.project(-1.08 * r * L,  0.76 * r * W, 0)
+      hullProj.project(-1.10 * r * L, -shadowW * r * W, 0),
+      hullProj.project( 1.10 * r * L, -shadowW * r * W, 0),
+      hullProj.project( 1.10 * r * L,  shadowW * r * W, 0),
+      hullProj.project(-1.10 * r * L,  shadowW * r * W, 0)
     ].map((pt) => ({ x: pt.x + 2.8, y: pt.y + 3.8 }));
     drawPolyPts(ctx, shadowPts, 'rgba(60, 48, 32, 0.34)', null, 0);
 
     const faces = [];
 
+    // =========================================================================
+    // 1. GLA COMBAT CYCLE (Agile Off-Road Motocross Dirtbike)
+    //    Matches assets/refs/gla_combat_cycle_diorama_ref.png
+    // =========================================================================
     if (defId === 'GLA_COMBAT_CYCLE') {
-      // 2-Wheel Offroad Dirtbike + Rider + Twin Side Rockets
-      pushWheelAxle3D(faces, hullProj, -0.58 * r * L, 0.08 * r * W, 0.30 * r, 0.14 * r, '#262320', '#8c7444', seamCol, treadPhase, -1.2);
-      pushWheelAxle3D(faces, hullProj,  0.58 * r * L, 0.08 * r * W, 0.30 * r, 0.14 * r, '#262320', '#8c7444', seamCol, treadPhase, -1.2);
-      pushBox3D(faces, hullProj, -0.56 * r * L, 0.56 * r * L, -0.18 * r * W, 0.18 * r * W, 0.22 * r * H, 0.52 * r * H, sandBase, seamCol, 1.15, 0.2);
-      pushBox3D(faces, hullProj, -0.22 * r * L, 0.22 * r * L, -0.24 * r * W, 0.24 * r * W, 0.52 * r * H, 0.92 * r * H, olive, seamCol, 1.1, 0.65);
+      // Front & rear knobby black motocross tires with silver spoked hubs
+      pushWheelAxle3D(faces, hullProj, -0.62 * r * L, 0.06 * r * W, 0.34 * r, 0.14 * r, '#242220', '#cbd5e1', seamCol, treadPhase, -1.2);
+      pushWheelAxle3D(faces, hullProj,  0.62 * r * L, 0.06 * r * W, 0.34 * r, 0.14 * r, '#242220', '#cbd5e1', seamCol, treadPhase, -1.2);
+      // Silver engine block & crankcase + rear swingarm
+      pushBox3D(faces, hullProj, -0.28 * r * L, 0.24 * r * L, -0.14 * r * W, 0.14 * r * W, 0.22 * r * H, 0.52 * r * H, '#94a3b8', seamCol, 1.12, 0.15);
+      // Upswept rear exhaust muffler pipe (silver)
+      pushTubeSegment3D(faces, hullProj, -0.18 * r * L, 0.16 * r * W, 0.38 * r * H, 0.28, Math.PI, 0.58 * r * L, 0.065 * r, 0.075 * r, '#cbd5e1', seamCol, 1.05, 0.35);
+      // Olive-green fuel tank & side radiator shrouds + high rear tail fender
+      pushBox3D(faces, hullProj, -0.68 * r * L, -0.18 * r * L, -0.14 * r * W, 0.14 * r * W, 0.50 * r * H, 0.66 * r * H, hiCol, seamCol, 1.12, 0.45);
+      pushBox3D(faces, hullProj, -0.04 * r * L, 0.42 * r * L, -0.18 * r * W, 0.18 * r * W, 0.50 * r * H, 0.82 * r * H, baseCol, seamCol, 1.15, 0.55, 0.04 * r, 0.03 * r);
+      // Dark contoured motorcycle saddle seat
+      pushBox3D(faces, hullProj, -0.44 * r * L, 0.04 * r * L, -0.15 * r * W, 0.15 * r * W, 0.54 * r * H, 0.72 * r * H, '#334155', seamCol, 1.1, 0.62);
+      // High front motocross mudguard fender over front wheel
+      pushBox3D(faces, hullProj, 0.42 * r * L, 0.80 * r * L, -0.12 * r * W, 0.12 * r * W, 0.56 * r * H, 0.68 * r * H, hiCol, seamCol, 1.1, 0.70);
+      // Angled silver telescopic front fork tubes, number plate, and wide handlebars with mirrors
+      faces.push({
+        depth: hullProj.project(0.48 * r * L, 0.12 * r * W, 0.72 * r * H).depth + 0.85,
+        customDraw(c) {
+          for (const side of [-1, 1]) {
+            drawLine3D(c, hullProj, 0.62 * r * L, side * 0.10 * r * W, 0.34 * r * H, 0.34 * r * L, side * 0.12 * r * W, 0.96 * r * H, '#cbd5e1', 2.4);
+            drawLine3D(c, hullProj, 0.62 * r * L, side * 0.10 * r * W, 0.34 * r * H, 0.34 * r * L, side * 0.12 * r * W, 0.96 * r * H, seamCol, 0.9);
+          }
+          // Wide handlebars
+          drawLine3D(c, hullProj, 0.32 * r * L, -0.36 * r * W, 0.98 * r * H, 0.32 * r * L, 0.36 * r * W, 0.98 * r * H, seamCol, 2.2);
+          // Rear swingarm strut
+          drawLine3D(c, hullProj, -0.16 * r * L, 0.12 * r * W, 0.34 * r * H, -0.62 * r * L, 0.12 * r * W, 0.34 * r * H, '#94a3b8', 2.4);
+        }
+      });
       flushFaces(ctx, faces);
       return;
     }
 
-    const axles = (defId === 'GLA_SCUD_LAUNCHER' || defId === 'GLA_BATTLE_BUS')
-      ? [-0.82, -0.28, 0.28, 0.82]
-      : [-0.66, 0.68];
-    for (const ax of axles) {
-      pushWheelAxle3D(faces, hullProj, ax * r * L, 0.62 * r * W, 0.30 * r, 0.22 * r * W, '#262320', '#8c7444', seamCol, treadPhase, -1.5);
-    }
-
+    // =========================================================================
+    // 2. GLA SCUD LAUNCHER (8x8 Olive MAZ-543 TEL + Twin Scud-B Missiles)
+    //    Matches assets/refs/gla_scud_launcher_diorama_ref.png
+    // =========================================================================
     if (defId === 'GLA_SCUD_LAUNCHER') {
-      // 8x8 MAZ TEL Chassis + Split Forward Cab + Giant Scud-B Ballistic Missile
-      pushBox3D(faces, hullProj, -1.16 * r * L, 1.14 * r * L, -0.74 * r * W, 0.74 * r * W, 0.18 * r * H, 0.42 * r * H, sandBase, seamCol, 1.15, 0);
-      for (const side of [-1, 1]) {
-        pushBox3D(faces, hullProj, 0.46 * r * L, 1.12 * r * L, side * 0.16 * r * W, side * 0.72 * r * W, 0.42 * r * H, 0.78 * r * H, sandHi, seamCol, 1.12, 0.35);
+      for (const ax of [-0.84, -0.30, 0.26, 0.82]) {
+        pushWheelAxle3D(faces, hullProj, ax * r * L, 0.64 * r * W, 0.30 * r, 0.22 * r * W, '#242220', darkCol, seamCol, treadPhase, -1.5);
       }
-      const elev = p.payloadPitch || 0.36;
-      pushTubeSegment3D(faces, hullProj, -0.96 * r * L, 0, 0.48 * r * H, elev, 0, 1.96 * r * L * WS, 0.18 * r, 0.16 * r, '#e2e8f0', seamCol, 1.2, 0.85);
-      pushTubeSegment3D(faces, hullProj, (-0.96 + Math.cos(elev) * 1.92 * WS) * r * L, 0, (0.48 + Math.sin(elev) * 1.92 * WS) * r * H, elev, 0, 0.44 * r * WS, 0.16 * r, 0.04 * r, '#84cc16', seamCol, 1.15, 1.15);
+      // Rear vertical hydraulic stabilizer outrigger jacks at tail (x = -1.16*r)
+      for (const side of [-1, 1]) {
+        pushCylinderZ3D(faces, hullProj, -1.14 * r * L, side * 0.60 * r * W, 0.08 * r * H, 0.56 * r * H, 0.11 * r, 0.11 * r, 8, darkCol, seamCol, 1.1, -0.2);
+      }
+      // Long 8x8 olive chassis & mid-body equipment bays
+      pushBox3D(faces, hullProj, -1.14 * r * L, 1.16 * r * L, -0.74 * r * W, 0.74 * r * W, 0.18 * r * H, 0.48 * r * H, baseCol, seamCol, 1.18, 0);
+      pushBox3D(faces, hullProj, -0.96 * r * L, 0.40 * r * L, -0.68 * r * W, 0.68 * r * W, 0.48 * r * H, 0.66 * r * H, darkCol, seamCol, 1.12, 0.22);
+      // Forward armored TEL cab (x = 0.40*r..1.16*r) with split 2-pane windshield, side door windows, grille & roof beacons
+      pushBox3D(faces, hullProj, 0.40 * r * L, 1.16 * r * L, -0.72 * r * W, 0.72 * r * W, 0.48 * r * H, 0.90 * r * H, hiCol, seamCol, 1.18, 0.38, 0.08 * r * L, 0.04 * r * W);
+      // Twin amber roof hazard beacons on cab roof
+      for (const side of [-1, 1]) {
+        pushCylinderZ3D(faces, hullProj, 0.78 * r * L, side * 0.44 * r * W, 0.90 * r * H, 1.00 * r * H, 0.07 * r, 0.06 * r, 6, '#f59e0b', seamCol, 1.0, 0.52);
+      }
+      faces.push({
+        depth: hullProj.project(1.17 * r * L, 0, 0.68 * r * H).depth + 0.55,
+        customDraw(c) {
+          // Split 2-pane blue-grey cab windshield
+          for (const side of [-1, 1]) {
+            const wQuad = [
+              [1.15 * r * L, side * 0.06 * r * W, 0.56 * r * H],
+              [1.15 * r * L, side * 0.62 * r * W, 0.56 * r * H],
+              [1.07 * r * L, side * 0.58 * r * W, 0.84 * r * H],
+              [1.07 * r * L, side * 0.06 * r * W, 0.84 * r * H]
+            ];
+            drawGlassPane3D(c, hullProj, wQuad, '#64748b', seamCol, 1.05);
+            // Side door window
+            const sQuad = [
+              [0.56 * r * L, side * 0.73 * r * W, 0.58 * r * H],
+              [0.98 * r * L, side * 0.73 * r * W, 0.58 * r * H],
+              [0.94 * r * L, side * 0.73 * r * W, 0.82 * r * H],
+              [0.58 * r * L, side * 0.73 * r * W, 0.82 * r * H]
+            ];
+            drawGlassPane3D(c, hullProj, sQuad, '#64748b', seamCol, 1.0);
+          }
+          // Front vertical radiator grille & twin headlights
+          const gQuad = [
+            [1.17 * r * L, -0.38 * r * W, 0.22 * r * H],
+            [1.17 * r * L,  0.38 * r * W, 0.22 * r * H],
+            [1.17 * r * L,  0.36 * r * W, 0.46 * r * H],
+            [1.17 * r * L, -0.36 * r * W, 0.46 * r * H]
+          ];
+          drawGlassPane3D(c, hullProj, gQuad, '#1e293b', seamCol, 1.05);
+          for (const side of [-1, 1]) {
+            const hl = hullProj.project(1.17 * r * L, side * 0.54 * r * W, 0.34 * r * H);
+            c.fillStyle = '#fef3c7';
+            c.strokeStyle = seamCol;
+            c.lineWidth = 1.0;
+            c.beginPath();
+            c.arc(hl.x, hl.y, Math.max(1.6, 0.06 * r), 0, Math.PI * 2);
+            c.fill();
+            c.stroke();
+          }
+        }
+      });
+
+      // Twin Side-by-Side Olive Scud-B Ballistic Missiles with Red/Orange Warhead Bands & Tail Fins (matching gla_scud_launcher_diorama_ref.png!)
+      const elev = (customParams && customParams.payloadPitch !== undefined) ? customParams.payloadPitch : 0.06;
+      const mLen = 1.72 * r * L * WS;
+      for (const side of [-1, 1]) {
+        const my = side * 0.24 * r * W;
+        const x0 = -1.06 * r * L;
+        const z0 = 0.74 * r * H;
+        // Main olive missile body
+        pushTubeSegment3D(faces, hullProj, x0, my, z0, elev, 0, mLen, 0.16 * r, 0.15 * r, hiCol, seamCol, 1.18, 0.85 + side * 0.05);
+        // Red-orange warhead separation band near forward third
+        const xBand = x0 + Math.cos(elev) * mLen * 0.74;
+        const zBand = z0 + Math.sin(elev) * mLen * 0.74;
+        pushTubeSegment3D(faces, hullProj, xBand, my, zBand, elev, 0, mLen * 0.14, 0.165 * r, 0.155 * r, '#ea580c', seamCol, 1.1, 0.95 + side * 0.05);
+        // Conical olive warhead nosecone
+        const xTip = x0 + Math.cos(elev) * mLen;
+        const zTip = z0 + Math.sin(elev) * mLen;
+        pushTubeSegment3D(faces, hullProj, xTip, my, zTip, elev, 0, 0.42 * r * WS, 0.15 * r, 0.03 * r, baseCol, seamCol, 1.15, 1.10 + side * 0.05);
+        // Rear stabilizer tail fins
+        pushBox3D(faces, hullProj, x0 - 0.06 * r, x0 + 0.22 * r, my - 0.22 * r, my + 0.22 * r, z0 - 0.18 * r, z0 + 0.18 * r, darkCol, seamCol, 1.05, 0.82 + side * 0.05);
+      }
       flushFaces(ctx, faces);
       return;
     }
 
+    // =========================================================================
+    // 3. GLA BATTLE BUS (Up-Armored Fortified Bus + Cowcatcher Plow + Roof Bunker)
+    // =========================================================================
     if (defId === 'GLA_BATTLE_BUS') {
-      // Up-Armored Scrap School Bus + Roof Fortified Bunker + Front Scrap Plow
-      pushBox3D(faces, hullProj, 1.08 * r * L, 1.24 * r * L, -0.80 * r * W, 0.80 * r * W, 0.14 * r * H, 0.46 * r * H, '#64748b', seamCol, 1.15, 0.4);
+      for (const ax of [-0.82, -0.28, 0.28, 0.82]) {
+        pushWheelAxle3D(faces, hullProj, ax * r * L, 0.62 * r * W, 0.30 * r, 0.22 * r * W, '#242220', darkCol, seamCol, treadPhase, -1.5);
+      }
+      // Front steel cowcatcher scrap plow
+      pushBox3D(faces, hullProj, 1.08 * r * L, 1.26 * r * L, -0.80 * r * W, 0.80 * r * W, 0.12 * r * H, 0.48 * r * H, '#64748b', seamCol, 1.15, 0.4);
+      // Armored yellow/tan bus body
       pushBox3D(faces, hullProj, -1.14 * r * L, 1.12 * r * L, -0.74 * r * W, 0.74 * r * W, 0.20 * r * H, 0.88 * r * H, '#eab308', seamCol, 1.18, 0.2, 0.08 * r * L, 0.05 * r * W);
-      pushBox3D(faces, hullProj, -0.92 * r * L, 0.68 * r * L, -0.68 * r * W, 0.68 * r * W, 0.88 * r * H, 1.14 * r * H, olive, seamCol, 1.15, 0.75);
+      // Fortified olive rooftop firing bunker
+      pushBox3D(faces, hullProj, -0.92 * r * L, 0.68 * r * L, -0.68 * r * W, 0.68 * r * W, 0.88 * r * H, 1.16 * r * H, olive, seamCol, 1.15, 0.75);
+      // Armored firing slits along sides & front windshield slit
+      faces.push({
+        depth: hullProj.project(0.20 * r * L, 0.75 * r * W, 0.62 * r * H).depth + 0.55,
+        customDraw(c) {
+          for (const sx of [-0.78, -0.38, 0.02, 0.42]) {
+            const fQuad = [
+              [sx * r * L, 0.75 * r * W, 0.56 * r * H],
+              [(sx + 0.24) * r * L, 0.75 * r * W, 0.56 * r * H],
+              [(sx + 0.24) * r * L, 0.75 * r * W, 0.74 * r * H],
+              [sx * r * L, 0.75 * r * W, 0.74 * r * H]
+            ];
+            drawGlassPane3D(c, hullProj, fQuad, '#1e293b', seamCol, 1.0);
+          }
+        }
+      });
       flushFaces(ctx, faces);
       return;
     }
 
+    // =========================================================================
+    // 4. GLA BOMB TRUCK (Disguised Cargo Truck + Volatile HE & Anthrax Drums)
+    // =========================================================================
     if (defId === 'GLA_BOMB_TRUCK') {
-      // Disguised Cargo Truck + Volatile Explosive Drum Payload
-      pushBox3D(faces, hullProj, 0.28 * r * L, 1.02 * r * L, -0.66 * r * W, 0.66 * r * W, 0.20 * r * H, 0.86 * r * H, sandHi, seamCol, 1.15, 0.3, 0.08 * r * L, 0.04 * r * W);
-      pushBox3D(faces, hullProj, -1.04 * r * L, 0.24 * r * L, -0.72 * r * W, 0.72 * r * W, 0.20 * r * H, 0.98 * r * H, olive, seamCol, 1.15, 0.55);
-      pushBox3D(faces, hullProj, -0.88 * r * L, 0.08 * r * L, -0.52 * r * W, 0.52 * r * W, 0.98 * r * H, 1.12 * r * H, '#dc2626', seamCol, 1.05, 0.85);
+      for (const ax of [-0.68, 0.68]) {
+        pushWheelAxle3D(faces, hullProj, ax * r * L, 0.62 * r * W, 0.30 * r, 0.22 * r * W, '#242220', darkCol, seamCol, treadPhase, -1.5);
+      }
+      // Forward truck cab + windshield
+      pushBox3D(faces, hullProj, 0.28 * r * L, 1.04 * r * L, -0.66 * r * W, 0.66 * r * W, 0.20 * r * H, 0.88 * r * H, hiCol, seamCol, 1.15, 0.3, 0.08 * r * L, 0.04 * r * W);
+      // Rear cargo dump bed + volatile explosive & bio drums
+      pushBox3D(faces, hullProj, -1.06 * r * L, 0.24 * r * L, -0.72 * r * W, 0.72 * r * W, 0.20 * r * H, 0.76 * r * H, olive, seamCol, 1.15, 0.55);
+      for (const [dx, dy, col] of [[-0.74, -0.30, '#dc2626'], [-0.74, 0.30, '#dc2626'], [-0.20, 0, '#4ade80']]) {
+        pushCylinderZ3D(faces, hullProj, dx * r * L, dy * r * W, 0.76 * r * H, 1.14 * r * H, 0.22 * r, 0.22 * r, 8, col, seamCol, 1.1, 0.82);
+      }
       flushFaces(ctx, faces);
       return;
     }
 
-    // GLA Technical Pickup OR Rocket Buggy
-    pushBox3D(faces, hullProj, -1.02 * r * L, 1.02 * r * L, -0.66 * r * W, 0.66 * r * W, 0.18 * r * H, 0.48 * r * H, sandBase, seamCol, 1.15, 0, 0.10 * r * L, 0.05 * r * W);
-    pushBox3D(faces, hullProj, -0.10 * r * L, 0.54 * r * L, -0.62 * r * W, 0.62 * r * W, 0.48 * r * H, 0.82 * r * H, sandHi, seamCol, 1.12, 0.35, 0.10 * r * L, 0.05 * r * W);
+    // =========================================================================
+    // 5. GLA ROCKET BUGGY (Tubular Sand-Rail Dune Buggy + Red-Tipped Rocket Rack)
+    //    Matches assets/refs/gla_rocket_buggy_diorama_ref.png
+    // =========================================================================
+    if (defId === 'GLA_ROCKET_BUGGY') {
+      // Exposed large rear off-road tires & slightly smaller front tires
+      pushWheelAxle3D(faces, hullProj, -0.68 * r * L, 0.68 * r * W, 0.35 * r, 0.22 * r * W, '#242220', darkCol, seamCol, treadPhase, -1.5);
+      pushWheelAxle3D(faces, hullProj,  0.68 * r * L, 0.64 * r * W, 0.29 * r, 0.20 * r * W, '#242220', darkCol, seamCol, treadPhase, -1.5);
+
+      // Low-profile desert-tan sand-rail floor pan & sloped nose hood
+      pushBox3D(faces, hullProj, -0.88 * r * L, 0.30 * r * L, -0.52 * r * W, 0.52 * r * W, 0.16 * r * H, 0.38 * r * H, baseCol, seamCol, 1.15, 0);
+      pushBox3D(faces, hullProj, 0.24 * r * L, 1.04 * r * L, -0.46 * r * W, 0.46 * r * W, 0.18 * r * H, 0.46 * r * H, hiCol, seamCol, 1.15, 0.25, 0.12 * r * L, 0.06 * r * W);
+      // Front tubular skid bumper & dark cockpit bucket seat cavity
+      pushBox3D(faces, hullProj, 0.98 * r * L, 1.12 * r * L, -0.42 * r * W, 0.42 * r * W, 0.14 * r * H, 0.28 * r * H, darkCol, seamCol, 1.1, 0.35);
+      pushBox3D(faces, hullProj, -0.46 * r * L, 0.24 * r * L, -0.42 * r * W, 0.42 * r * W, 0.36 * r * H, 0.50 * r * H, '#334155', seamCol, 1.08, 0.32);
+
+      // 3D Desert-Tan Tubular Roll-Cage Bars & Olive Nose Emblem
+      faces.push({
+        depth: hullProj.project(0.0, 0.46 * r * W, 0.68 * r * H).depth + 0.65,
+        customDraw(c) {
+          for (const side of [-1, 1]) {
+            const yCage = side * 0.44 * r * W;
+            // Front A-pillar
+            drawLine3D(c, hullProj, 0.32 * r * L, yCage, 0.42 * r * H, 0.08 * r * L, yCage * 0.92, 0.86 * r * H, hiCol, 2.8);
+            drawLine3D(c, hullProj, 0.32 * r * L, yCage, 0.42 * r * H, 0.08 * r * L, yCage * 0.92, 0.86 * r * H, seamCol, 1.0);
+            // Roof longitudinal bar
+            drawLine3D(c, hullProj, 0.08 * r * L, yCage * 0.92, 0.86 * r * H, -0.48 * r * L, yCage * 0.92, 0.86 * r * H, hiCol, 2.8);
+            // Rear B-pillar & engine diagonal brace
+            drawLine3D(c, hullProj, -0.48 * r * L, yCage * 0.92, 0.86 * r * H, -0.56 * r * L, yCage, 0.38 * r * H, hiCol, 2.8);
+            drawLine3D(c, hullProj, -0.48 * r * L, yCage * 0.92, 0.86 * r * H, -0.86 * r * L, yCage * 0.85, 0.38 * r * H, darkCol, 2.4);
+          }
+          // Crossbars
+          drawLine3D(c, hullProj, 0.08 * r * L, -0.40 * r * W, 0.86 * r * H, 0.08 * r * L, 0.40 * r * W, 0.86 * r * H, hiCol, 2.6);
+          drawLine3D(c, hullProj, -0.48 * r * L, -0.40 * r * W, 0.86 * r * H, -0.48 * r * L, 0.40 * r * W, 0.86 * r * H, hiCol, 2.6);
+          // Olive tactical emblem on sloped nose hood
+          const emb = hullProj.project(0.68 * r * L, 0, 0.45 * r * H);
+          c.fillStyle = olive;
+          c.beginPath();
+          c.arc(emb.x, emb.y, Math.max(2.0, 0.11 * r), 0, Math.PI * 2);
+          c.fill();
+        }
+      });
+      flushFaces(ctx, faces);
+
+      // Roof-Mounted Multi-Rocket Artillery Rack (Olive Rockets with Bright Red Conical Nosecones!)
+      const turProj = createProjector(turretAngle, pitchScale, zScale, -0.22 * r * L, 0, 0, hullAngle);
+      const turFaces = [];
+      const zRack = 0.88 * r * H;
+      // Support frame cradle
+      pushBox3D(turFaces, turProj, -0.34 * r * WS, 0.26 * r * WS, -0.38 * r * WS, 0.38 * r * WS, zRack - 0.06 * r * H, zRack + 0.08 * r * H, darkCol, seamCol, 1.1, 1.0);
+      // 3 Side-by-Side Olive Rockets with Bright Red Conical Warhead Tips
+      for (const ry of [-0.24 * r * WS, 0, 0.24 * r * WS]) {
+        pushTubeSegment3D(turFaces, turProj, -0.44 * r * WS, ry, zRack + 0.12 * r * H, 0.14, 0, 0.72 * r * WS, 0.095 * r, 0.090 * r, olive, seamCol, 1.12, 1.25);
+        pushTubeSegment3D(turFaces, turProj,  0.24 * r * WS, ry, zRack + 0.22 * r * H, 0.14, 0, 0.26 * r * WS, 0.090 * r, 0.025 * r, '#dc2626', seamCol, 1.12, 1.42);
+      }
+      flushFaces(ctx, turFaces);
+      return;
+    }
+
+    // =========================================================================
+    // 6. GLA TECHNICAL PICKUP TRUCK (4x4 Desert Pickup + Bed-Mounted Olive DShK)
+    //    Matches assets/refs/gla_technical_diorama_ref.png
+    // =========================================================================
+    for (const ax of [-0.66, 0.68]) {
+      pushWheelAxle3D(faces, hullProj, ax * r * L, 0.64 * r * W, 0.31 * r, 0.22 * r * W, '#242220', baseCol, seamCol, treadPhase, -1.5);
+    }
+    // Lower pickup body (hood + cab lower doors + rear cargo bed floor)
+    pushBox3D(faces, hullProj, -1.06 * r * L, 1.06 * r * L, -0.68 * r * W, 0.68 * r * W, 0.18 * r * H, 0.50 * r * H, baseCol, seamCol, 1.18, 0, 0.06 * r * L, 0.04 * r * W);
+    // Open Rear Cargo Bed Sidewalls & Tailgate (x = -1.06*r..-0.16*r)
+    for (const side of [-1, 1]) {
+      pushBox3D(faces, hullProj, -1.06 * r * L, -0.16 * r * L, side * 0.56 * r * W, side * 0.68 * r * W, 0.50 * r * H, 0.64 * r * H, hiCol, seamCol, 1.1, 0.22);
+    }
+    pushBox3D(faces, hullProj, -1.06 * r * L, -0.96 * r * L, -0.58 * r * W, 0.58 * r * W, 0.50 * r * H, 0.62 * r * H, darkCol, seamCol, 1.08, 0.20);
+    // Enclosed Pickup Cab Upper Greenhouse (x = -0.16*r..0.46*r)
+    pushBox3D(faces, hullProj, -0.16 * r * L, 0.46 * r * L, -0.64 * r * W, 0.64 * r * W, 0.50 * r * H, 0.88 * r * H, hiCol, seamCol, 1.18, 0.38, 0.10 * r * L, 0.05 * r * W);
+    // Front steel bumper bar
+    pushBox3D(faces, hullProj, 1.02 * r * L, 1.12 * r * L, -0.70 * r * W, 0.70 * r * W, 0.14 * r * H, 0.28 * r * H, '#475569', seamCol, 1.1, 0.42);
+
+    // Blue-grey glass windshield, side door windows, black vertical-slat radiator grille & rectangular headlights
+    faces.push({
+      depth: hullProj.project(0.48 * r * L, 0, 0.68 * r * H).depth + 0.55,
+      customDraw(c) {
+        // Front sloped glass windshield
+        const wQuad = [
+          [0.47 * r * L, -0.56 * r * W, 0.52 * r * H],
+          [0.47 * r * L,  0.56 * r * W, 0.52 * r * H],
+          [0.37 * r * L,  0.52 * r * W, 0.82 * r * H],
+          [0.37 * r * L, -0.52 * r * W, 0.82 * r * H]
+        ];
+        drawGlassPane3D(c, hullProj, wQuad, '#64748b', seamCol, 1.1);
+        // Side cab door windows
+        for (const side of [-1, 1]) {
+          const sQuad = [
+            [-0.08 * r * L, side * 0.65 * r * W, 0.54 * r * H],
+            [ 0.34 * r * L, side * 0.65 * r * W, 0.54 * r * H],
+            [ 0.28 * r * L, side * 0.65 * r * W, 0.80 * r * H],
+            [-0.06 * r * L, side * 0.65 * r * W, 0.80 * r * H]
+          ];
+          drawGlassPane3D(c, hullProj, sQuad, '#64748b', seamCol, 1.0);
+        }
+        // Front black radiator grille & twin rectangular headlights
+        const gQuad = [
+          [1.07 * r * L, -0.40 * r * W, 0.28 * r * H],
+          [1.07 * r * L,  0.40 * r * W, 0.28 * r * H],
+          [1.07 * r * L,  0.38 * r * W, 0.46 * r * H],
+          [1.07 * r * L, -0.38 * r * W, 0.46 * r * H]
+        ];
+        drawGlassPane3D(c, hullProj, gQuad, '#1e293b', seamCol, 1.05);
+        for (const side of [-1, 1]) {
+          const hQuad = [
+            [1.07 * r * L, side * 0.42 * r * W, 0.30 * r * H],
+            [1.07 * r * L, side * 0.62 * r * W, 0.30 * r * H],
+            [1.07 * r * L, side * 0.60 * r * W, 0.46 * r * H],
+            [1.07 * r * L, side * 0.42 * r * W, 0.46 * r * H]
+          ];
+          drawGlassPane3D(c, hullProj, hQuad, '#fef3c7', seamCol, 1.0);
+        }
+      }
+    });
     flushFaces(ctx, faces);
 
-    const turProj = createProjector(turretAngle, pitchScale, zScale, -0.44 * r * L, 0, 0, hullAngle);
+    // Bed-Mounted 360° Slewing Olive-Green Heavy Machine Gun / Recoilless Gun with Twin Gun-Shield Plates
+    const recDist = clamp(recoil * 0.04 * r, 0, 0.18 * r);
+    const turProj = createProjector(turretAngle, pitchScale, zScale, -0.58 * r * L, 0, 0, hullAngle);
     const turFaces = [];
-    if (defId === 'GLA_ROCKET_BUGGY') {
-      pushBox3D(turFaces, turProj, -0.38 * r * WS, 0.38 * r * WS, -0.48 * r * WS, 0.48 * r * WS, 0.52 * r * H, 0.88 * r * H, '#dc2626', seamCol, 1.15, 1.1);
-    } else {
-      pushCylinderZ3D(turFaces, turProj, 0, 0, 0.48 * r * H, 0.74 * r * H, 0.14 * r, 0.10 * r, 8, olive, seamCol, 1.05, 1.0);
-      pushTubeSegment3D(turFaces, turProj, -0.12 * r, 0, 0.72 * r * H, 0.04, 0, 0.88 * r * WS, 0.065 * r, 0.055 * r, '#334155', seamCol, 1.1, 1.35);
-    }
+    // Pedestal tripod post in pickup bed
+    pushCylinderZ3D(turFaces, turProj, 0, 0, 0.50 * r * H, 0.86 * r * H, 0.12 * r, 0.09 * r, 8, darkCol, seamCol, 1.08, 1.0);
+    // Olive gun receiver & side ammo box
+    pushBox3D(turFaces, turProj, -0.26 * r * WS - recDist, 0.20 * r * WS - recDist, -0.14 * r * WS, 0.22 * r * WS, 0.84 * r * H, 1.04 * r * H, olive, seamCol, 1.15, 1.2);
+    // Sloped olive gun shield plates flanking the barrel
+    pushBox3D(turFaces, turProj, 0.14 * r * WS - recDist, 0.24 * r * WS - recDist, -0.28 * r * WS, 0.28 * r * WS, 0.80 * r * H, 1.12 * r * H, olive, seamCol, 1.15, 1.32);
+    // Long heavy perforated DShK barrel
+    pushTubeSegment3D(turFaces, turProj, 0.20 * r * WS - recDist, 0, 0.94 * r * H, 0.04, 0, 0.94 * r * WS, 0.068 * r, 0.056 * r, '#334155', seamCol, 1.12, 1.45);
     flushFaces(ctx, turFaces);
   }
 
@@ -9870,10 +11165,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_WORKER',
       modelCode: 'GLA — FIELD LABORER & BUILDER WORKER',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_ranger_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_ranger.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Desert Keffiyeh • Pickaxe & Crate Harness • [⛏️] Callout',
-      defaultParams: Object.assign({}, INFANTRY_DEFAULT_PARAMS, { helmetColor: '#d6bc8b', uniformColor: '#a88b5c', vestColor: '#785c38', showGoggles: false }),
+      referenceImage: 'assets/refs/gla_worker_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_worker.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Olive Field Cap • 3D Wooden Supply Crate with Diagonal Cross-Brace',
+      defaultParams: Object.assign({}, INFANTRY_DEFAULT_PARAMS, { helmetColor: '#7c8a5e', uniformColor: '#6b7a52', vestColor: '#55623e', showGoggles: false, showStatusBubble: false }),
       paramSchema: INFANTRY_PARAM_SCHEMA,
       presets: INFANTRY_PRESETS,
       render: renderInfantryModel
@@ -9882,10 +11177,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_REBEL',
       modelCode: 'GLA — GUERRILLA REBEL FIGHTER',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_ranger_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_ranger.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Olive Keffiyeh • AK-47 Assault Rifle • Booby-Trap & Capture Kit',
-      defaultParams: Object.assign({}, INFANTRY_DEFAULT_PARAMS, { helmetColor: '#4d7c0f', uniformColor: '#b89862', vestColor: '#5c6b43' }),
+      referenceImage: 'assets/refs/gla_rebel_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_rebel.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Olive Helmet + Ballistic Goggles • Desert Camo Fatigues • AK-47 Rifle • [⊕] Callout',
+      defaultParams: Object.assign({}, INFANTRY_DEFAULT_PARAMS, { helmetColor: '#6e7b4f', uniformColor: '#a89870', vestColor: '#6b7052' }),
       paramSchema: INFANTRY_PARAM_SCHEMA,
       presets: INFANTRY_PRESETS,
       render: renderInfantryModel
@@ -9894,10 +11189,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_RPG_TROOPER',
       modelCode: 'GLA — ANTI-ARMOR RPG-7 TROOPER',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_missile_defender_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_missile_defender.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Shoulder-Fired RPG-7 Warhead • Tunnel Defender • [🛡️] Callout',
-      defaultParams: Object.assign({}, MISSILE_DEFENDER_DEFAULT_PARAMS, { helmetColor: '#4d7c0f', uniformColor: '#a88b5c', vestColor: '#65a30d' }),
+      referenceImage: 'assets/refs/gla_rpg_trooper_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_rpg_trooper.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Olive Kevlar Helmet • Shoulder-Fired RPG-7 Conical Warhead • [🛡️] Blue Shield Callout',
+      defaultParams: Object.assign({}, MISSILE_DEFENDER_DEFAULT_PARAMS, { helmetColor: '#637349', uniformColor: '#5c6e46', vestColor: '#4b5938' }),
       paramSchema: INFANTRY_PARAM_SCHEMA,
       presets: INFANTRY_PRESETS,
       render: renderInfantryModel
@@ -9906,10 +11201,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_TERRORIST',
       modelCode: 'GLA — DEMOLITION SABOTEUR',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_ranger_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_ranger.png',
+      referenceImage: 'assets/refs/gla_rebel_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_rebel.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • High-Explosive Demolition Vest • Dead-Man Trigger • [🧨] Callout',
-      defaultParams: Object.assign({}, INFANTRY_DEFAULT_PARAMS, { helmetColor: '#dc2626', uniformColor: '#b89862', vestColor: '#b91c1c' }),
+      defaultParams: Object.assign({}, INFANTRY_DEFAULT_PARAMS, { helmetColor: '#dc2626', uniformColor: '#a89870', vestColor: '#b91c1c' }),
       paramSchema: INFANTRY_PARAM_SCHEMA,
       presets: INFANTRY_PRESETS,
       render: renderInfantryModel
@@ -9918,10 +11213,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_HIJACKER',
       modelCode: 'GLA — STEALTH VEHICLE HIJACKER (PRINCE KASSAD)',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_pathfinder_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_pathfinder.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Camouflaged Infiltrator • Vehicle Breaching Blade',
-      defaultParams: Object.assign({}, PATHFINDER_DEFAULT_PARAMS, { helmetColor: '#3f6212', uniformColor: '#5c6b43', vestColor: '#1e293b' }),
+      referenceImage: 'assets/refs/gla_jarmen_kell_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_jarmen_kell.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Camouflaged Vehicle Infiltrator • Breaching Tool • [🔧] Wrench Callout',
+      defaultParams: Object.assign({}, PATHFINDER_DEFAULT_PARAMS, { helmetColor: '#4b5938', uniformColor: '#5c6e46', vestColor: '#3b462b' }),
       paramSchema: INFANTRY_PARAM_SCHEMA,
       presets: INFANTRY_PRESETS,
       render: renderInfantryModel
@@ -9930,10 +11225,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_ANGRY_MOB',
       modelCode: 'GLA — ANGRY INSURGENT MOB (AK-47 & MOLOTOV)',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_ranger_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_ranger.png',
+      referenceImage: 'assets/refs/gla_rebel_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_rebel.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • Multi-Figure Insurgent Squad • AK-47s & Molotov Cocktails • [🔥] Callout',
-      defaultParams: Object.assign({}, INFANTRY_DEFAULT_PARAMS, { helmetColor: '#b45309', uniformColor: '#a88b5c', vestColor: '#78350f' }),
+      defaultParams: Object.assign({}, INFANTRY_DEFAULT_PARAMS, { helmetColor: '#b45309', uniformColor: '#a89870', vestColor: '#78350f' }),
       paramSchema: INFANTRY_PARAM_SCHEMA,
       presets: INFANTRY_PRESETS,
       render: renderInfantryModel
@@ -9942,10 +11237,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_JARMEN_KELL',
       modelCode: 'GLA — JARMEN KELL LEGENDARY SNIPER HERO',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_pathfinder_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_pathfinder.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Desert Sniper Wrap • Long-Barrel Dragunov Rifle • Vehicle Pilot Snipe',
-      defaultParams: Object.assign({}, PATHFINDER_DEFAULT_PARAMS, { helmetColor: '#4d7c0f', uniformColor: '#8c734b', vestColor: '#3f6212' }),
+      referenceImage: 'assets/refs/gla_jarmen_kell_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_jarmen_kell.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Olive Helmet & Tunic • Long-Barrel Scoped Sniper Rifle • [🔧] Wrench Callout',
+      defaultParams: Object.assign({}, PATHFINDER_DEFAULT_PARAMS, { helmetColor: '#637349', uniformColor: '#5c6e46', vestColor: '#4b5938' }),
       paramSchema: INFANTRY_PARAM_SCHEMA,
       presets: INFANTRY_PRESETS,
       render: renderInfantryModel
@@ -9954,10 +11249,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_SCORPION',
       modelCode: 'GLA — SCORPION LIGHT BATTLE TANK',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_crusader_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_crusader.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Low-Profile Salvage Hull • 90mm Cannon • Roof Scorpion Rocket Rail',
-      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#c29b61', armorHighlightColor: '#d9b57c', armorShadowColor: '#8c6b3c', houseColor: '#65a30d' }),
+      referenceImage: 'assets/refs/gla_scorpion_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_scorpion.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Desert-Tan Hull ("6" Stencil) • Twin Turret Hatches • 90mm Cannon • Whip Antenna',
+      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#d6b278', armorHighlightColor: '#e8c992', armorShadowColor: '#9c7a44', houseColor: '#5c6e46', ShowUpgradeKit: false }),
       paramSchema: GLA_TANK_PARAM_SCHEMA,
       presets: GLA_TANK_PRESETS,
       render: renderGlaTankModel
@@ -9966,10 +11261,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_MARAUDER',
       modelCode: 'GLA — MARAUDER SALVAGE HEAVY TANK',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_paladin_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_paladin.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Heavy Welded Casemate Superstructure • Salvage Twin-Barrel Upgrade',
-      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#b58d52', armorHighlightColor: '#cca76c', armorShadowColor: '#826132', houseColor: '#65a30d' }),
+      referenceImage: 'assets/refs/gla_marauder_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_marauder.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Heavy Olive-Drab Armor • 6 Road Wheels • Commander Cupola • Twin Heavy Cannons',
+      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#637349', armorHighlightColor: '#7a8c5b', armorShadowColor: '#445032', houseColor: '#587838' }),
       paramSchema: GLA_TANK_PARAM_SCHEMA,
       presets: GLA_TANK_PRESETS,
       render: renderGlaTankModel
@@ -9978,10 +11273,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_QUAD_CANNON',
       modelCode: 'GLA — ZSU-23-4 QUAD CANNON HALF-TRACK',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_avenger_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_avenger.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Armored Half-Track • 360° Quad-Barrel Anti-Air / Anti-Infantry Flak Turret',
-      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#c29b61', armorHighlightColor: '#d9b57c', armorShadowColor: '#8c6b3c', houseColor: '#65a30d' }),
+      referenceImage: 'assets/refs/gla_quad_cannon_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_quad_cannon.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Olive Half-Track (Front Steered Wheels + Rear Tracks) • Split Windshield • Twin Boxy Quad-AA Pods',
+      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#637349', armorHighlightColor: '#7a8c5b', armorShadowColor: '#445032', houseColor: '#9a3412' }),
       paramSchema: GLA_TANK_PARAM_SCHEMA,
       presets: GLA_TANK_PRESETS,
       render: renderGlaTankModel
@@ -9990,10 +11285,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_TOXIN_TRACTOR',
       modelCode: 'GLA — ANTHRAX BIO-TOXIN TRACTOR',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_dozer_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_dozer.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Pressurized Neon-Green Anthrax Vats • Turreted Bio-Sprayer Nozzle',
-      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#a39262', armorHighlightColor: '#bdb07d', armorShadowColor: '#73653f', houseColor: '#84cc16' }),
+      referenceImage: 'assets/refs/gla_toxin_tractor_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_toxin_tractor.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • 6-Wheeled Olive Tractor Truck • 3 Glowing Neon-Green Cylindrical Anthrax Vats • Bio-Sprayer Nozzle',
+      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#637349', armorHighlightColor: '#7a8c5b', armorShadowColor: '#445032', houseColor: '#4ade80' }),
       paramSchema: GLA_TANK_PARAM_SCHEMA,
       presets: GLA_TANK_PRESETS,
       render: renderGlaTankModel
@@ -10002,10 +11297,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_TECHNICAL',
       modelCode: 'GLA — IMPROVISED TECHNICAL PICKUP',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_humvee_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_humvee.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • 4x4 Desert Pickup • Roll-Bar Cage • 360° Bed-Mounted DShK / Recoilless Gun',
-      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#c29b61', armorHighlightColor: '#d9b57c', armorShadowColor: '#8c6b3c', houseColor: '#65a30d' }),
+      referenceImage: 'assets/refs/gla_technical_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_technical.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Desert-Tan 4×4 Pickup • Glass Cab & Black Grille • Bed-Mounted Olive DShK Gun with Shield',
+      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#c8a064', armorHighlightColor: '#dfb87c', armorShadowColor: '#8c6b3c', houseColor: '#5c6e46' }),
       paramSchema: GLA_WHEELED_PARAM_SCHEMA,
       presets: GLA_WHEELED_PRESETS,
       render: renderGlaWheeledModel
@@ -10014,10 +11309,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_COMBAT_CYCLE',
       modelCode: 'GLA — DEMOLITION COMBAT CYCLE (GEN. JUHZIZ)',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_battle_drone_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_battle_drone.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Off-Road Cliff-Climbing Motorcycle • Twin Side-Mounted Rocket Pods',
-      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#c29b61', armorHighlightColor: '#d9b57c', armorShadowColor: '#8c6b3c', houseColor: '#dc2626' }),
+      referenceImage: 'assets/refs/gla_combat_cycle_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_combat_cycle.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Off-Road Motocross Dirtbike • Knobby Tires & Silver Forks • Olive Fairings & Contoured Seat',
+      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#6e843b', armorHighlightColor: '#849b48', armorShadowColor: '#4b5928', houseColor: '#cbd5e1' }),
       paramSchema: GLA_WHEELED_PARAM_SCHEMA,
       presets: GLA_WHEELED_PRESETS,
       render: renderGlaWheeledModel
@@ -10026,10 +11321,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_ROCKET_BUGGY',
       modelCode: 'GLA — HIGH-SPEED ARTILLERY ROCKET BUGGY',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_humvee_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_humvee.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • Tubular Sand-Rail Buggy • Roof Multi-Tube Katyusha Rocket Rack',
-      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#c29b61', armorHighlightColor: '#d9b57c', armorShadowColor: '#8c6b3c', houseColor: '#dc2626' }),
+      referenceImage: 'assets/refs/gla_rocket_buggy_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_rocket_buggy.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • Desert-Tan Tubular Sand-Rail Buggy • 3D Roll-Cage • Roof Olive Rockets with Red Warhead Tips',
+      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#c8a064', armorHighlightColor: '#dfb87c', armorShadowColor: '#8c6b3c', houseColor: '#5c6e46' }),
       paramSchema: GLA_WHEELED_PARAM_SCHEMA,
       presets: GLA_WHEELED_PRESETS,
       render: renderGlaWheeledModel
@@ -10038,8 +11333,8 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_BOMB_TRUCK',
       modelCode: 'GLA — DISGUISED HIGH-EXPLOSIVE BOMB TRUCK',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_tomahawk_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_tomahawk.png',
+      referenceImage: 'assets/refs/gla_toxin_tractor_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_toxin_tractor.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • Heavy Cargo Dump Truck • Concealed HE Warhead & Anthrax Drums',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#b58d52', armorHighlightColor: '#cca76c', armorShadowColor: '#826132', houseColor: '#dc2626' }),
       paramSchema: GLA_WHEELED_PARAM_SCHEMA,
@@ -10050,10 +11345,10 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_SCUD_LAUNCHER',
       modelCode: 'GLA — MAZ-543 SCUD-B BALLISTIC MISSILE LAUNCHER',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_tomahawk_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_tomahawk.png',
-      credits: 'Illustrated Isometric Ligne-Claire Diorama • 8x8 Split-Cab TEL Chassis • Elevating Scud-B HE/Anthrax Ballistic Missile',
-      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#b58d52', armorHighlightColor: '#cca76c', armorShadowColor: '#826132', houseColor: '#65a30d' }),
+      referenceImage: 'assets/refs/gla_scud_launcher_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_scud_launcher.png',
+      credits: 'Illustrated Isometric Ligne-Claire Diorama • 8×8 Olive Split-Cab TEL • Rear Stabilizer Jacks • Twin Scud-B Missiles with Red Warhead Bands',
+      defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#637349', armorHighlightColor: '#7a8c5b', armorShadowColor: '#445032', houseColor: '#ea580c', payloadPitch: 0.06 }),
       paramSchema: GLA_WHEELED_PARAM_SCHEMA,
       presets: GLA_WHEELED_PRESETS,
       render: renderGlaWheeledModel
@@ -10062,8 +11357,8 @@ const ZH_UNIT_MODELS = (function () {
       defId: 'GLA_BATTLE_BUS',
       modelCode: 'GLA — UP-ARMORED FORTIFIED BATTLE BUS',
       status: 'BESPOKE_HD',
-      referenceImage: 'assets/refs/usa_ambulance_diorama_ref.png',
-      spriteImage: 'assets/diorama/units/usa_ambulance.png',
+      referenceImage: 'assets/refs/gla_quad_cannon_diorama_ref.png',
+      spriteImage: 'assets/diorama/units/gla_quad_cannon.png',
       credits: 'Illustrated Isometric Ligne-Claire Diorama • Scrap-Armored Cowcatcher Bus • 8 Garrison Firing Slits • Second-Life Bunker',
       defaultParams: Object.assign({}, FACTION_VEHICLE_DEFAULTS, { armorBaseColor: '#c29b61', armorHighlightColor: '#d9b57c', armorShadowColor: '#8c6b3c', houseColor: '#65a30d' }),
       paramSchema: GLA_WHEELED_PARAM_SCHEMA,
@@ -11002,10 +12297,36 @@ const ZH_UNIT_MODELS = (function () {
     return (defId && MODEL_REGISTRY[defId]) || null;
   }
 
+  const resolvedParamsCache = new Map();
+  const staticBuildingImpostorCache = new Map();
+
+  const STATIC_CACHEABLE_BUILDINGS = new Set([
+    'USA_COMMAND_CENTER', 'USA_SUPPLY_CENTER', 'USA_BARRACKS', 'USA_WAR_FACTORY', 'USA_AIRFIELD', 'USA_DETENTION_CAMP',
+    'CHINA_COMMAND_CENTER', 'CHINA_SUPPLY_CENTER', 'CHINA_BARRACKS', 'CHINA_WAR_FACTORY', 'CHINA_AIRFIELD', 'CHINA_INTERNET_CENTER',
+    'GLA_COMMAND_CENTER', 'GLA_SUPPLY_STASH', 'GLA_BARRACKS', 'GLA_ARMS_DEALER', 'GLA_PALACE', 'GLA_BLACK_MARKET', 'GLA_TUNNEL_NETWORK'
+  ]);
+
+  function invalidateModelCaches(defId) {
+    if (defId) {
+      resolvedParamsCache.delete(defId);
+      for (const k of staticBuildingImpostorCache.keys()) {
+        if (k.startsWith(defId + '|')) staticBuildingImpostorCache.delete(k);
+      }
+    } else {
+      resolvedParamsCache.clear();
+      staticBuildingImpostorCache.clear();
+    }
+  }
+
   function getParams(defId) {
+    if (defId && resolvedParamsCache.has(defId)) {
+      return resolvedParamsCache.get(defId);
+    }
     const entry = getModelEntry(defId);
     const defaults = entry ? entry.defaultParams : {};
-    return Object.assign({}, defaults, customParamsByUnit[defId] || {});
+    const merged = Object.assign({}, defaults, customParamsByUnit[defId] || {});
+    if (defId) resolvedParamsCache.set(defId, merged);
+    return merged;
   }
 
   function setParams(defId, newParams, persist = true) {
@@ -11013,6 +12334,7 @@ const ZH_UNIT_MODELS = (function () {
     const entry = getModelEntry(defId);
     const defaults = entry ? entry.defaultParams : {};
     customParamsByUnit[defId] = Object.assign({}, defaults, customParamsByUnit[defId] || {}, newParams || {});
+    invalidateModelCaches(defId);
     if (persist) saveStoredParams();
     return customParamsByUnit[defId];
   }
@@ -11021,6 +12343,7 @@ const ZH_UNIT_MODELS = (function () {
     if (!defId) return;
     delete customParamsByUnit[defId];
     activePresetByUnit[defId] = 'DIORAMA_DEFAULT';
+    invalidateModelCaches(defId);
     if (persist) saveStoredParams();
     return getParams(defId);
   }
@@ -11035,6 +12358,7 @@ const ZH_UNIT_MODELS = (function () {
     const preset = entry.presets[presetKey];
     activePresetByUnit[defId] = presetKey;
     customParamsByUnit[defId] = Object.assign({}, entry.defaultParams || {}, preset.params || preset.values || {});
+    invalidateModelCaches(defId);
     if (persist) saveStoredParams();
     return customParamsByUnit[defId];
   }
@@ -11059,16 +12383,26 @@ const ZH_UNIT_MODELS = (function () {
     if (!entry) return false;
     const params = getParams(u.defId);
 
-    // By default, render the articulated 3D Ligne-Claire procedural rig (Crusader-style 360° hull,
-    // independent 3D turret slewing, rolling treads/wheels/rotors, and 3D recoil).
-    // Only use static 2D sprite overlay when explicitly requested via forceSprite or ILLUSTRATED_SPRITE mode.
     if ((opts.forceSprite || params.renderMode === 'ILLUSTRATED_SPRITE') && !opts.forceProcedural) {
       if (renderIllustratedUnitSprite(ctx, u, faction, entry, params, opts)) {
         return true;
       }
     }
 
-    entry.render(ctx, u, faction, params, opts);
+    // Apply tactical battlefield silhouette scale so infantry & vehicles read crisply at 1.0x zoom
+    if (!opts.isStudio) {
+      const origR = u.radius || 14;
+      const isInf = Boolean(u.def && u.def.isInfantry);
+      const visualMult = isInf ? 1.52 : 1.24;
+      u.radius = origR * visualMult;
+      try {
+        entry.render(ctx, u, faction, params, opts);
+      } finally {
+        u.radius = origR;
+      }
+    } else {
+      entry.render(ctx, u, faction, params, opts);
+    }
     return true;
   }
 
@@ -11078,28 +12412,84 @@ const ZH_UNIT_MODELS = (function () {
     if (!defId) return false;
     const entry = MODEL_REGISTRY[defId];
     if (!entry) return false;
-    const params = Object.assign({}, getParams(defId));
+    const baseParams = getParams(defId);
     const opts = options || {};
-    if ((opts.forceSprite || params.renderMode === 'ILLUSTRATED_SPRITE') && !opts.forceProcedural) {
-      return false; // Let caller render the 2D illustrated sprite
+    if ((opts.forceSprite || baseParams.renderMode === 'ILLUSTRATED_SPRITE') && !opts.forceProcedural) {
+      return false;
     }
 
     const size = (b.def && b.def.size) || b.size || 72;
     const prog = b.constructed === false ? Math.max(0.25, Math.min(1, b.buildProgress || 0.35)) : 1.0;
-    if (prog < 1.0) {
-      params.structureHeight = (params.structureHeight || 1.0) * prog;
-    }
-
+    const factionColor = (team && team.faction && team.faction.color) || baseParams.houseColor || '#2563eb';
     const faction = (team && team.faction) || {
       id: (b.def && b.def.faction) || 'USA',
-      color: (team && team.faction && team.faction.color) || params.houseColor || '#2563eb'
+      color: factionColor
     };
+
+    // Fast path: Offscreen 2D Canvas impostor cache for static completed structures in real browser DOM
+    const canCacheImpostor =
+      !opts.isStudio &&
+      prog >= 0.999 &&
+      STATIC_CACHEABLE_BUILDINGS.has(defId) &&
+      typeof HTMLCanvasElement !== 'undefined' &&
+      typeof document !== 'undefined' &&
+      typeof document.createElement === 'function' &&
+      typeof ctx.drawImage === 'function';
+
+    if (canCacheImpostor) {
+      const cacheKey = `${defId}|${factionColor}|${size}`;
+      let cached = staticBuildingImpostorCache.get(cacheKey);
+      if (!cached) {
+        const pad = Math.ceil(size * 1.45);
+        const dim = pad * 2;
+        const offCanvas = document.createElement('canvas');
+        if (offCanvas && typeof offCanvas.getContext === 'function') {
+          offCanvas.width = dim * 2;
+          offCanvas.height = dim * 2;
+          const offCtx = offCanvas.getContext('2d');
+          if (offCtx && typeof offCtx.scale === 'function') {
+            offCtx.scale(2, 2);
+            offCtx.translate(pad, pad);
+            const staticMock = {
+              defId,
+              def: b.def || { id: defId, size },
+              radius: b.radius || size * 0.44,
+              angle: 0.68,
+              turretAngle: 0.68,
+              recoilOffset: 0,
+              treadPhase: 0,
+              hp: 1000,
+              maxHp: 1000
+            };
+            entry.render(offCtx, staticMock, faction, baseParams, opts);
+            cached = { canvas: offCanvas, pad, dim };
+            if (staticBuildingImpostorCache.size > 64) staticBuildingImpostorCache.clear();
+            staticBuildingImpostorCache.set(cacheKey, cached);
+          }
+        }
+      }
+      if (cached) {
+        ctx.drawImage(cached.canvas, -cached.pad, -cached.pad, cached.dim, cached.dim);
+        return true;
+      }
+    }
+
+    const params = prog < 1.0
+      ? Object.assign({}, baseParams, { structureHeight: (baseParams.structureHeight || 1.0) * prog })
+      : baseParams;
+
+    // Only use b.turretAngle when the building actually has an active weapon turret; otherwise animate radar/rotors with gameTime
+    const hasCombatTurret = Boolean(b.def && b.def.range > 0);
+    const resolvedTurretAngle = (hasCombatTurret && b.turretAngle !== undefined)
+      ? b.turretAngle
+      : (0.68 + (gameTime || 0) * 0.75);
+
     const mockState = {
       defId,
       def: b.def || { id: defId, size },
       radius: b.radius || size * 0.44,
       angle: b.angle !== undefined ? b.angle : 0.68,
-      turretAngle: b.turretAngle !== undefined ? b.turretAngle : (0.68 + Math.sin((gameTime || 0) * 0.8) * 0.45),
+      turretAngle: resolvedTurretAngle,
       recoilOffset: b.recoilOffset || 0,
       treadPhase: (gameTime || 0) * 0.25,
       hp: b.hp !== undefined ? b.hp : 1000,
@@ -11108,6 +12498,80 @@ const ZH_UNIT_MODELS = (function () {
 
     entry.render(ctx, mockState, faction, params, opts);
     return true;
+  }
+
+  // Bespoke 3D Ligne-Claire Supply Dock Warehouse & Pallet Stack Renderer
+  function renderSupplyDock3D(ctx, s, timeSec = 0) {
+    const proj = createProjector(0.68, 0.56, 0.88);
+    const faces = [];
+    const r = 46;
+    const seam = '#2b241f';
+
+    // 1. Concrete Foundation Apron with Yellow/Black Hazard Curb
+    pushBox3D(faces, proj, -1.05 * r, -0.82 * r, 0, 1.05 * r, 0.82 * r, 0.10 * r, '#78716c', seam, 1.25);
+    pushBox3D(faces, proj, -1.06 * r, 0.72 * r, 0.01 * r, 1.06 * r, 0.83 * r, 0.11 * r, '#eab308', seam, 1.05);
+
+    // 2. Corrugated Steel Logistics Warehouse Shed (Left Wing)
+    pushBox3D(faces, proj, -0.92 * r, -0.66 * r, 0.10 * r, -0.08 * r, 0.42 * r, 0.68 * r, '#94a3b8', seam, 1.25);
+    // Pitched Steel Roof
+    pushPrism3D(faces, proj, [
+      [-0.96 * r, -0.70 * r, 0.68 * r],
+      [-0.04 * r, -0.70 * r, 0.68 * r],
+      [-0.04 * r, 0.46 * r, 0.68 * r],
+      [-0.96 * r, 0.46 * r, 0.68 * r]
+    ], [
+      [-0.90 * r, -0.55 * r, 0.88 * r],
+      [-0.10 * r, -0.55 * r, 0.88 * r],
+      [-0.10 * r, 0.30 * r, 0.88 * r],
+      [-0.90 * r, 0.30 * r, 0.88 * r]
+    ], '#475569', seam, 1.2);
+
+    // 3. Dynamic 3D Supply Crates & Blue Tarpaulin Pallets (Right Yard — scales with remaining credits!)
+    const ratio = clamp((s.amount || 0) / (s.maxAmount || 25000), 0, 1);
+    const crateSlots = [
+      [0.12, -0.56, 0.10, '#d97706'],
+      [0.54, -0.56, 0.10, '#2563eb'],
+      [0.12, -0.12, 0.10, '#ca8a04'],
+      [0.54, -0.12, 0.10, '#b45309'],
+      [0.12, 0.30, 0.10, '#16a34a'],
+      [0.54, 0.30, 0.10, '#d97706'],
+      [0.16, -0.52, 0.36, '#eab308'],
+      [0.56, -0.52, 0.36, '#3b82f6'],
+      [0.16, -0.08, 0.36, '#f59e0b'],
+      [0.56, -0.08, 0.36, '#ca8a04']
+    ];
+    const activeCrates = Math.ceil(ratio * crateSlots.length);
+    for (let i = 0; i < activeCrates; i++) {
+      const [cx, cy, cz, col] = crateSlots[i];
+      pushBox3D(faces, proj, cx * r, cy * r, cz * r, (cx + 0.34) * r, (cy + 0.34) * r, (cz + 0.25) * r, col, seam, 1.1);
+    }
+
+    // 4. Loading Gantry Crane Arm & Rotating Amber Beacon
+    pushBox3D(faces, proj, 0.78 * r, -0.68 * r, 0.10 * r, 0.92 * r, -0.54 * r, 0.96 * r, '#f59e0b', seam, 1.15);
+    pushBox3D(faces, proj, 0.18 * r, -0.65 * r, 0.88 * r, 0.92 * r, -0.56 * r, 0.98 * r, '#eab308', seam, 1.1);
+
+    flushFaces(ctx, faces);
+
+    // Blinking logistics beacon on crane tip
+    const pulse = 0.55 + 0.45 * Math.sin(timeSec * 6);
+    const tip = proj.project(-0.50 * r, -0.12 * r, 0.92 * r);
+    ctx.fillStyle = `rgba(250, 204, 21, ${pulse.toFixed(2)})`;
+    ctx.beginPath();
+    ctx.arc(tip.x, tip.y, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Bespoke 3D Ligne-Claire GLA Salvage Crate Renderer
+  function renderSalvageCrate3D(ctx, c, timeSec = 0) {
+    const yaw = 0.65 + Math.sin(timeSec * 1.8 + (c.x || 0) * 0.05) * 0.12;
+    const proj = createProjector(yaw, 0.56, 0.88);
+    const faces = [];
+    const r = 13;
+    const seam = '#2b241f';
+    pushBox3D(faces, proj, -0.85 * r, -0.65 * r, 0, 0.85 * r, 0.65 * r, 0.95 * r, '#854d0e', seam, 1.2);
+    pushBox3D(faces, proj, -0.90 * r, -0.70 * r, 0.72 * r, 0.90 * r, 0.70 * r, 0.98 * r, '#a16207', seam, 1.15);
+    pushBox3D(faces, proj, -0.25 * r, -0.72 * r, 0.02 * r, 0.25 * r, 0.72 * r, 1.00 * r, '#eab308', seam, 1.0);
+    flushFaces(ctx, faces);
   }
 
   return {
@@ -11138,8 +12602,11 @@ const ZH_UNIT_MODELS = (function () {
     getActivePresetKey,
     applyPreset,
     cyclePreset,
+    setZoomStrokeScale,
     renderUnitIfBespoke,
     renderBuildingIfBespoke,
+    renderSupplyDock3D,
+    renderSalvageCrate3D,
     renderIllustratedUnitSprite,
     renderCrusaderModel,
     renderPaladinModel,

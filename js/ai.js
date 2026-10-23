@@ -248,17 +248,45 @@ window.ZH_AI = (function () {
     1: { think: 0, taunt: 18, wave: 0 }
   };
 
+  let fallbackRngState = 0x20261022;
+
+  function rng(engine) {
+    if (engine && typeof engine.simRandom === 'function') return engine.simRandom();
+    let t = (fallbackRngState += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  function resetTimers() {
+    fallbackRngState = 0x20261022;
+    thinkTimer = 0;
+    tauntTimer = 18;
+    waveTimer = 0;
+    teamTimers[0] = { think: 0, taunt: 24, wave: 0 };
+    teamTimers[1] = { think: 0, taunt: 18, wave: 0 };
+  }
+
+  function isEnemyVisibleToAI(engine, u, aiTeamId = 1) {
+    if (!u || u.hp <= 0 || u.garrisonedIn || u.garrisonId) return false;
+    if (u.stealthed && (u.detectedTimer || 0) <= 0) return false;
+    return true;
+  }
+
   // Phase 4 (SYS-26): Spatial Density & Power-Grid Vulnerability Scanner
   function findBestClusterTarget(engine, enemyTeamId = 0, radius = 260, prioritizePower = false) {
+    const aiTeamId = enemyTeamId === 0 ? 1 : 0;
     const enemyBuildings = engine.buildings.filter(b => b.team === enemyTeamId && b.hp > 0);
-    const enemyUnits = engine.units.filter(u => u.team === enemyTeamId && u.hp > 0 && !(u.garrisonedIn || u.garrisonId));
+    const enemyUnits = engine.units.filter(u => u.team === enemyTeamId && isEnemyVisibleToAI(engine, u, aiTeamId));
     const enemyTeam = engine.teams[enemyTeamId];
 
     const candidates = [];
     for (const b of enemyBuildings) {
       candidates.push({ x: b.x, y: b.y, entity: b, isBuilding: true });
     }
-    for (const u of enemyUnits) {
+    const unitStep = Math.max(1, Math.ceil(enemyUnits.length / 16));
+    for (let i = 0; i < enemyUnits.length; i += unitStep) {
+      const u = enemyUnits[i];
       candidates.push({ x: u.x, y: u.y, entity: u, isBuilding: false });
     }
 
@@ -269,12 +297,16 @@ window.ZH_AI = (function () {
     }
 
     let best = null;
+    const radiusSq = radius * radius;
+    const hasSpatial = engine.spatialGrid && typeof engine.spatialGrid.forEachInRadius === 'function';
     for (const cand of candidates) {
       let score = 0;
       let isPowerStrike = false;
 
       for (const b of enemyBuildings) {
-        if (Math.hypot(b.x - cand.x, b.y - cand.y) <= radius) {
+        const dx = b.x - cand.x;
+        const dy = b.y - cand.y;
+        if (dx * dx + dy * dy <= radiusSq) {
           score += (b.def.cost || 800) * 1.35;
           if (b.def.isSuperweapon) score += 2200;
           if (b.def.isCommandCenter) score += 1200;
@@ -289,9 +321,19 @@ window.ZH_AI = (function () {
         }
       }
 
-      for (const u of enemyUnits) {
-        if (Math.hypot(u.x - cand.x, u.y - cand.y) <= radius) {
-          score += (u.def.cost || 400);
+      if (hasSpatial) {
+        engine.spatialGrid.forEachInRadius(cand.x, cand.y, radius, (u, dSq) => {
+          if (u.isUnit && u.team === enemyTeamId && dSq <= radiusSq && isEnemyVisibleToAI(engine, u, aiTeamId)) {
+            score += (u.def.cost || 400);
+          }
+        });
+      } else {
+        for (const u of enemyUnits) {
+          const dx = u.x - cand.x;
+          const dy = u.y - cand.y;
+          if (dx * dx + dy * dy <= radiusSq) {
+            score += (u.def.cost || 400);
+          }
         }
       }
 
@@ -320,7 +362,8 @@ window.ZH_AI = (function () {
       attackerY = ownCC ? ownCC.y : (teamId === 1 ? 440 : 2360);
     }
 
-    const enemyUnits = engine.units.filter(u => u.team === enemyTeamId && u.hp > 0 && !(u.garrisonedIn || u.garrisonId));
+    const aiTeamId = enemyTeamId === 0 ? 1 : 0;
+    const enemyUnits = engine.units.filter(u => u.team === enemyTeamId && isEnemyVisibleToAI(engine, u, aiTeamId));
     const enemyDefenses = engine.buildings.filter(
       b => b.team === enemyTeamId && b.hp > 0 && b.constructed && b.def.isDefense && (!engine.teams[enemyTeamId] || !engine.teams[enemyTeamId].isLowPower)
     );
@@ -372,8 +415,9 @@ window.ZH_AI = (function () {
 
     if (!engine || !Array.isArray(engine.units)) return baseWeights;
 
+    const aiTeamId = enemyTeamId === 0 ? 1 : 0;
     const enemyCombat = engine.units.filter(
-      u => u.team === enemyTeamId && u.hp > 0 && !u.def.isBuilder && !u.def.isHarvester
+      u => u.team === enemyTeamId && isEnemyVisibleToAI(engine, u, aiTeamId) && !u.def.isBuilder && !u.def.isHarvester
     );
     if (enemyCombat.length < 2) return baseWeights;
 
@@ -444,10 +488,10 @@ window.ZH_AI = (function () {
       if (forceBaseDefense && idx < Math.max(1, Math.floor(n * 0.35))) {
         u.aiSquad = 'BASE_DEFENSE';
       } else if (!u.aiSquad || (u.aiSquad === 'BASE_DEFENSE' && !forceBaseDefense && !cc)) {
-        const isFastOrFlank = u.def.isAir || u.def.stealthed || u.def.locomotor === 'CLIFF_CLIMBER' || u.def.locomotor === 'WHEELED' || (u.def.speed >= 95 && u.def.category !== 'TANK');
+        const isFastOrFlank = flankRatio > 0 && (u.def.isAir || u.def.stealthed || u.def.locomotor === 'CLIFF_CLIMBER' || u.def.locomotor === 'WHEELED' || (u.def.speed >= 95 && u.def.category !== 'TANK'));
         if (idx === 0 && n >= 4 && cc) {
           u.aiSquad = 'BASE_DEFENSE';
-        } else if (isFastOrFlank || (idx / Math.max(1, n)) < flankRatio) {
+        } else if (flankRatio > 0 && (isFastOrFlank || (idx / Math.max(1, n)) < flankRatio)) {
           u.aiSquad = 'FLANKER';
         } else {
           u.aiSquad = 'VANGUARD';
@@ -462,6 +506,9 @@ window.ZH_AI = (function () {
   }
 
   function update(engine, dt) {
+    if ((engine.simTick || 0) <= 1) {
+      resetTimers();
+    }
     updateTeam(engine, 1, dt);
   }
 
@@ -469,6 +516,10 @@ window.ZH_AI = (function () {
     const aiTeam = engine.teams[teamId];
     if (!aiTeam) return;
     const enemyTeamId = teamId === 1 ? 0 : 1;
+    const teamDiff = (aiTeam && aiTeam.difficulty) || engine.difficulty || 'NORMAL';
+    const isEasy = teamDiff === 'EASY';
+    const isBrutal = teamDiff === 'BRUTAL';
+    const isHard = teamDiff === 'HARD' || isBrutal;
 
     const tState = teamTimers[teamId] || (teamTimers[teamId] = { think: 0, taunt: 20, wave: 0 });
     tState.think += dt;
@@ -483,23 +534,26 @@ window.ZH_AI = (function () {
 
     // Periodic General Taunts (Team 1 in Campaign/Skirmish)
     if (teamId === 1 && tState.taunt <= 0) {
-      tState.taunt = 42 + Math.random() * 25;
+      tState.taunt = 42 + rng(engine) * 25;
       tauntTimer = tState.taunt;
       const taunts = aiTeam.general.taunts || [];
       if (taunts.length > 0) {
-        const line = taunts[Math.floor(Math.random() * taunts.length)];
+        const line = taunts[Math.floor(rng(engine) * taunts.length)];
         engine.triggerTaunt(aiTeam.general, line);
       }
     }
 
-    const interval = engine.difficulty === 'HARD' ? 1.8 : engine.difficulty === 'EASY' ? 4.2 : 2.6;
+    const interval = isBrutal ? 1.4 : isHard ? 1.6 : isEasy ? 4.4 : 2.6;
     if (tState.think < interval) return;
     tState.think = 0;
     if (teamId === 1) thinkTimer = 0;
 
-    // Passive AI credit drip on Normal/Hard
-    if (engine.difficulty === 'HARD') aiTeam.credits += 95;
-    else if (engine.difficulty === 'NORMAL') aiTeam.credits += 45;
+    // P2-04: EASY, NORMAL, and HARD differ in think interval, scouting, counter-build accuracy,
+    // queue depth, flank ratio, and retreat threshold — not in passive cash cheats.
+    // Passive credit bonus applies only in BRUTAL or when explicit aiIncomeBonus is enabled.
+    if (isBrutal || engine.aiIncomeBonus) {
+      aiTeam.credits += 110;
+    }
 
     const fId = aiTeam.factionId;
     const doctrine = GENERAL_DOCTRINES[aiTeam.generalId] || GENERAL_DOCTRINES.USA_GRANGER;
@@ -560,11 +614,13 @@ window.ZH_AI = (function () {
         const item = desiredBuildOrder[i];
         const bDef = ZH_DATA.BUILDINGS[item.id];
         if (!bDef || !engine.isEntityUnlocked(item.id, teamId)) continue;
+        // Phase 3 (8.3): Easy difficulty does not construct superweapons
+        if (isEasy && bDef.isSuperweapon) continue;
         if (countBuilding(item.id) < item.count) {
           const slot = BASE_OFFSETS[i % BASE_OFFSETS.length];
           const spot = engine.findValidBuildSpot
             ? engine.findValidBuildSpot(item.id, cc.x, cc.y, i)
-            : { x: cc.x + slot.dx * dirSign + (Math.random() - 0.5) * 28, y: cc.y + slot.dy * dirSign + (Math.random() - 0.5) * 28 };
+            : { x: cc.x + slot.dx * dirSign + (rng(engine) - 0.5) * 28, y: cc.y + slot.dy * dirSign + (rng(engine) - 0.5) * 28 };
           if (spot && engine.startBuildingPlacement(item.id, teamId, spot.x, spot.y)) {
             break;
           }
@@ -577,18 +633,21 @@ window.ZH_AI = (function () {
       const reactorId = fId === 'USA' ? 'USA_REACTOR' : 'CHINA_REACTOR';
       const spot = engine.findValidBuildSpot
         ? engine.findValidBuildSpot(reactorId, cc.x, cc.y, 0)
-        : { x: cc.x + (Math.random() - 0.5) * 320, y: cc.y + (Math.random() - 0.5) * 320 };
+        : { x: cc.x + (rng(engine) - 0.5) * 320, y: cc.y + (rng(engine) - 0.5) * 320 };
       if (spot) {
         engine.startBuildingPlacement(reactorId, teamId, spot.x, spot.y);
       }
     }
 
     // 4. Train Army (with Dynamic Counter-Composition Weighting) & Research Upgrades
-    const counterWeights = computeCounterWeights(engine, aiTeam.generalId, enemyTeamId);
+    // Phase 3 (8.3): Easy AI uses base doctrine weights without counter-adaptation and skips tech upgrades; Hard AI prioritizes upgrades at credits > 800
+    const counterWeights = isEasy ? (doctrine.unitWeights || {}) : computeCounterWeights(engine, aiTeam.generalId, enemyTeamId);
+    const upgradeCreditThreshold = isHard ? 800 : 1200;
+    const maxQueueDepth = isHard ? 3 : isEasy ? 1 : 2;
     for (const b of myBuildings) {
-      if (!b.constructed || b.queue.length >= 2) continue;
+      if (!b.constructed || b.queue.length >= maxQueueDepth) continue;
 
-      if (b.def.upgrades && b.def.upgrades.length > 0 && aiTeam.credits > 1200) {
+      if (!isEasy && b.def.upgrades && b.def.upgrades.length > 0 && aiTeam.credits > upgradeCreditThreshold) {
         for (const upgId of b.def.upgrades) {
           if (!aiTeam.upgrades.has(upgId)) {
             engine.queueProduction(b, upgId);
@@ -605,7 +664,7 @@ window.ZH_AI = (function () {
                  engine.isEntityUnlocked(uId, teamId)
         );
         if (candidates.length > 0) {
-          const pick = pickUnitForGeneral(aiTeam.generalId, candidates, counterWeights);
+          const pick = pickUnitForGeneral(aiTeam.generalId, candidates, counterWeights, engine);
           engine.queueProduction(b, pick);
         }
       }
@@ -642,7 +701,7 @@ window.ZH_AI = (function () {
         const idleInf = myUnits.filter(
           u => u.def.category === 'INFANTRY' && !u.def.isBuilder && !u.def.isHacker && u.state === 'IDLE'
         );
-        if (idleInf.length > 0 && Math.random() < 0.45) {
+        if (idleInf.length > 0 && rng(engine) < 0.45) {
           const inf = idleInf[0];
           const bunker = openBunkers[0];
           inf.state = 'ENTER_GARRISON';
@@ -654,24 +713,26 @@ window.ZH_AI = (function () {
       }
     }
 
-    // 6. Tactical Active Micro-Abilities for AI Units
-    const enemyUnits = engine.units.filter(u => u.team === enemyTeamId && u.hp > 0 && !(u.garrisonedIn || u.garrisonId));
-    for (const u of myUnits) {
-      const abId = u.def.abilityId || (typeof u.def.ability === 'string' ? u.def.ability : (u.def.ability && u.def.ability.id));
-      if (!abId || (u.abilityCooldown || 0) > 0) continue;
-      if (abId === 'OVERLORD_SPEAKER' || abId === 'OVERLORD_GATLING') {
-        engine.triggerUnitAbility(u.id, u.x, u.y);
-      } else if (abId === 'PILOT_SNIPE' || abId === 'HIJACK_VEHICLE') {
-        const enemyVeh = enemyUnits.find(
-          e => (e.def.category === 'TANK' || e.def.category === 'LIGHT_VEHICLE') && !e.unmanned && Math.hypot(e.x - u.x, e.y - u.y) <= 300
-        );
-        if (enemyVeh) {
-          engine.triggerUnitAbility(u.id, enemyVeh.x, enemyVeh.y, enemyVeh);
-        }
-      } else if (abId === 'FLASHBANG' || abId === 'FLAME_WALL' || abId === 'LASER_LOCK') {
-        const nearEnemy = enemyUnits.find(e => Math.hypot(e.x - u.x, e.y - u.y) <= 240);
-        if (nearEnemy) {
-          engine.triggerUnitAbility(u.id, nearEnemy.x, nearEnemy.y, nearEnemy);
+    // 6. Tactical Active Micro-Abilities for AI Units (Normal & Hard)
+    const enemyUnits = engine.units.filter(u => u.team === enemyTeamId && isEnemyVisibleToAI(engine, u, teamId));
+    if (!isEasy) {
+      for (const u of myUnits) {
+        const abId = u.def.abilityId || (typeof u.def.ability === 'string' ? u.def.ability : (u.def.ability && u.def.ability.id));
+        if (!abId || (u.abilityCooldown || 0) > 0) continue;
+        if (abId === 'OVERLORD_SPEAKER' || abId === 'OVERLORD_GATLING') {
+          engine.triggerUnitAbility(u.id, u.x, u.y);
+        } else if (abId === 'PILOT_SNIPE' || abId === 'HIJACK_VEHICLE') {
+          const enemyVeh = enemyUnits.find(
+            e => (e.def.category === 'TANK' || e.def.category === 'LIGHT_VEHICLE') && !e.unmanned && Math.hypot(e.x - u.x, e.y - u.y) <= 300
+          );
+          if (enemyVeh) {
+            engine.triggerUnitAbility(u.id, enemyVeh.x, enemyVeh.y, enemyVeh);
+          }
+        } else if (abId === 'FLASHBANG' || abId === 'FLAME_WALL' || abId === 'LASER_LOCK') {
+          const nearEnemy = enemyUnits.find(e => Math.hypot(e.x - u.x, e.y - u.y) <= 240);
+          if (nearEnemy) {
+            engine.triggerUnitAbility(u.id, nearEnemy.x, nearEnemy.y, nearEnemy);
+          }
         }
       }
     }
@@ -680,6 +741,7 @@ window.ZH_AI = (function () {
     if (aiTeam.generalPoints > 0) {
       const powers = ZH_DATA.GENERALS_POWERS[fId] || [];
       for (const p of powers) {
+        if (isEasy && p.rankReq > 1) continue; // Easy AI only unlocks Rank 1 powers
         if (!aiTeam.unlockedPowers.has(p.id) && aiTeam.rank >= p.rankReq) {
           engine.unlockGeneralsPower(teamId, p.id);
           break;
@@ -687,9 +749,10 @@ window.ZH_AI = (function () {
       }
     }
 
-    const clusterTarget = findBestClusterTarget(engine, enemyTeamId, 260, true);
+    const clusterTarget = findBestClusterTarget(engine, enemyTeamId, 260, !isEasy);
+    const powerMinTime = isHard ? 65 : isEasy ? 150 : 90;
 
-    if ((engine.matchTime || 0) >= 75) {
+    if ((engine.matchTime || 0) >= powerMinTime) {
       for (const pId of aiTeam.unlockedPowers) {
         if ((aiTeam.powerCooldowns[pId] || 0) <= 0) {
           engine.castGeneralsPower(teamId, pId, clusterTarget.x, clusterTarget.y);
@@ -698,17 +761,32 @@ window.ZH_AI = (function () {
       }
     }
 
-    for (const b of myBuildings) {
-      if (b.constructed && b.def.isSuperweapon && b.superweaponReady) {
-        engine.fireSuperweapon(b.id, clusterTarget.x, clusterTarget.y);
+    if (!isEasy) {
+      for (const b of myBuildings) {
+        if (b.constructed && b.def.isSuperweapon && b.superweaponReady) {
+          engine.fireSuperweapon(b.id, clusterTarget.x, clusterTarget.y);
+        }
       }
     }
 
     // 8. Phase 4 (SYS-26): Multi-Squad Tactical Micro (BASE_DEFENSE, FLANKER Dozer/Harvester Raid, VANGUARD Push)
     const combatUnits = myUnits.filter(u => !u.def.isBuilder && !u.def.isHarvester && !u.def.isHacker);
+    // Retreat micro on Hard/Brutal: pull critically damaged vehicles back toward Command Center
+    const retreatThreshold = isBrutal ? 0.30 : isHard ? 0.22 : 0;
+    if (retreatThreshold > 0) {
+      for (const u of combatUnits) {
+        if (u.hp > 0 && u.hp < u.maxHp * retreatThreshold && Math.hypot(u.x - cc.x, u.y - cc.y) > 260) {
+          u.state = 'MOVE';
+          u.targetEntity = null;
+          u.targetX = cc.x + (rng(engine) - 0.5) * 90;
+          u.targetY = cc.y + (rng(engine) - 0.5) * 90;
+        }
+      }
+    }
     const baseWave = doctrine.waveSize || 6;
-    const waveSize = engine.difficulty === 'HARD' ? Math.max(4, baseWave - 1) : engine.difficulty === 'EASY' ? baseWave + 2 : baseWave;
-    const flankRatio = doctrine.flankRatio || 0.35;
+    const waveSize = isHard ? Math.max(4, baseWave - 1) : isEasy ? baseWave + 2 : baseWave;
+    // Phase 3 (8.3): Easy uses single-lane vanguard push (flankRatio = 0); Hard uses aggressive multi-angle flank raids
+    const flankRatio = isEasy ? 0 : isHard ? Math.max(0.45, doctrine.flankRatio || 0.35) : (doctrine.flankRatio || 0.35);
 
     const squads = assignSquadRoles(combatUnits, flankRatio, cc);
 
@@ -716,8 +794,8 @@ window.ZH_AI = (function () {
     for (const defUnit of squads.defenders) {
       if (defUnit.state === 'IDLE') {
         defUnit.state = 'GUARD';
-        defUnit.guardX = cc.x + (Math.random() - 0.5) * 120;
-        defUnit.guardY = cc.y + (Math.random() - 0.5) * 120;
+        defUnit.guardX = cc.x + (rng(engine) - 0.5) * 120;
+        defUnit.guardY = cc.y + (rng(engine) - 0.5) * 120;
         defUnit.targetX = defUnit.guardX;
         defUnit.targetY = defUnit.guardY;
       }
@@ -728,31 +806,47 @@ window.ZH_AI = (function () {
       if (teamId === 1) waveTimer = 0;
 
       // Dispatch FLANKER squad to hunt exposed enemy Builders/Harvesters or flank via outer corridors
+      const sharedRaidTarget = !isEasy ? findHighValueRaidTarget(engine, cc.x, cc.y, enemyTeamId) : null;
       squads.flankers.forEach((u, idx) => {
         if (u.state === 'IDLE') {
-          const raidTarget = findHighValueRaidTarget(engine, u.x, u.y, enemyTeamId);
-          const destX = raidTarget ? raidTarget.x : clusterTarget.x;
-          const destY = raidTarget ? raidTarget.y : clusterTarget.y;
+          const destX = sharedRaidTarget ? sharedRaidTarget.x : clusterTarget.x;
+          const destY = sharedRaidTarget ? sharedRaidTarget.y : clusterTarget.y;
           u.state = 'ATTACK_MOVE';
           const flankX = Math.max(220, Math.min(engine.worldSize - 220, destX + (idx % 2 === 0 ? -380 : 420)));
           const flankY = Math.max(220, Math.min(engine.worldSize - 220, destY + (idx % 2 === 0 ? -420 : 360)));
           u.waypoints = [
             { x: flankX, y: flankY },
-            { x: destX + (Math.random() - 0.5) * 90, y: destY + (Math.random() - 0.5) * 90 }
+            { x: destX + (rng(engine) - 0.5) * 90, y: destY + (rng(engine) - 0.5) * 90 }
           ];
           u.targetX = u.waypoints[0].x;
           u.targetY = u.waypoints[0].y;
         }
       });
 
-      // Dispatch VANGUARD squad to crush primary cluster target
+      // Dispatch VANGUARD squad to crush primary cluster target (share one A* corridor per wave)
+      let sharedVanguardPath = null;
       squads.vanguard.forEach((u) => {
         if (u.state === 'IDLE') {
           u.state = 'ATTACK_MOVE';
-          u.targetX = clusterTarget.x + (Math.random() - 0.5) * 140;
-          u.targetY = clusterTarget.y + (Math.random() - 0.5) * 140;
+          const offX = (rng(engine) - 0.5) * 140;
+          const offY = (rng(engine) - 0.5) * 140;
+          u.targetX = clusterTarget.x + offX;
+          u.targetY = clusterTarget.y + offY;
           if (engine.navGrid) {
-            u.waypoints = engine.navGrid.findPath(u.x, u.y, u.targetX, u.targetY, u.def.locomotor || 'TRACKED');
+            if (!sharedVanguardPath) {
+              sharedVanguardPath = engine.navGrid.findPath(u.x, u.y, clusterTarget.x, clusterTarget.y, u.def.locomotor || 'TRACKED');
+            }
+            if (sharedVanguardPath && sharedVanguardPath.length > 0) {
+              u.waypoints = sharedVanguardPath.map((wp, idx) =>
+                idx === sharedVanguardPath.length - 1
+                  ? { x: u.targetX, y: u.targetY }
+                  : { x: wp.x + offX * 0.35, y: wp.y + offY * 0.35 }
+              );
+              u.targetX = u.waypoints[0].x;
+              u.targetY = u.waypoints[0].y;
+            } else {
+              u.waypoints = [{ x: u.targetX, y: u.targetY }];
+            }
           }
         }
       });
@@ -765,11 +859,11 @@ window.ZH_AI = (function () {
     return GENERAL_DOCTRINES.GLA_THRAX.buildOrder;
   }
 
-  function pickUnitForGeneral(generalId, candidates, customWeights = null) {
+  function pickUnitForGeneral(generalId, candidates, customWeights = null, engine = null) {
     const doctrine = GENERAL_DOCTRINES[generalId];
     const weights = customWeights || (doctrine && doctrine.unitWeights);
     if (!weights) {
-      return candidates[Math.floor(Math.random() * candidates.length)];
+      return candidates[Math.floor(rng(engine) * candidates.length)];
     }
     let totalWeight = 0;
     const weightedList = candidates.map(uId => {
@@ -777,7 +871,7 @@ window.ZH_AI = (function () {
       totalWeight += w;
       return { id: uId, weight: w };
     });
-    let roll = Math.random() * totalWeight;
+    let roll = rng(engine) * totalWeight;
     for (const item of weightedList) {
       roll -= item.weight;
       if (roll <= 0) return item.id;
@@ -796,9 +890,9 @@ window.ZH_AI = (function () {
 
   function deserializeState(state) {
     if (!state) return;
-    thinkTimer = state.thinkTimer || 0;
-    tauntTimer = state.tauntTimer || 18;
-    waveTimer = state.waveTimer || 0;
+    thinkTimer = state.thinkTimer !== undefined ? state.thinkTimer : 0;
+    tauntTimer = state.tauntTimer !== undefined ? state.tauntTimer : 18;
+    waveTimer = state.waveTimer !== undefined ? state.waveTimer : 0;
     if (state.teamTimers) {
       if (state.teamTimers[0]) Object.assign(teamTimers[0], state.teamTimers[0]);
       if (state.teamTimers[1]) Object.assign(teamTimers[1], state.teamTimers[1]);
@@ -808,6 +902,7 @@ window.ZH_AI = (function () {
   return {
     update,
     updateTeam,
+    resetTimers,
     GENERAL_DOCTRINES,
     pickUnitForGeneral,
     findBestClusterTarget,

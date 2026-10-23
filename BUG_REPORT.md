@@ -3,7 +3,7 @@
 - **Target Branch**: `feat/hud-overhaul`
 - **Commits Analyzed**: `0db2d13` (where user reproduced "units not getting selected, Bulldozer selected via HUD button but not moving") and `f831a1a` (current `HEAD`)
 - **Automated Human QA Runner**: [`tests/human_qa_runner.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/tests/human_qa_runner.js) (`node tests/human_qa_runner.js`)
-- **Execution Summary on `HEAD` (`f831a1a`)**: **158 Synthetic Human UI Actions Dispatched | 65 Assertions | 62 Passed | 3 Active Bugs Failing (`BUG-UI-07`, `BUG-UI-08`, `BUG-UI-09`)**
+- **Latest Execution Summary (23 Oct 2026)**: **13 Playbooks | 154 Synthetic Human UI Actions Dispatched | 87 Assertions | 87 Passed (`87/87 PASS`) | 0 Active Failures (All 12 Bugs `BUG-UI-01..09`, `BUG-ENG-01..02`, `BUG-AI-01` Resolved & Verified)**
 
 ---
 
@@ -30,9 +30,9 @@
 
 ---
 
-## Part 2: Active Bugs in Current `HEAD` (`f831a1a`) for the Main Agent to Fix
+## Part 2: Resolved UI Bugs Verified by Playbook 13 (`87/87 PASS`)
 
-Running the upgraded 13-Playbook Human QA Suite (`node tests/human_qa_runner.js`) on `HEAD` (`f831a1a`) catches **3 active UI/Selection bugs** that directly impact unit selection and visual feedback on macOS:
+Running the upgraded 13-Playbook Human QA Suite (`node tests/human_qa_runner.js`) verifies all **3 Retina & `BUILD`-Mode UI/Selection fixes** (`BUG-UI-07`, `BUG-UI-08`, `BUG-UI-09`) alongside the 9 earlier human-QA fixes (`BUG-UI-01..06`, `BUG-ENG-01..02`, `BUG-AI-01`):
 
 ### 1. `[BUG-UI-07]` (HIGH / P1) — macOS Retina (`devicePixelRatio = 2`) Drag-Selection Box Draws at 50% Size & 50% Coordinates
 - **File & Lines**: [`js/ui.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L2402-L2419) vs. [`js/ui.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L201-L220) and [`js/engine.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/engine.js#L3391-L3400)
@@ -40,33 +40,20 @@ Running the upgraded 13-Playbook Human QA Suite (`node tests/human_qa_runner.js`
   `❌ FAIL | [Playbook 13] renderSelectionBox() scales drag-selection marquee by engine.pixelRatio (2x on Retina) so visual box matches cursor — devicePixelRatio=2, engine.pixelRatio=2, engine.dpr=undefined, marqueeTransformScaleX=1`
 - **Root Cause**:
   In [`resizeCanvases()`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L205-L216), the canvas physical buffer is scaled by `dpr = Math.min(window.devicePixelRatio || 1, 2)` (`2` on all Retina Macs) and stored on `engine.pixelRatio = dpr`. Inside [`engine.render()`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/engine.js#L3394), the engine sets `const dpr = this.pixelRatio || 1; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);`.
-  However, right after `engine.render()` returns, [`renderSelectionBox()`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L2405-L2407) executes:
-  ```js
-  const dpr = engine.dpr || 1;
-  ctx.save();
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ```
-  Because `engine.dpr` is **`undefined`** (the property on `GameEngine` is `engine.pixelRatio`), `dpr` evaluates to `1`! `ctx.setTransform(1, 0, 0, 1, 0, 0)` overwrites the `2x` Retina transform on the `2560x1000` physical canvas buffer and draws the green selection box using CSS pixel coordinates (`boxStartScreenX`, `boxEndScreenX`) at **half size and half position** (shifted 50% toward the top-left corner away from the player's cursor).
-- **Fix for Main Agent**:
-  In [`js/ui.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L2405), change:
-  ```js
-  const dpr = engine.pixelRatio || engine.dpr || window.devicePixelRatio || 1;
-  ```
-  (and optionally set `engine.dpr = dpr;` alongside `engine.pixelRatio = dpr;` in [`resizeCanvases()`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L216)).
+  However, right after `engine.render()` returns, [`renderSelectionBox()`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L2405-L2407) executed `const dpr = engine.dpr || 1;`, which evaluated to `1` when `engine.dpr` was undefined, overwriting the `2x` Retina transform.
+- **Resolution Verified**:
+  [`js/ui.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js) sets `engine.dpr = dpr` alongside `engine.pixelRatio = dpr` in `resizeCanvases()` and resolves `const dpr = engine.pixelRatio || engine.dpr || window.devicePixelRatio || 1;` in `renderSelectionBox()`.
 
 ---
 
 ### 2. `[BUG-UI-08]` (MEDIUM / P2) — Left-Clicking a Friendly Unit or Structure While in `BUILD` Mode Traps Selection or Places a Foundation Over the Unit
-- **File & Lines**: [`js/ui.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L1946-L1958) and [`js/engine.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/engine.js#L1118-L1153)
+- **File & Lines**: [`js/ui.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L3265-L3290) and [`js/engine.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/engine.js#L1118-L1153)
 - **QA Playbook Failure**:
   `❌ FAIL | [Playbook 13] Left-clicking a friendly structure/unit after an invalid BUILD click does not silently trap the player in BUILD mode or place a scaffold over the unit — commandMode=null, selectedIds=17`
 - **Root Cause**:
-  1. When the player selects a Dozer and clicks a building cameo on the Command Card (`engine.commandMode = 'BUILD'`), [`canvas.addEventListener('mousedown')`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L1946-L1958) intercepts **every** left-click and returns early before `handleSingleClickSelection` or `isDraggingBox = true`.
-  2. If the player changes their mind and left-clicks directly on an existing friendly building (like their Command Center or Barracks) to select it, `startBuildingPlacement` returns `false` (collision), plays an error buzzer, and **keeps `engine.commandMode = 'BUILD'` locked**, refusing to select the clicked building.
-  3. Worse, if the player left-clicks directly on one of their own combat units (`targetUnit`) to select it, [`canPlaceBuilding()`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/engine.js#L1118-L1146) only checks building collisions (`this.buildings`), **not friendly units**, so left-clicking a friendly unit while in `BUILD` mode places a building scaffold directly on top of the unit and keeps the Dozer (`id=17`) selected instead of selecting the unit!
-- **Fix for Main Agent**:
-  In [`js/ui.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L1946-L1958) (inside the `if (engine.commandMode === 'BUILD' && engine.pendingBuildId)` block in `mousedown`):
-  Before attempting `startBuildingPlacement`, check if the user clicked directly on an existing friendly unit or friendly building (when `!e.shiftKey`). If a friendly unit or building is directly under the cursor (`hitUnit` or `hitBldg`), cancel `BUILD` mode (`engine.commandMode = null; engine.pendingBuildId = null;`) and fall through to `handleSingleClickSelection(w.x, w.y, false)` so clicking a unit or building selects it naturally!
+  When `engine.commandMode === 'BUILD'`, left-clicking a friendly unit placed a scaffold directly over the unit (because `canPlaceBuilding()` only checked buildings), and left-clicking an existing friendly structure after a failed placement kept `BUILD` mode locked instead of selecting the structure.
+- **Resolution Verified**:
+  In [`js/ui.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L3265-L3290), left-clicking a friendly unit while in `BUILD` mode immediately exits `BUILD` mode and selects the unit; left-clicking an invalid footprint rejects placement once (warning the player while keeping `BUILD` mode active), and a subsequent click on an existing friendly building exits `BUILD` mode and selects that building. Both Playbook 3 and Playbook 13 pass cleanly.
 
 ---
 
@@ -75,27 +62,36 @@ Running the upgraded 13-Playbook Human QA Suite (`node tests/human_qa_runner.js`
 - **QA Playbook Failure**:
   `❌ FAIL | [Playbook 13] pushMoveMarker() initializes t: 0 so same-frame engine.render() never passes NaN radius to ctx.arc() — nanArcCallsOnImmediateRender=2, marker[last].t=undefined`
 - **Root Cause**:
-  [`pushMoveMarker()`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L2194-L2200) pushes `{ x: wx, y: wy, color: color || '#22c55e', age: 0, maxAge: 0.55 }` without initializing `t: 0`. Although `updateSpecialEffects(dt)` now initializes `m.t = (m.t || 0) + dt`, if `engine.render()` runs before `stepFixed(dt)` (for example, while the game is paused or on an immediate redraw), [`renderMoveMarkers()`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/engine.js#L3468) computes `const p = Math.min(1, m.t / 0.45);` where `m.t` is `undefined`, passing `NaN` radius to `ctx.arc()`.
-- **Fix for Main Agent**:
-  1. In [`js/ui.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js#L2194-L2200), add `t: 0` to the object pushed in `pushMoveMarker()`:
-     ```js
-     engine.moveMarkers.push({
-       x: wx,
-       y: wy,
-       color: color || '#22c55e',
-       t: 0,
-       age: 0,
-       maxAge: 0.55
-     });
-     ```
-  2. In [`js/engine.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/engine.js#L3468), guard `m.t` with `const p = Math.min(1, (m.t || 0) / 0.45);`.
+  `pushMoveMarker()` pushed `{ x: wx, y: wy, color: color || '#22c55e', age: 0, maxAge: 0.55 }` without initializing `t: 0`, causing `renderMoveMarkers()` to compute `NaN` when `engine.render()` ran before `stepFixed(dt)`.
+- **Resolution Verified**:
+  `pushMoveMarker()` initializes `t: 0` and `renderMoveMarkers()` guards `(m.t || 0)`.
 
 ---
 
-## Verification Command for the Main Agent
+## Part 3: Complete Resolved Bug Ledger (`BUG-UI-01..09`, `BUG-ENG-01..02`, `BUG-AI-01`)
 
-After applying the 3 fixes above, run:
+| Bug ID | Severity | Summary | Status |
+| :--- | :--- | :--- | :--- |
+| `BUG-UI-01` | High | `#command-card-grid` overflowed 12-slot layout when unit upgrades + stances stacked | **Resolved ✅** (Playbook 10) |
+| `BUG-UI-02` | Medium | `#selection-summary` `.unit-group-chip` click did not filter multi-type selection | **Resolved ✅** (Playbook 10) |
+| `BUG-UI-03` | Medium | `#control-group-bar` pill click did not recall bound squad or building | **Resolved ✅** (Playbook 10) |
+| `BUG-UI-04` | Low | `#power-strip` quick-cast buttons did not arm `commandMode = 'POWER'` | **Resolved ✅** (Playbook 10) |
+| `BUG-UI-05` | Medium | Canvas CSS height did not dynamically subtract `--top-bar-h` (`36px`) + `--cmd-bar-h` (`184px`) | **Resolved ✅** (Playbook 11) |
+| `BUG-UI-06` | Low | `#btn-open-powers-preview` did not open `#powers-modal` when Rank Points = 0 | **Resolved ✅** (Playbook 11) |
+| `BUG-UI-07` | High | macOS Retina (`devicePixelRatio = 2`) drag-selection marquee drew at 50% scale | **Resolved ✅** (Playbook 13) |
+| `BUG-UI-08` | Medium | Left-clicking friendly unit/building in `BUILD` mode trapped selection or placed scaffold over unit | **Resolved ✅** (Playbook 3 & 13) |
+| `BUG-UI-09` | Low | `pushMoveMarker()` omitted `t: 0`, causing `NaN` `ctx.arc` radius on same-frame render | **Resolved ✅** (Playbook 13) |
+| `BUG-ENG-01` | Medium | Move markers persisted indefinitely when `age` vs `t` properties diverged | **Resolved ✅** (Playbook 11) |
+| `BUG-ENG-02` | Medium | Victory modal `creditsEarned` statistic showed current bank instead of cumulative income | **Resolved ✅** (Playbook 11) |
+| `BUG-AI-01` | High | AI launched unprovoked superweapon/power strikes within the first 6s of a match | **Resolved ✅** (Playbook 11) |
+
+---
+
+## Verification Command
+
+Run:
 ```bash
 node tests/human_qa_runner.js
 ```
-All **65/65 Human QA assertions** across Playbooks 1–13 will pass with `0` findings.
+All **87/87 Human QA assertions** across **Playbooks 1–13 (154 synthetic human actions)** pass with `0` findings.
+

@@ -1749,6 +1749,8 @@ if (require.main === module) {
     const icon = r.passed ? '✅ PASS' : '❌ FAIL';
     console.log(`${icon} | [${r.playbook}] ${r.name}${r.detail ? ' — ' + r.detail : ''}`);
   }
+  console.log('--------------------------------------------------------------------');
+  console.log(`SUMMARY: ${actionCount} Actions | ${passed}/${report.length} Assertions Passed | ${failed} Failed`);
   if (findings.length > 0) {
     console.log('\n====================================================================');
     console.log(' HUMAN-UI INTERACTION BUGS DISCOVERED');
@@ -1761,7 +1763,7 @@ if (require.main === module) {
       console.log(`  Impact : ${f.impact}\n`);
     }
   }
-  process.exit(0);
+  process.exit(failed > 0 ? 1 : 0);
 }
 
 module.exports = { runHumanQAPlaybooks, HumanUserDriver };

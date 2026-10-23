@@ -180,6 +180,7 @@
     }
     const simPanel = document.getElementById('zh-sim-hud-panel') || document.getElementById('zh-sim-panel');
     if (simPanel && !isDev) {
+      simPanel.style.display = 'none';
       const body = document.getElementById('zh-sim-body');
       const collapseBtn = document.getElementById('zh-sim-collapse-btn');
       if (body) {
@@ -379,15 +380,16 @@
   let dossierTauntIndex = 0;
 
   const DIFFICULTY_DOCTRINE_NOTES = {
-    EASY: 'Cadet Doctrine: Relaxed AI build cadence, slower wave timers & reduced harvest pressure.',
-    NORMAL: 'Commander Doctrine: Balanced multi-squad combined arms, active tech capture & coordinated flank attacks.',
-    HARD: 'Brutal General Doctrine: Relentless APM, accelerated production, superweapons & Generals Powers.'
+    EASY: 'Cadet Doctrine (AI $10,000 vs You $10,000): Single-front waves, 95s first attack, no flank harassment, Superweapons & Powers held.',
+    NORMAL: 'Commander Doctrine (AI $10,000 vs You $10,000): Balanced combined-arms squads, 55s first attack, active tech capture & coordinated flanks.',
+    HARD: 'General Doctrine (AI $10,000 vs You $10,000): Relentless 1.4s build cadence, 35s first attack, 2-prong flank strikes, wounded unit retreat micro, Superweapons & Generals Powers.',
+    BRUTAL: 'Supreme General Doctrine (AI $12,500 vs You $10,000): Maximum 1.1s build cadence, 28s first attack, multi-front pincer strikes, retreat micro, and War Economy reserve.'
   };
 
   const MAP_STRATEGIC_NOTES = {
-    TOURNAMENT_DESERT: { tag: 'DESERT', resources: '$166k Supply • 2 Derricks • 4 Bunkers' },
-    FINAL_CRUSADE:     { tag: 'TEMPERATE', resources: '$166k Supply • Hospital & 2 Derricks' },
-    DEFCON_6:          { tag: 'ARCTIC', resources: '$166k Supply • Repair Bay & Chokes' }
+    TOURNAMENT_DESERT: { tag: 'DESERT • 2 CHOKES', resources: '$166k Supply • 2 Derricks • 4 Urban Bunkers' },
+    FINAL_CRUSADE:     { tag: 'VALLEY • 3 BRIDGES', resources: '$166k Supply • Tech Hospital & 2 Derricks' },
+    DEFCON_6:          { tag: 'ARCTIC • 4 PASSES', resources: '$166k Supply • Tech Repair Bay & Stronghold' }
   };
 
   function setupStartScreen() {
@@ -1268,6 +1270,11 @@
     }
   }
 
+  let onboardingDismissed = false;
+  let onboardingBeat1Done = false;
+  let onboardingBeat2Done = false;
+  let onboardingBeat3Done = false;
+
   function updateStartMatchupSummary() {
     const summaryEl = document.getElementById('start-matchup-summary');
     if (!summaryEl) return;
@@ -1277,8 +1284,9 @@
     if (!pGen || !aiGen || !mapDef) return;
     const pMeta = getGeneralMilitaryMeta(pGen);
     const aiMeta = getGeneralMilitaryMeta(aiGen);
+    const aiCashStr = selectedDifficulty === 'BRUTAL' ? '$12,500' : '$10,000';
     summaryEl.textContent =
-      `[${pMeta.serial}] ${pGen.name} VS [${aiMeta.serial}] ${aiGen.name} // SECTOR: ${mapDef.name} // ROE: ${selectedDifficulty}`;
+      `[${pMeta.serial}] ${pGen.name} ($10,000) VS [${aiMeta.serial}] ${aiGen.name} (${aiCashStr}) // SECTOR: ${mapDef.name} // ROE: ${selectedDifficulty} // VICTORY: DESTROY ALL BUILDINGS & BUILDERS`;
   }
 
   function startNewMatch() {
@@ -1317,6 +1325,32 @@
     document.body.classList.remove('hud-theme-usa', 'hud-theme-china', 'hud-theme-gla');
     if (engine.teams[0] && engine.teams[0].factionId) {
       document.body.classList.add(`hud-theme-${engine.teams[0].factionId.toLowerCase()}`);
+    }
+
+    // Phase 1 (6.2): Reset 3-beat onboarding briefing
+    onboardingBeat1Done = false;
+    onboardingBeat2Done = false;
+    onboardingBeat3Done = false;
+    const guideEl = document.getElementById('onboarding-guide');
+    if (guideEl) {
+      if (!onboardingDismissed) guideEl.classList.remove('hidden');
+      for (let i = 1; i <= 3; i++) {
+        const beatEl = document.getElementById(`onboarding-beat-${i}`);
+        if (beatEl) {
+          beatEl.classList.remove('done');
+          const chk = beatEl.querySelector && beatEl.querySelector('.beat-check');
+          if (chk) chk.textContent = String(i);
+        }
+      }
+    }
+    const dismissBtn = document.getElementById('btn-dismiss-onboarding');
+    if (dismissBtn && !dismissBtn.dataset.bound) {
+      dismissBtn.dataset.bound = '1';
+      dismissBtn.addEventListener('click', () => {
+        onboardingDismissed = true;
+        const g = document.getElementById('onboarding-guide');
+        if (g) g.classList.add('hidden');
+      });
     }
 
     alertHistory.length = 0;
@@ -1546,13 +1580,21 @@
   function exportSaveFile() {
     if (!engine || !engine.running) return null;
     const json = engine.exportSaveJSON();
-    if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
+    const genId = (engine.teams[0] && engine.teams[0].generalId) || 'match';
+    const filename = `zh_${genId.toLowerCase()}_${Math.floor(engine.matchTime || 0)}s.zhsave`;
+    if (
+      typeof window !== 'undefined' &&
+      window.webkit &&
+      window.webkit.messageHandlers &&
+      window.webkit.messageHandlers.zhNativeSave
+    ) {
+      window.webkit.messageHandlers.zhNativeSave.postMessage({ filename, content: json });
+    } else if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      const genId = (engine.teams[0] && engine.teams[0].generalId) || 'match';
       a.href = url;
-      a.download = `zh_${genId.toLowerCase()}_${Math.floor(engine.matchTime || 0)}s.zhsave`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1901,15 +1943,16 @@
     const selUnits = engine.units.filter(u => engine.selectedIds.has(u.id));
     const selBuildings = engine.buildings.filter(b => engine.selectedIds.has(b.id));
     const selBunkers = (engine.garrisonBunkers || []).filter(g => engine.selectedIds.has(g.id));
-    let extra = `mode:${engine.commandMode || ''}`;
+    let extra = `mode:${engine.commandMode || ''}:plan:${pTeam.battlePlan || ''}`;
     if (selUnits.length === 1) {
       const u = selUnits[0];
-      extra += `|u:${u.overlordAddon || ''}:${u.hasGatlingCannon ? 1 : 0}:${u.hasSpeakerTower ? 1 : 0}:${Math.ceil(u.abilityCooldown || 0) > 0 ? 1 : 0}`;
+      const passCount = u.passengers ? u.passengers.length : 0;
+      extra += `|u:${u.overlordAddon || ''}:${u.hasGatlingCannon ? 1 : 0}:${u.hasSpeakerTower ? 1 : 0}:${Math.ceil(u.abilityCooldown || 0) > 0 ? 1 : 0}:p${passCount}:a${u.ammo ?? ''}`;
     }
     if (selBuildings.length > 0) {
       const b = selBuildings[0];
       const qSig = b.queue.map(q => q.id).join(',');
-      extra += `|b:${b.constructed ? 1 : 0}:${b.overcharged ? 1 : 0}:${b.superweaponReady ? 1 : 0}:${qSig}:${pTeam.tunnelUnits.length}`;
+      extra += `|b:${b.constructed ? 1 : 0}:${b.overcharged ? 1 : 0}:${b.superweaponReady ? 1 : 0}:${qSig}:${pTeam.tunnelUnits.length}:${b.battlePlan || ''}`;
     }
     if (selBunkers.length > 0) {
       extra += `|g:${selBunkers[0].occupants.length}`;
@@ -1936,6 +1979,9 @@
     const hpCeil = Math.ceil(primary.hp);
     const isLaserLocked = Boolean(primary.laserLockedTimer > 0 || primary.laserLockTimer > 0);
     const isEmp = Boolean(primary.empTimer > 0);
+    const passCount = primary.passengers ? primary.passengers.length : 0;
+    const maxPass = primary.def.transportCapacity || 0;
+    const maxAmmo = primary.def.maxAmmo || 0;
 
     const sig = [
       primary.id,
@@ -1950,6 +1996,8 @@
       isEmp ? 1 : 0,
       primary.inHorde ? 1 : 0,
       primary.inPropaganda ? 1 : 0,
+      passCount,
+      primary.ammo ?? '',
       isDeepCad ? activePresetKey : 'LEGACY'
     ].join('|');
 
@@ -1964,6 +2012,8 @@
       ${cadEntry && cadEntry.referenceImage ? `<span class="hud-cad-thumb-wrap"><img class="hud-cad-thumb" src="${cadEntry.referenceImage}" alt="${primary.def.name}" /> 3D CAD</span>` : `<span class="hud-cad-thumb-wrap">✨ 3D CAD</span>`}
       <span>HP: ${hpCeil}/${primary.maxHp}</span>
       <span>Rank: ${vet.name} ${'★'.repeat(primary.vetLevel)}</span>
+      ${maxPass > 0 ? `<span style="color:#fde047">Passengers: ${passCount}/${maxPass}</span>` : ''}
+      ${maxAmmo > 0 ? `<span style="color:#38bdf8">Ammo: ${primary.ammo ?? maxAmmo}/${maxAmmo}</span>` : ''}
       ${primary.def.locomotor ? `<span style="color:#94a3b8">${primary.def.locomotor}</span>` : ''}
       ${isDeepCad ? `<button type="button" id="btn-hud-cycle-preset" class="hud-cad-chip" title="Click or press [K] to cycle 5 Tactical 3D Presets">🎨 ${presetLabel} [K]</button>` : ''}
       ${isDeepCad ? `<button type="button" id="btn-hud-open-unit-cad" class="hud-cad-chip hud-cad-chip-accent" title="Open in 3D Unit Design Studio [U]">🛠️ 3D Studio</button>` : ''}
@@ -2064,11 +2114,86 @@
     }
   }
 
+  function updateOnboardingGuide() {
+    if (onboardingDismissed || !engine || !engine.running) return;
+    const guideEl = document.getElementById('onboarding-guide');
+    if (!guideEl || guideEl.classList.contains('hidden')) return;
+
+    if (!onboardingBeat1Done) {
+      const hasSupply = engine.buildings.some(b => b.team === 0 && b.hp > 0 && b.def && b.def.isSupplyCenter);
+      if (hasSupply) {
+        onboardingBeat1Done = true;
+        const b1 = document.getElementById('onboarding-beat-1');
+        if (b1) {
+          b1.classList.add('done');
+          const c = b1.querySelector && b1.querySelector('.beat-check');
+          if (c) c.textContent = '✓';
+        }
+      }
+    }
+
+    if (!onboardingBeat2Done) {
+      const hasBarracks = engine.buildings.some(b => b.team === 0 && b.hp > 0 && b.built && b.def && b.def.category === 'BARRACKS');
+      const combatUnits = engine.units.filter(u => u.team === 0 && u.hp > 0 && u.def && !u.def.isBuilder && !u.def.isHarvester);
+      if (hasBarracks && combatUnits.length >= 2) {
+        onboardingBeat2Done = true;
+        const b2 = document.getElementById('onboarding-beat-2');
+        if (b2) {
+          b2.classList.add('done');
+          const c = b2.querySelector && b2.querySelector('.beat-check');
+          if (c) c.textContent = '✓';
+        }
+      }
+    }
+
+    if (!onboardingBeat3Done) {
+      const attacking = engine.units.some(u =>
+        u.team === 0 && u.hp > 0 && u.def && !u.def.isBuilder && !u.def.isHarvester &&
+        (u.state === 'ATTACK_MOVE' || u.state === 'ATTACK')
+      );
+      if (attacking) {
+        onboardingBeat3Done = true;
+        const b3 = document.getElementById('onboarding-beat-3');
+        if (b3) {
+          b3.classList.add('done');
+          const c = b3.querySelector && b3.querySelector('.beat-check');
+          if (c) c.textContent = '✓';
+        }
+      }
+    }
+
+    if (onboardingBeat1Done && onboardingBeat2Done && onboardingBeat3Done) {
+      onboardingDismissed = true;
+      guideEl.classList.add('hidden');
+    }
+  }
+
+  function computeHoverCounterChipHtml(selectedUnits) {
+    if (!engine || !engine.hoveredEntityId || !selectedUnits || selectedUnits.length === 0) return '';
+    const armed = selectedUnits.find(u => u.def && u.def.weapon);
+    if (!armed) return '';
+    const hovUnit = engine.unitById ? engine.unitById.get(engine.hoveredEntityId) : engine.units.find(u => u.id === engine.hoveredEntityId);
+    const hovBld = !hovUnit && (engine.buildingById ? engine.buildingById.get(engine.hoveredEntityId) : engine.buildings.find(b => b.id === engine.hoveredEntityId));
+    const target = hovUnit || hovBld;
+    if (!target || target.team === 0 || target.hp <= 0) return '';
+
+    const wType = (armed.def.weapon && armed.def.weapon.type) || 'SMALL_ARMS';
+    const tCat = hovBld ? 'BUILDING' : ((hovUnit.def && hovUnit.def.category) || 'INFANTRY');
+    const row = (ZH_DATA.DAMAGE_MATRIX && ZH_DATA.DAMAGE_MATRIX[wType]) || {};
+    const mult = row[tCat] !== undefined ? row[tCat] : 1.0;
+    const pct = Math.round(mult * 100);
+    const verdict = mult >= 1.25 ? 'FAVORABLE COUNTER' : mult <= 0.65 ? 'POOR COUNTER' : 'NEUTRAL MATCHUP';
+    const col = mult >= 1.25 ? '#4ade80' : mult <= 0.65 ? '#f87171' : '#38bdf8';
+    const tName = (target.def && (target.def.shortName || target.def.name)) || tCat;
+    return `<span class="counter-readout-pill" style="color:${col}">🎯 ${pct}% ${verdict} (${wType} vs ${tName} [${tCat}])</span>`;
+  }
+
   function updateHudLive() {
     if (!engine || !engine.running) return;
     updateTopBarAndTimers();
     updatePowerStrip(false);
     updateControlGroupBar(false);
+    updateOnboardingGuide();
 
     // Check if structural state changed (e.g. building finished constructing, queue completed, etc.)
     const sig = computeCommandSignature();
@@ -2082,6 +2207,7 @@
     const selectedUnits = engine.units.filter(u => engine.selectedIds.has(u.id));
     const selectedBuildings = engine.buildings.filter(b => engine.selectedIds.has(b.id));
     const selectedBunkers = (engine.garrisonBunkers || []).filter(g => engine.selectedIds.has(g.id));
+    const counterChipHtml = computeHoverCounterChipHtml(selectedUnits);
 
     // Live-update inspector stats & queue progress
     if (selectedBunkers.length > 0) {
@@ -2094,16 +2220,37 @@
       `;
     } else if (selectedUnits.length === 1) {
       renderSingleUnitInspectorStats(inspectorStats, selectedUnits[0], false);
+      if (counterChipHtml && inspectorStats) {
+        inspectorStats.innerHTML += counterChipHtml;
+        if (inspectorStats.dataset) inspectorStats.dataset.sig = '';
+      }
     } else if (selectedUnits.length > 1) {
       if (inspectorStats && inspectorStats.dataset) inspectorStats.dataset.sig = '';
       inspectorStats.innerHTML = selectedUnits.slice(0, 8).map(u =>
         `<span class="unit-chip">${u.def.shortName} (${Math.round(u.hp / u.maxHp * 100)}%)</span>`
-      ).join('');
+      ).join('') + counterChipHtml;
       renderSelectionSummary(selectedUnits);
     } else if (selectedBuildings.length > 0) {
       const b = selectedBuildings[0];
       renderSingleBuildingInspectorStats(inspectorStats, b, false);
       renderProductionQueueStrip(b);
+    } else if (inspectorStats && pTeam) {
+      const myUnits = engine.units.filter(u => u.team === 0 && u.hp > 0 && !(u.garrisonedIn || u.garrisonId));
+      const builders = myUnits.filter(u => u.def.isBuilder);
+      const idleBuilders = builders.filter(u => u.state === 'IDLE').length;
+      const harvesters = myUnits.filter(u => u.def.isHarvester).length;
+      const combatCount = myUnits.filter(u => !u.def.isBuilder && !u.def.isHarvester).length;
+      const plan = pTeam.battlePlan || 'NONE';
+      const sig = `force:${builders.length}:${idleBuilders}:${harvesters}:${combatCount}:${plan}`;
+      if (!inspectorStats.dataset || inspectorStats.dataset.sig !== sig) {
+        if (inspectorStats.dataset) inspectorStats.dataset.sig = sig;
+        inspectorStats.innerHTML = `
+          <span class="unit-chip" style="color:${idleBuilders > 0 ? '#fde047' : '#94a3b8'}">🚜 Builders: ${builders.length}${idleBuilders > 0 ? ` (${idleBuilders} Idle [B])` : ''}</span>
+          <span class="unit-chip" style="color:#22c55e">📦 Harvesters: ${harvesters}</span>
+          <span class="unit-chip" style="color:#38bdf8">⚔️ Combat Force: ${combatCount} [Q]</span>
+          ${plan !== 'NONE' ? `<span class="unit-chip" style="color:#f59e0b">🎖️ Battle Plan: ${plan.replace(/_/g, ' ')}</span>` : ''}
+        `;
+      }
     }
 
     // Update command button affordability & live progress bars
@@ -2340,9 +2487,9 @@
     lastCmdSignature = computeCommandSignature();
 
     if (selectedUnits.length === 0 && selectedBuildings.length === 0 && selectedBunkers.length === 0) {
-      inspectorTitle.textContent = 'No Tactical Selection';
-      inspectorSub.textContent = 'Left-click or drag a box to select units/structures. Press [B] for Dozer/Worker.';
-      inspectorStats.innerHTML = '';
+      inspectorTitle.textContent = 'Force Readiness Overview';
+      inspectorSub.textContent = 'Left-click or drag a box to select units/structures. Press [B] for Dozer/Worker, [Q] for All Combat Units.';
+      if (inspectorStats && inspectorStats.dataset) inspectorStats.dataset.sig = '';
       padCommandCardTo12(cmdGrid);
       updateHudLive();
       return;
@@ -2490,6 +2637,21 @@
           });
         }
       }
+
+      // Mobile Transport Unload Passengers ([E])
+      if (primary.team === 0 && primary.passengers && primary.passengers.length > 0 && engine.unloadTransport) {
+        createCommandButton(cmdGrid, {
+          hotkey: 'E',
+          title: 'UNLOAD',
+          icon: '🚪',
+          cost: `${primary.passengers.length}/${primary.def.transportCapacity || 5} INF`,
+          tooltip: `Unload all ${primary.passengers.length} passengers from ${primary.def.name} [E].`,
+          onClick: () => {
+            engine.unloadTransport(primary);
+            refreshCommandBar();
+          }
+        });
+      }
       padCommandCardTo12(cmdGrid);
       updateHudLive();
       return;
@@ -2512,6 +2674,51 @@
 
     const hotkeys = ['Q', 'W', 'E', 'R', 'A', 'S', 'D', 'F', 'X', 'C', 'V'];
     let slotIdx = 0;
+
+    // 0. USA Strategy Center Battle Plans (Bombardment, Hold the Line, Search & Destroy)
+    if (b.defId === 'USA_STRATEGY_CENTER' && engine.setStrategyBattlePlan) {
+      const activePlan = (engine.teams[0] && engine.teams[0].battlePlan) || 'NONE';
+      const plans = [
+        {
+          id: 'BOMBARDMENT',
+          hotkey: hotkeys[slotIdx++] || 'Q',
+          title: 'BOMBARD',
+          icon: '💥',
+          cost: activePlan === 'BOMBARDMENT' ? 'ACTIVE' : '+20% DMG',
+          tooltip: 'Bombardment Battle Plan — +20% weapon firepower for all USA forces & activates Strategy Center cannon.'
+        },
+        {
+          id: 'HOLD_THE_LINE',
+          hotkey: hotkeys[slotIdx++] || 'W',
+          title: 'HOLD LINE',
+          icon: '🛡️',
+          cost: activePlan === 'HOLD_THE_LINE' ? 'ACTIVE' : '+15% ARMOR',
+          tooltip: 'Hold the Line Battle Plan — +15% armor integrity and hull reinforcement for all USA forces.'
+        },
+        {
+          id: 'SEARCH_AND_DESTROY',
+          hotkey: hotkeys[slotIdx++] || 'E',
+          title: 'SEARCH/DEST',
+          icon: '🔭',
+          cost: activePlan === 'SEARCH_AND_DESTROY' ? 'ACTIVE' : '+20% RNG',
+          tooltip: 'Search & Destroy Battle Plan — +20% weapon range, sight radius & stealth detection across USA forces.'
+        }
+      ];
+      plans.forEach(p => {
+        createCommandButton(cmdGrid, {
+          hotkey: p.hotkey,
+          title: p.title,
+          icon: p.icon,
+          cost: p.cost,
+          active: activePlan === p.id,
+          tooltip: p.tooltip,
+          onClick: () => {
+            engine.setStrategyBattlePlan(0, p.id);
+            refreshCommandBar();
+          }
+        });
+      });
+    }
 
     // 1. Trainable Units (Phase 3 SYS-20: Cameo queue badges + Shift+Click 5x batch + right-click cancel/refund)
     if (b.def.trains) {
@@ -3065,7 +3272,7 @@
         // 1. Handle active Command Mode (BUILD, POWER, SUPERWEAPON, ABILITY, ATTACK_MOVE, GUARD, RALLY)
         if (engine.commandMode === 'BUILD' && engine.pendingBuildId) {
           const clickedFriendlyUnit = !e.shiftKey && engine.units.find(
-            u => u.team === 0 && u.hp > 0 && !(u.garrisonedIn || u.garrisonId) &&
+            u => u.team === 0 && u.hp > 0 && !engine.selectedIds.has(u.id) && !(u.garrisonedIn || u.garrisonId) &&
                  Math.hypot(u.x - wx, u.y - wy) <= (u.radius || 14) + 10
           );
           if (clickedFriendlyUnit) {
@@ -3400,9 +3607,13 @@
         if (u.state === 'IDLE') {
           const nextWp = u.waypoints.shift();
           u.state = forceAttackMove ? 'ATTACK_MOVE' : 'MOVE';
-          u.path = null;
-          u.targetX = nextWp.x;
-          u.targetY = nextWp.y;
+          if (typeof engine.assignUnitPath === 'function') {
+            engine.assignUnitPath(u, nextWp.x, nextWp.y);
+          } else {
+            u.path = null;
+            u.targetX = nextWp.x;
+            u.targetY = nextWp.y;
+          }
         }
       });
       engine.spawnBurst(wx, wy, '#22c55e', 5);
@@ -3456,6 +3667,28 @@
       }
     }
 
+    // 1b. Check if right-clicked a Friendly Transport Vehicle (Humvee, Chinook, Troop Crawler, Helix, Battle Bus)
+    const clickedTransport = engine.units.find(
+      t => t.team === 0 && t.hp > 0 && t.def.transportCapacity > 0 &&
+           (!t.passengers || t.passengers.length < t.def.transportCapacity) &&
+           Math.hypot(t.x - wx, t.y - wy) <= (t.radius || 18) + 18
+    );
+    if (clickedTransport && !forceAttackMove) {
+      let anyPassenger = false;
+      for (const u of selectedUnits) {
+        if (u.id !== clickedTransport.id && u.def.type === 'INFANTRY' && !u.def.isBuilder) {
+          u.state = 'ENTER_TRANSPORT';
+          u.targetEntityId = clickedTransport.id;
+          anyPassenger = true;
+        }
+      }
+      if (anyPassenger) {
+        engine.spawnBurst(clickedTransport.x, clickedTransport.y, '#38bdf8', 8);
+        ZH_AUDIO.playSFX('click');
+        return;
+      }
+    }
+
     // 2. Check if right-clicked an Enemy Unit or Building
     const enemyTarget =
       engine.units.find(u => u.team !== 0 && !u.unmanned && !(u.garrisonedIn || u.garrisonId) && Math.hypot(u.x - wx, u.y - wy) <= u.radius + 14) ||
@@ -3472,9 +3705,13 @@
           u.targetEntityId = enemyTarget.id;
         } else {
           u.state = 'MOVE';
-          u.path = null;
-          u.targetX = wx;
-          u.targetY = wy;
+          if (typeof engine.assignUnitPath === 'function') {
+            engine.assignUnitPath(u, wx, wy);
+          } else {
+            u.path = null;
+            u.targetX = wx;
+            u.targetY = wy;
+          }
         }
       }
       engine.spawnBurst(enemyTarget.x, enemyTarget.y, '#ef4444', 8);
@@ -3544,9 +3781,13 @@
           u.targetEntityId = clickedTech.id;
         } else {
           u.state = 'MOVE';
-          u.path = null;
-          u.targetX = wx;
-          u.targetY = wy;
+          if (typeof engine.assignUnitPath === 'function') {
+            engine.assignUnitPath(u, wx, wy);
+          } else {
+            u.path = null;
+            u.targetX = wx;
+            u.targetY = wy;
+          }
         }
       }
       ZH_AUDIO.playSFX('click');
@@ -3558,10 +3799,16 @@
     selectedUnits.forEach((u, idx) => {
       const r = Math.floor(idx / cols) - Math.floor(cols / 2);
       const c = (idx % cols) - Math.floor(cols / 2);
+      const tx = wx + c * 32;
+      const ty = wy + r * 32;
       u.state = forceAttackMove ? 'ATTACK_MOVE' : 'MOVE';
-      u.path = null;
-      u.targetX = wx + c * 32;
-      u.targetY = wy + r * 32;
+      if (typeof engine.assignUnitPath === 'function') {
+        engine.assignUnitPath(u, tx, ty);
+      } else {
+        u.path = null;
+        u.targetX = tx;
+        u.targetY = ty;
+      }
     });
 
     if (selectedUnits[0].def.voiceMove) {
@@ -3748,8 +3995,29 @@
         return;
       }
 
+      // Developer Simulator Overlay Toggle (` or F12)
+      if (!inFormField && (e.key === '`' || e.key === 'F12')) {
+        e.preventDefault();
+        const simPanel = document.getElementById('zh-sim-hud-panel') || document.getElementById('zh-sim-panel');
+        if (simPanel) {
+          const isHidden = simPanel.style.display === 'none' || simPanel.classList.contains('hidden');
+          simPanel.style.display = isHidden ? '' : 'none';
+          simPanel.classList.toggle('hidden', !isHidden);
+          showTacticalAlert(isHidden ? '🤖 DEV SIMULATOR OVERLAY ENABLED [`]' : '🤖 DEV SIMULATOR OVERLAY HIDDEN [`]', '#38bdf8');
+        }
+        return;
+      }
+
+      // Tactical Pause (Pause key or Shift+P)
+      if (!inFormField && (e.key === 'Pause' || (e.key.toUpperCase() === 'P' && e.shiftKey))) {
+        e.preventDefault();
+        engine.paused = !engine.paused;
+        showTacticalAlert(engine.paused ? '⏸️ TACTICAL SIMULATION PAUSED [Shift+P]' : '▶️ TACTICAL SIMULATION RESUMED', '#fde047');
+        return;
+      }
+
       const k = e.key.toUpperCase();
-      if (k === 'P') {
+      if (k === 'P' && !e.shiftKey) {
         toggleGeneralsPowersModal();
         return;
       }
@@ -3819,8 +4087,15 @@
 
       // Trigger matching Command Card hotkey button
       const cmdBtn = document.querySelector(`.cmd-card-btn[data-hotkey="${k}"]`);
-      if (cmdBtn && !cmdBtn.disabled) {
+      if (cmdBtn && !cmdBtn.disabled && !cmdBtn.classList.contains('disabled')) {
         cmdBtn.click();
+        return;
+      }
+
+      // Fallback [Q]: Select All Combat Units when no Command Card button claims Q
+      if (k === 'Q') {
+        const combatBtn = document.getElementById('btn-select-combat');
+        if (combatBtn) combatBtn.click();
       }
     });
 
@@ -3946,6 +4221,68 @@
     tauntTimeout = setTimeout(() => box.classList.add('hidden'), 7000);
   }
 
+  function renderPostMatchTelemetryGraph(canvasEl) {
+    if (!canvasEl || !canvasEl.getContext || !engine) return;
+    const ctx = canvasEl.getContext('2d');
+    if (!ctx) return;
+    const w = canvasEl.width || 560;
+    const h = canvasEl.height || 135;
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.fillStyle = '#090e17';
+    ctx.fillRect(0, 0, w, h);
+
+    // Subtle grid lines
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
+      const gy = Math.round((h * i) / 4);
+      ctx.beginPath();
+      ctx.moveTo(0, gy);
+      ctx.lineTo(w, gy);
+      ctx.stroke();
+    }
+
+    const hist = (engine.telemetryHistory && engine.telemetryHistory.length >= 2)
+      ? engine.telemetryHistory
+      : [
+          { t: 0, p0Val: 5000, p1Val: 5000 },
+          {
+            t: Math.max(10, engine.matchTime || 60),
+            p0Val: (engine.teams[0]?.credits || 0) + ((engine.teams[0]?.stats?.unitsBuilt || 0) * 800),
+            p1Val: (engine.teams[1]?.credits || 0) + ((engine.teams[1]?.stats?.unitsBuilt || 0) * 800)
+          }
+        ];
+
+    let maxVal = 1000;
+    for (const pt of hist) {
+      if (pt.p0Val > maxVal) maxVal = pt.p0Val;
+      if (pt.p1Val > maxVal) maxVal = pt.p1Val;
+    }
+
+    const drawCurve = (key, strokeCol, fillCol) => {
+      ctx.beginPath();
+      hist.forEach((pt, idx) => {
+        const px = (idx / Math.max(1, hist.length - 1)) * (w - 24) + 12;
+        const py = h - 18 - ((pt[key] || 0) / maxVal) * (h - 32);
+        if (idx === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.strokeStyle = strokeCol;
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
+
+      ctx.lineTo(w - 12, h - 18);
+      ctx.lineTo(12, h - 18);
+      ctx.closePath();
+      ctx.fillStyle = fillCol;
+      ctx.fill();
+    };
+
+    drawCurve('p1Val', '#ef4444', 'rgba(239, 68, 68, 0.12)');
+    drawCurve('p0Val', '#38bdf8', 'rgba(56, 189, 248, 0.16)');
+  }
+
   function handleGameOver(winnerTeam) {
     const modal = document.getElementById('victory-modal');
     const title = document.getElementById('victory-title');
@@ -4001,11 +4338,23 @@
             <tr><td>Generals Powers Cast</td><td>${s0.powersUsed || 0}</td><td>${s1.powersUsed || 0}</td></tr>
           </tbody>
         </table>
+        <div class="gameover-telemetry-panel">
+          <div class="gameover-telemetry-header">
+            <span>📈 FORCE & ECONOMY TIMELINE</span>
+            <div class="gameover-telemetry-legend">
+              <span style="color:#38bdf8">● ${p0.general.name}</span>
+              <span style="color:#ef4444">● ${p1.general.name}</span>
+            </div>
+          </div>
+          <canvas id="gameover-telemetry-canvas" width="560" height="135"></canvas>
+        </div>
       `;
       statsWrap.innerHTML = tableHtml;
       if (legacyStatsWrap && legacyStatsWrap !== statsWrap) {
         legacyStatsWrap.innerHTML = tableHtml;
       }
+      const chartCanvas = document.getElementById('gameover-telemetry-canvas');
+      if (chartCanvas) renderPostMatchTelemetryGraph(chartCanvas);
     }
 
     nextBtn.onclick = () => {

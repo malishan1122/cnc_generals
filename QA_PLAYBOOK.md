@@ -26,7 +26,7 @@ Yet the previous automated QA run reported `60/60 PASS`. Debugging the QA playbo
 
 ## 2. The 13 End-to-End Human QA Playbooks
 
-Run `node tests/human_qa_runner.js` to execute all **13 Playbooks** (**65 Assertions** across **158 Synthetic Human UI Actions**):
+Run `node tests/human_qa_runner.js` to execute all **13 Playbooks** (**87 Assertions** across **154 Synthetic Human UI Actions**, `87/87 PASS`):
 
 | Playbook | Human Persona Flow | Key Invariants Verified |
 | :--- | :--- | :--- |
@@ -37,9 +37,27 @@ Run `node tests/human_qa_runner.js` to execute all **13 Playbooks** (**65 Assert
 | **Playbook 5** | **Unit Selection & Control Groups** | Single-click Ranger on canvas -> double-click (`< 340ms`) to select all Rangers -> drag-box across mixed combat + Dozer (verifies combat priority filter) -> `Ctrl+1` bind, click empty ground to deselect, `1` recall, double-tap `1` camera snap. |
 | **Playbook 6** | **Contextual Orders, Physical Squad Movement & Garrison** | Right-click terrain -> verify `u.state === 'MOVE'` **and physical squad displacement across 25 frames** -> `Shift`+Right-Click waypoints -> `#btn-order-attack-move`, `#btn-order-guard`, `#btn-order-scatter`, `#btn-order-stop` -> `Ctrl`+Right-Click `FORCE_FIRE` -> Right-click Civilian Bunker (`ENTER_GARRISON`) & click `EVACUATE`. |
 | **Playbook 7** | **Economy & Power Brownout** | Build Supply Center -> Chinook harvests supplies & increments `teams[0].credits` -> low-power brownout slows production rate by `0.45x`. |
-| **Playbook 8** | **Generals Powers & Superweapons** | Press `[F]` to open `#powers-modal` -> unlock Rank-1 Power -> press `[F1]` & left-click target -> build Superweapon & verify `#superweapon-timers` DOM countdown. |
-| **Playbook 9** | **Pause, Audio & Victory Loop** | Press `[P]` (`engine.paused === true`, simulation freezes while loop stays alive) -> toggle SFX/Music/Voice -> trigger Victory Modal -> click `#btn-next-challenge`. |
+| **Playbook 8** | **Generals Powers, Superweapons & Multi-Faction GLA Switch** | Press `[P]` to open `#powers-modal` -> unlock Rank-1 Power -> press `[F1]` & left-click target -> build Superweapon & verify `#superweapon-timers` DOM countdown -> switch to GLA General Juhziz & verify `+35%` `HIGH_EXPLOSIVE` damage modifier (`BUG-HUMAN-05`). |
+| **Playbook 9** | **Pause, Quick Save/Load (`F5`/`F9`), Audio & Victory Loop** | Bind production building to `Ctrl+2` (`BUG-HUMAN-07`) -> press `[F5]` Quick Save -> press `[Escape]` / Pause (`engine.paused === true`) -> press `[F9]` Quick Load from Main Menu (`BUG-HUMAN-08`) -> toggle SFX/Music/Voice -> trigger Victory Modal -> click `#btn-next-challenge`. |
 | **Playbook 10** | **HUD Overhaul** | Fixed 12-slot `#command-card-grid` -> Sell (`[Z]`) 50% credit refund -> `#selection-summary` `.unit-group-chip` sub-selection -> `#control-group-bar` pill click -> `#power-strip` click -> Mouse wheel zoom & `[Home]` reset. |
 | **Playbook 11** | **Early-Game AI Grace & HUD Settings** | AI does not map-hack strike player base within first 6s -> move markers expire cleanly -> `resizeCanvases()` matches `--top-bar-h` (`36px`) and `--cmd-bar-h` (`184px`) -> `#opt-health-bars`, `#opt-ui-scale`, `#btn-open-powers-preview`, Victory `creditsEarned`. |
 | **Playbook 12** | **PlanSimulator Auto-Play** | `#btn-auto-sim` (`Cmd+T`) toggles `PlanSimulator.enabled` -> `5x` Warp speed accelerates `engine.matchTime` -> Dozers complete buildings -> Barracks/War Factory train combat units (`totalUnitsProduced > 0`). |
 | **Playbook 13** | **macOS Retina (`DPR=2`) & `BUILD`-Mode Selection** | Single-click unit under `devicePixelRatio = 2` & `top: 36px` offset -> verify `renderSelectionBox()` uses `2x` Retina transform (`BUG-UI-07`) -> verify same-frame `pushMoveMarker` initializes `t: 0` (`BUG-UI-09`) -> verify clicking a friendly building/unit while in `BUILD` mode does not trap selection or place a scaffold over a unit (`BUG-UI-08`). |
+
+---
+
+## 3. Complete Verification Matrix (All 9 Automated Suites)
+
+| Suite | Command | Latest Result |
+| :--- | :--- | :--- |
+| **13-Playbook Synthetic Human QA** | `node tests/human_qa_runner.js` | **87/87 PASS** (154 actions, 0 failures) |
+| **Phase 2 Engine & Command Authority** | `node tests/phase2_verify.js` | **20/20 PASS** |
+| **Phase 3 Tactical HUD, VFX & Audio** | `node tests/phase3_verify.js` | **26/26 PASS** |
+| **Phase 4 Save/Load, Challenge 2.0 & 3D Studio** | `node tests/phase4_verify.js` | **39/39 PASS** |
+| **PlanSimulator Autonomous Audit** | `node tests/simulator_verify.js` | **17/17 PASS** |
+| **Seeded Replay Hash & Challenge 2.0** | `node tests/replay_hash_verify.js` | **7/7 PASS** |
+| **Fixed-Step GameSpeed Invariance (`1x`/`2x`/`3x`)** | `node tests/game_speed_verify.js` | **PASS** (`60`/`120`/`180` ticks per 1.0s) |
+| **50-Run Replay & Mid-Match Save Determinism** | `node tests/determinism_verify.js` | **PASS** (`50/50` identical hashes) |
+| **1,000-Unit Combat Performance Gate** | `node tests/perf_budget.js` | **PASS** (`0.84ms` avg / `1.42ms` p99) |
+| **9×9 General Matchup Smoke Matrix** | `node tests/balance_matrix.js` | **81/81 PASS** (0 runtime exceptions + full victory test) |
+

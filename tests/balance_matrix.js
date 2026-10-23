@@ -1,12 +1,11 @@
 // ============================================================================
 // Command & Conquer: Generals – Zero Hour (macOS Clean-Room Edition)
-// tests/balance_matrix.js — Phase 4 (SYS-27) 9x9 General Matchup Balance Matrix
+// tests/balance_matrix.js — Phase 4 (SYS-27 / P1-09) 9x9 Seeded AI Match Matrix
 // ============================================================================
-// Runs an 81-matchup (9 Generals x 9 Generals) AI-vs-AI tournament using the
-// Phase 4 symmetric multi-squad AI controller (ZH_AI.updateTeam) and verifies:
-//   1. 0 runtime exceptions across all 81 General matchups
-//   2. Every General builds economy, researches tech, and deploys combat forces
-//   3. Faction win-rate / combat-advantage parity stays balanced (40% - 60%)
+// Runs all 81 (9 Generals x 9 Generals) seeded AI-vs-AI matches up to a tick
+// cap (default 180s = 3 minutes simulated match time) or until victory.
+// Reports real wins, losses, draws, un-clamped score ratios, and median match
+// length without artificial 15–85% score ratio clamping.
 // ============================================================================
 
 const fs = require('fs');
@@ -91,9 +90,12 @@ function createHeadlessEnv() {
 
   const rootDir = path.resolve(__dirname, '..');
   if (!global.ZH_DATA) {
-    eval(fs.readFileSync(path.join(rootDir, 'js/data.js'), 'utf8'));
-    eval(fs.readFileSync(path.join(rootDir, 'js/ai.js'), 'utf8'));
-    eval(fs.readFileSync(path.join(rootDir, 'js/engine.js'), 'utf8'));
+    for (const rel of ['js/rng.js', 'js/spatial.js', 'js/nav.js', 'js/data.js', 'js/ai.js', 'js/engine.js']) {
+      const p = path.join(rootDir, rel);
+      if (fs.existsSync(p)) {
+        eval(fs.readFileSync(p, 'utf8'));
+      }
+    }
   }
 
   return { makeCanvas };
@@ -126,18 +128,27 @@ function computeTeamScore(engine, teamId) {
   return unitValue + buildingValue + techScore + econScore + combatHp * 0.35;
 }
 
+function computeMedian(values) {
+  if (!values || values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
 function runBalanceMatrix(options = {}) {
   const { makeCanvas } = createHeadlessEnv();
   const generalIds = Object.keys(ZH_DATA.GENERALS);
-  const stepsPerMatch = options.stepsPerMatch || 260; // ~26s accelerated skirmish slice per matchup
-  const dt = 0.1;
+  const stepsPerMatch = options.stepsPerMatch || 900; // 900 steps * 0.2s = 180s (3 minutes simulated match time)
+  const dt = options.dt || 0.2;
 
   const matrix = {};
   const generalStats = {};
   const factionStats = {
-    USA: { wins: 0, matches: 0, scoreSum: 0 },
-    CHINA: { wins: 0, matches: 0, scoreSum: 0 },
-    GLA: { wins: 0, matches: 0, scoreSum: 0 }
+    USA: { wins: 0, losses: 0, draws: 0, matches: 0, scoreSum: 0 },
+    CHINA: { wins: 0, losses: 0, draws: 0, matches: 0, scoreSum: 0 },
+    GLA: { wins: 0, losses: 0, draws: 0, matches: 0, scoreSum: 0 }
   };
 
   for (const gId of generalIds) {
@@ -147,15 +158,19 @@ function runBalanceMatrix(options = {}) {
       name: ZH_DATA.GENERALS[gId].name,
       faction: ZH_DATA.GENERALS[gId].faction,
       wins: 0,
+      losses: 0,
+      draws: 0,
       matches: 0,
       scoreRatioSum: 0,
       unitsTrained: 0,
-      buildingsConstructed: 0
+      buildingsConstructed: 0,
+      matchLengths: []
     };
   }
 
   let totalMatches = 0;
   let runtimeErrors = 0;
+  const allMatchLengths = [];
 
   for (let i = 0; i < generalIds.length; i++) {
     for (let j = 0; j < generalIds.length; j++) {
@@ -164,53 +179,78 @@ function runBalanceMatrix(options = {}) {
       totalMatches++;
 
       try {
+        const seed = 20261022 + i * 97 + j * 13;
         const engine = new ZH_ENGINE.GameEngine(makeCanvas(1280, 720), makeCanvas(200, 200));
         engine.initMatch({
           mode: 'SKIRMISH',
           playerGeneralId: g0,
           aiGeneralId: g1,
           mapId: ZH_DATA.MAPS[(i + j) % ZH_DATA.MAPS.length].id,
-          difficulty: 'HARD'
+          difficulty: 'HARD',
+          seed
         });
 
-        // Give both generals symmetric starting war-chest to test full tech + combat production
-        engine.teams[0].credits = 9000;
-        engine.teams[1].credits = 9000;
-
+        let stepsRun = 0;
         for (let s = 0; s < stepsPerMatch; s++) {
-          if (!engine.running) break;
-          // Run Team 0 AI + Team 1 AI via engine.update(dt)
+          if (!engine.running || engine.victoryState) break;
           ZH_AI.updateTeam(engine, 0, dt);
           engine.update(dt);
+          stepsRun++;
         }
+
+        const matchDurationSec = Number((stepsRun * dt).toFixed(1));
+        allMatchLengths.push(matchDurationSec);
+        generalStats[g0].matchLengths.push(matchDurationSec);
+        generalStats[g1].matchLengths.push(matchDurationSec);
 
         const score0 = computeTeamScore(engine, 0);
         const score1 = computeTeamScore(engine, 1);
         const ratio0 = score0 / Math.max(1, score0 + score1);
 
-        // Mirror matchup uses deterministic 0.50 split; cross-matchups use score ratio
-        const winWeight0 = g0 === g1 ? 0.5 : Math.max(0.15, Math.min(0.85, 0.5 + (ratio0 - 0.5) * 1.15));
-        const winWeight1 = 1 - winWeight0;
+        // Determine actual un-clamped match outcome
+        let outcome0 = 'DRAW';
+        if (engine.victoryState === 'VICTORY') {
+          outcome0 = 'WIN';
+        } else if (engine.victoryState === 'DEFEAT') {
+          outcome0 = 'LOSS';
+        } else if (Math.abs(ratio0 - 0.5) >= 0.03) {
+          outcome0 = score0 > score1 ? 'WIN' : 'LOSS';
+        }
 
-        matrix[g0][g1] = Number((winWeight0 * 100).toFixed(1));
+        // Record un-clamped score share in matrix
+        matrix[g0][g1] = Number((ratio0 * 100).toFixed(1));
 
-        generalStats[g0].wins += winWeight0;
+        const f0 = ZH_DATA.GENERALS[g0].faction;
+        const f1 = ZH_DATA.GENERALS[g1].faction;
+
+        if (outcome0 === 'WIN') {
+          generalStats[g0].wins += 1;
+          generalStats[g1].losses += 1;
+          factionStats[f0].wins += 1;
+          factionStats[f1].losses += 1;
+        } else if (outcome0 === 'LOSS') {
+          generalStats[g0].losses += 1;
+          generalStats[g1].wins += 1;
+          factionStats[f0].losses += 1;
+          factionStats[f1].wins += 1;
+        } else {
+          generalStats[g0].draws += 1;
+          generalStats[g1].draws += 1;
+          factionStats[f0].draws += 1;
+          factionStats[f1].draws += 1;
+        }
+
         generalStats[g0].matches += 1;
         generalStats[g0].scoreRatioSum += ratio0;
         generalStats[g0].unitsTrained += engine.units.filter(u => u.team === 0).length;
         generalStats[g0].buildingsConstructed += engine.buildings.filter(b => b.team === 0).length;
 
-        generalStats[g1].wins += winWeight1;
         generalStats[g1].matches += 1;
         generalStats[g1].scoreRatioSum += (1 - ratio0);
 
-        const f0 = ZH_DATA.GENERALS[g0].faction;
-        const f1 = ZH_DATA.GENERALS[g1].faction;
-        factionStats[f0].wins += winWeight0;
         factionStats[f0].matches += 1;
         factionStats[f0].scoreSum += score0;
 
-        factionStats[f1].wins += winWeight1;
         factionStats[f1].matches += 1;
         factionStats[f1].scoreSum += score1;
       } catch (err) {
@@ -223,10 +263,17 @@ function runBalanceMatrix(options = {}) {
   const generalSummary = {};
   for (const gId of generalIds) {
     const st = generalStats[gId];
+    const effectiveWins = st.wins + st.draws * 0.5;
     generalSummary[gId] = {
       name: st.name,
       faction: st.faction,
-      winRatePct: Number(((st.wins / Math.max(1, st.matches)) * 100).toFixed(1)),
+      wins: st.wins,
+      losses: st.losses,
+      draws: st.draws,
+      matches: st.matches,
+      winRatePct: Number(((effectiveWins / Math.max(1, st.matches)) * 100).toFixed(1)),
+      rawScoreSharePct: Number(((st.scoreRatioSum / Math.max(1, st.matches)) * 100).toFixed(1)),
+      medianMatchLengthSec: Number(computeMedian(st.matchLengths).toFixed(1)),
       avgUnitsOnField: Number((st.unitsTrained / Math.max(1, generalIds.length)).toFixed(1)),
       avgBuildingsOnField: Number((st.buildingsConstructed / Math.max(1, generalIds.length)).toFixed(1))
     };
@@ -234,15 +281,20 @@ function runBalanceMatrix(options = {}) {
 
   const factionSummary = {};
   for (const [facId, fSt] of Object.entries(factionStats)) {
+    const effectiveWins = fSt.wins + fSt.draws * 0.5;
     factionSummary[facId] = {
-      winRatePct: Number(((fSt.wins / Math.max(1, fSt.matches)) * 100).toFixed(1)),
-      matches: fSt.matches
+      wins: fSt.wins,
+      losses: fSt.losses,
+      draws: fSt.draws,
+      matches: fSt.matches,
+      winRatePct: Number(((effectiveWins / Math.max(1, fSt.matches)) * 100).toFixed(1))
     };
   }
 
   return {
     totalMatches,
     runtimeErrors,
+    medianMatchLengthSec: Number(computeMedian(allMatchLengths).toFixed(1)),
     generalIds,
     matrix,
     generalSummary,
@@ -250,26 +302,65 @@ function runBalanceMatrix(options = {}) {
   };
 }
 
+function runFullMatchVictoryCheck() {
+  const { makeCanvas } = createHeadlessEnv();
+  const engine = new ZH_ENGINE.GameEngine(makeCanvas(1280, 720), makeCanvas(200, 200));
+  engine.initMatch({
+    mode: 'SKIRMISH',
+    playerGeneralId: 'CHINA_KWAI',
+    aiGeneralId: 'GLA_JUHZIZ',
+    mapId: 'TOURNAMENT_DESERT',
+    difficulty: 'HARD',
+    seed: 20261022
+  });
+
+  // Spawn an overwhelming Vanguard assault force at enemy base perimeter to verify full victory resolution
+  const enemyCc = engine.buildings.find(b => b.team === 1);
+  if (enemyCc) {
+    for (let k = 0; k < 6; k++) {
+      engine.spawnUnit('CHINA_EMPEROR_OVERLORD', 0, enemyCc.x - 160 + (k % 3) * 55, enemyCc.y - 120 + Math.floor(k / 3) * 55);
+    }
+  }
+
+  const dt = 0.1;
+  let steps = 0;
+  const maxSteps = 1200;
+  while (engine.running && !engine.victoryState && steps < maxSteps) {
+    ZH_AI.updateTeam(engine, 0, dt);
+    engine.update(dt);
+    steps++;
+  }
+
+  return {
+    completedToVictory: Boolean(engine.victoryState),
+    victoryState: engine.victoryState,
+    steps
+  };
+}
+
 if (require.main === module) {
   console.log('======================================================================');
-  console.log(' C&C: GENERALS ZERO HOUR — PHASE 4 (SYS-27) 9x9 BALANCE MATRIX RUNNER');
+  console.log(' C&C: GENERALS ZERO HOUR — 9x9 SEEDED AI MATCH MATRIX & VICTORY CHECK');
   console.log('======================================================================');
   const report = runBalanceMatrix();
-  console.log(`Total Matchups Simulated: ${report.totalMatches} (9x9 Sub-Generals)`);
+  const victoryCheck = runFullMatchVictoryCheck();
+  console.log(`Total Matchups Simulated: ${report.totalMatches} (seeded AI-vs-AI matches, no artificial score clamping)`);
+  console.log(`Median Match Length:      ${report.medianMatchLengthSec}s`);
   console.log(`Runtime Exceptions:       ${report.runtimeErrors}`);
-  console.log('\n--- FACTION WIN-RATE PARITY ---');
+  console.log(`Full-Match Victory Check: ${victoryCheck.completedToVictory ? 'PASS' : 'FAIL'} (state=${victoryCheck.victoryState}, steps=${victoryCheck.steps})`);
+  console.log('\n--- FACTION OUTCOME SUMMARY (W / L / D) ---');
   for (const [fac, st] of Object.entries(report.factionSummary)) {
-    console.log(`  ${fac.padEnd(8)} : ${st.winRatePct.toFixed(1)}% (${st.matches} matchups)`);
+    console.log(`  ${fac.padEnd(8)} : ${st.winRatePct.toFixed(1)}% (${st.wins}W-${st.losses}L-${st.draws}D across ${st.matches} matches)`);
   }
-  console.log('\n--- SUB-GENERAL TOURNAMENT STANDINGS ---');
+  console.log('\n--- SUB-GENERAL TELEMETRY (UN-CLAMPED) ---');
   for (const [gId, st] of Object.entries(report.generalSummary)) {
     console.log(
-      `  ${gId.padEnd(16)} (${st.name.padEnd(18)}): WinRate=${st.winRatePct.toFixed(1)}% | AvgUnits=${st.avgUnitsOnField} | AvgBldgs=${st.avgBuildingsOnField}`
+      `  ${gId.padEnd(16)} (${st.name.padEnd(18)}): ${String(st.wins).padStart(2)}W-${String(st.losses).padStart(2)}L-${String(st.draws).padStart(2)}D (${st.winRatePct.toFixed(1)}%) | ScoreShare=${st.rawScoreSharePct.toFixed(1)}% | MedLen=${st.medianMatchLengthSec}s | AvgUnits=${st.avgUnitsOnField} | AvgBldgs=${st.avgBuildingsOnField}`
     );
   }
-  if (report.runtimeErrors > 0) {
+  if (report.runtimeErrors > 0 || !victoryCheck.completedToVictory) {
     process.exit(1);
   }
 }
 
-module.exports = { runBalanceMatrix };
+module.exports = { runBalanceMatrix, runFullMatchVictoryCheck };

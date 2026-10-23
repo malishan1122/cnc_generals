@@ -44,11 +44,70 @@ window.ZH_AUDIO = (function () {
     return Math.max(lo, Math.min(hi, v));
   }
 
+  let masterCompressor = null;
+  let masterGain = null;
+  const busGains = {
+    master: null,
+    sfx: null,
+    music: null,
+    voice: null
+  };
+  const noiseCache = new Map();
+  let lastEvaSpeakTime = 0;
+  let lastUnitSpeakTime = 0;
+  let voiceDuckUntil = 0;
+
+  const UNIT_VOICE_PROFILES = {
+    EVA: { pitch: 1.04, rate: 1.08 },
+    USA_INFANTRY: { pitch: 0.96, rate: 1.10 },
+    USA_ARMOR: { pitch: 0.80, rate: 0.98 },
+    USA_AIR: { pitch: 1.08, rate: 1.16 },
+    CHINA_INFANTRY: { pitch: 0.92, rate: 1.06 },
+    CHINA_ARMOR: { pitch: 0.68, rate: 0.90 },
+    CHINA_OVERLORD: { pitch: 0.56, rate: 0.84 },
+    GLA_INFANTRY: { pitch: 1.02, rate: 1.14 },
+    GLA_ARMOR: { pitch: 0.84, rate: 1.04 }
+  };
+
+  function syncBusGainValues() {
+    if (!ctx) return;
+    const now = ctx.currentTime || 0;
+    if (masterGain && masterGain.gain) {
+      masterGain.gain.setValueAtTime(volumes.master, now);
+    }
+    ['sfx', 'music', 'voice'].forEach(bus => {
+      const g = busGains[bus];
+      if (g && g.gain && volumes[bus] !== undefined) {
+        g.gain.setValueAtTime(volumes[bus], now);
+      }
+    });
+  }
+
   function ensureContext() {
     if (!ctx) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (AudioCtx) {
         ctx = new AudioCtx();
+        if (typeof ctx.createDynamicsCompressor === 'function') {
+          masterCompressor = ctx.createDynamicsCompressor();
+          masterCompressor.threshold.setValueAtTime(-16, ctx.currentTime);
+          masterCompressor.knee.setValueAtTime(18, ctx.currentTime);
+          masterCompressor.ratio.setValueAtTime(6, ctx.currentTime);
+          masterCompressor.attack.setValueAtTime(0.004, ctx.currentTime);
+          masterCompressor.release.setValueAtTime(0.18, ctx.currentTime);
+          masterCompressor.connect(ctx.destination);
+        }
+        if (typeof ctx.createGain === 'function' && masterCompressor) {
+          masterGain = ctx.createGain();
+          busGains.master = masterGain;
+          masterGain.connect(masterCompressor);
+          ['sfx', 'music', 'voice'].forEach(bus => {
+            const g = ctx.createGain();
+            busGains[bus] = g;
+            g.connect(masterGain);
+          });
+          syncBusGainValues();
+        }
       }
     }
     if (ctx && ctx.state === 'suspended') {
@@ -57,15 +116,25 @@ window.ZH_AUDIO = (function () {
     return ctx;
   }
 
+  function getOutputNode(c, bus = 'sfx') {
+    if (bus && busGains[bus]) return busGains[bus];
+    if (masterGain) return masterGain;
+    return masterCompressor;
+  }
+
   function createNoiseBuffer(durationSec) {
     const c = ensureContext();
     if (!c) return null;
-    const bufferSize = Math.max(1, Math.floor(c.sampleRate * durationSec));
-    const buffer = c.createBuffer(1, bufferSize, c.sampleRate);
+    const key = Math.round(durationSec * 100);
+    if (noiseCache.has(key)) return noiseCache.get(key);
+    const sr = Number(c.sampleRate) > 0 ? Number(c.sampleRate) : 44100;
+    const bufferSize = Math.max(1, Math.floor(sr * (Number(durationSec) || 0.05)));
+    const buffer = c.createBuffer(1, bufferSize, sr);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
       data[i] = Math.random() * 2 - 1;
     }
+    noiseCache.set(key, buffer);
     return buffer;
   }
 
@@ -93,20 +162,23 @@ window.ZH_AUDIO = (function () {
     gain.gain.setValueAtTime(peak, now);
     gain.gain.exponentialRampToValueAtTime(0.001, stopTime);
 
+    const dest = getOutputNode(c, 'sfx');
+    if (!dest) return gain;
     sourceNode.connect(gain);
     if (typeof c.createStereoPanner === 'function') {
       const panner = c.createStereoPanner();
       panner.pan.setValueAtTime(pan, now);
       gain.connect(panner);
-      panner.connect(c.destination);
+      panner.connect(dest);
     } else {
-      gain.connect(c.destination);
+      gain.connect(dest);
     }
     return gain;
   }
 
   function playSFX(type, worldX, worldY, cam) {
     if (!sfxEnabled) return;
+    if (volumes && (volumes.master <= 0.0001 || volumes.sfx <= 0.0001)) return;
     const c = ensureContext();
     if (!c) return;
     const now = c.currentTime;
@@ -121,6 +193,17 @@ window.ZH_AUDIO = (function () {
           connectSpatialOutput(c, osc, 0.08, now, now + 0.045, worldX, worldY, cam);
           osc.start(now);
           osc.stop(now + 0.05);
+          break;
+        }
+
+        case 'alert': {
+          const osc = c.createOscillator();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(660, now);
+          osc.frequency.setValueAtTime(880, now + 0.09);
+          connectSpatialOutput(c, osc, 0.095, now, now + 0.22, worldX, worldY, cam);
+          osc.start(now);
+          osc.stop(now + 0.23);
           break;
         }
 
@@ -216,7 +299,24 @@ window.ZH_AUDIO = (function () {
           break;
         }
 
-        case 'superweapon': {
+        case 'superweapon':
+        case 'superweapon_stinger': {
+          const sfxMult = volumes ? (volumes.master * volumes.sfx) : 1.0;
+          const dest = getOutputNode(c);
+          voiceDuckUntil = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + 1900;
+          // Sub-bass warhorn stinger
+          const subOsc = c.createOscillator();
+          const subGain = c.createGain();
+          subOsc.type = 'triangle';
+          subOsc.frequency.setValueAtTime(110, now);
+          subOsc.frequency.exponentialRampToValueAtTime(42, now + 0.85);
+          subGain.gain.setValueAtTime(Math.max(0.001, 0.16 * sfxMult), now);
+          subGain.gain.exponentialRampToValueAtTime(0.002, now + 0.88);
+          subOsc.connect(subGain);
+          subGain.connect(dest);
+          subOsc.start(now);
+          subOsc.stop(now + 0.9);
+          // 3-pulse tactical klaxon
           for (let i = 0; i < 3; i++) {
             const osc = c.createOscillator();
             const gain = c.createGain();
@@ -225,10 +325,10 @@ window.ZH_AUDIO = (function () {
             osc.frequency.setValueAtTime(440, t0);
             osc.frequency.linearRampToValueAtTime(880, t0 + 0.22);
             osc.frequency.linearRampToValueAtTime(440, t0 + 0.34);
-            gain.gain.setValueAtTime(0.11, t0);
+            gain.gain.setValueAtTime(Math.max(0.001, 0.11 * sfxMult), t0);
             gain.gain.exponentialRampToValueAtTime(0.005, t0 + 0.34);
             osc.connect(gain);
-            gain.connect(c.destination);
+            gain.connect(dest);
             osc.start(t0);
             osc.stop(t0 + 0.35);
           }
@@ -236,6 +336,8 @@ window.ZH_AUDIO = (function () {
         }
 
         case 'promote': {
+          const sfxMult = volumes ? (volumes.master * volumes.sfx) : 1.0;
+          const dest = getOutputNode(c);
           const notes = [523.25, 659.25, 783.99, 1046.5];
           notes.forEach((freq, idx) => {
             const osc = c.createOscillator();
@@ -243,10 +345,10 @@ window.ZH_AUDIO = (function () {
             osc.type = 'triangle';
             const t0 = now + idx * 0.085;
             osc.frequency.setValueAtTime(freq, t0);
-            gain.gain.setValueAtTime(0.11, t0);
+            gain.gain.setValueAtTime(Math.max(0.001, 0.11 * sfxMult), t0);
             gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.24);
             osc.connect(gain);
-            gain.connect(c.destination);
+            gain.connect(dest);
             osc.start(t0);
             osc.stop(t0 + 0.25);
           });
@@ -263,13 +365,20 @@ window.ZH_AUDIO = (function () {
   // ==========================================================================
   function tickMusicStep() {
     if (!musicEnabled || !currentFactionMusic) return;
+    if (volumes && (volumes.master <= 0.0001 || volumes.music <= 0.0001)) return;
     const c = ensureContext();
     if (!c || c.state !== 'running') return;
+    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const duckMult = nowMs < voiceDuckUntil ? 0.36 : 1.0;
+    const musicMult = (volumes ? (volumes.master * volumes.music) : 0.4) * duckMult;
+    if (musicMult <= 0.001) return;
 
     const theme = FACTION_THEMES[currentFactionMusic] || FACTION_THEMES.USA;
     const now = c.currentTime;
     const freq = theme.notes[musicStep % theme.notes.length];
     const isDownbeat = (musicStep % 4) === 0;
+    const dest = getOutputNode(c, 'music');
+    if (!dest) return;
 
     try {
       // Bass / Brass Motif Note
@@ -282,13 +391,13 @@ window.ZH_AUDIO = (function () {
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(theme.filterFreq + combatIntensity * 600, now);
 
-      const baseVol = 0.024 + combatIntensity * 0.015;
+      const baseVol = Math.max(0.001, (0.042 + combatIntensity * 0.025) * musicMult);
       gain.gain.setValueAtTime(baseVol, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
 
       osc.connect(filter);
       filter.connect(gain);
-      gain.connect(c.destination);
+      gain.connect(dest);
       osc.start(now);
       osc.stop(now + 0.29);
 
@@ -299,10 +408,10 @@ window.ZH_AUDIO = (function () {
         drumOsc.type = 'sine';
         drumOsc.frequency.setValueAtTime(currentFactionMusic === 'CHINA' ? 95 : 130, now);
         drumOsc.frequency.exponentialRampToValueAtTime(32, now + 0.14);
-        drumGain.gain.setValueAtTime(0.035 + combatIntensity * 0.025, now);
+        drumGain.gain.setValueAtTime(Math.max(0.001, (0.055 + combatIntensity * 0.035) * musicMult), now);
         drumGain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
         drumOsc.connect(drumGain);
-        drumGain.connect(c.destination);
+        drumGain.connect(dest);
         drumOsc.start(now);
         drumOsc.stop(now + 0.15);
       }
@@ -340,8 +449,11 @@ window.ZH_AUDIO = (function () {
   // Radio comms squelch + speech synthesis
   function playRadioSquelch() {
     if (!sfxEnabled) return;
+    if (volumes && (volumes.master <= 0.0001 || volumes.voice <= 0.0001 || volumes.sfx <= 0.0001)) return;
     const c = ensureContext();
     if (!c) return;
+    const dest = getOutputNode(c, 'voice');
+    if (!dest) return;
     try {
       const now = c.currentTime;
       const osc = c.createOscillator();
@@ -349,10 +461,10 @@ window.ZH_AUDIO = (function () {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(1950, now);
       osc.frequency.setValueAtTime(2450, now + 0.018);
-      gain.gain.setValueAtTime(0.025, now);
+      gain.gain.setValueAtTime(Math.max(0.0005, 0.025 * (volumes.master * volumes.voice)), now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
       osc.connect(gain);
-      gain.connect(c.destination);
+      gain.connect(dest);
       osc.start(now);
       osc.stop(now + 0.038);
     } catch (_) {}
@@ -368,6 +480,7 @@ window.ZH_AUDIO = (function () {
   function setVolume(bus, val) {
     if (volumes[bus] !== undefined) {
       volumes[bus] = clamp(Number(val) || 0, 0, 1);
+      syncBusGainValues();
     }
     return volumes[bus];
   }
@@ -376,11 +489,35 @@ window.ZH_AUDIO = (function () {
     return volumes[bus] !== undefined ? volumes[bus] : 1;
   }
 
+  function resolveVoiceProfile(options) {
+    if (options.voiceProfile && UNIT_VOICE_PROFILES[options.voiceProfile]) {
+      return UNIT_VOICE_PROFILES[options.voiceProfile];
+    }
+    if (options.unitDef) {
+      const d = options.unitDef;
+      const f = d.faction || 'USA';
+      if (d.id && d.id.includes('OVERLORD')) return UNIT_VOICE_PROFILES.CHINA_OVERLORD;
+      if (d.isAir) return UNIT_VOICE_PROFILES.USA_AIR;
+      if (d.isInfantry) return UNIT_VOICE_PROFILES[`${f}_INFANTRY`] || UNIT_VOICE_PROFILES.USA_INFANTRY;
+      return UNIT_VOICE_PROFILES[`${f}_ARMOR`] || UNIT_VOICE_PROFILES.USA_ARMOR;
+    }
+    return UNIT_VOICE_PROFILES.EVA;
+  }
+
   function speak(text, options = {}) {
     if (!voiceEnabled || !('speechSynthesis' in window)) return;
+    if (volumes && (volumes.master <= 0.0001 || volumes.voice <= 0.0001)) return;
     const now = performance.now();
-    if (!options.priority && now - lastSpeakTime < 1500) return;
+    const isEva = Boolean(options.priority || options.isEva);
+    if (isEva) {
+      if (!options.priority && now - lastEvaSpeakTime < 900) return;
+      lastEvaSpeakTime = now;
+    } else {
+      if (now - lastUnitSpeakTime < 1500) return;
+      lastUnitSpeakTime = now;
+    }
     lastSpeakTime = now;
+    voiceDuckUntil = now + (isEva ? 1600 : 950);
 
     playRadioSquelch();
 
@@ -388,9 +525,10 @@ window.ZH_AUDIO = (function () {
       if (options.priority) {
         window.speechSynthesis.cancel();
       }
+      const profile = resolveVoiceProfile(options);
       const utter = new SpeechSynthesisUtterance(text);
-      utter.rate = options.rate || 1.06;
-      utter.pitch = options.pitch || 0.96;
+      utter.rate = options.rate || profile.rate || 1.06;
+      utter.pitch = options.pitch || profile.pitch || 0.96;
       const baseVol = options.volume || 0.85;
       utter.volume = clamp(baseVol * volumes.master * volumes.voice, 0, 1);
       window.speechSynthesis.speak(utter);
@@ -419,9 +557,11 @@ window.ZH_AUDIO = (function () {
 
   return {
     playSFX,
+    playRadioClick: playRadioSquelch,
     speak,
     computeSpatialParams,
     startMusic,
+    startFactionMusic: startMusic,
     stopMusic,
     setCombatIntensity,
     toggleSFX,
@@ -434,3 +574,4 @@ window.ZH_AUDIO = (function () {
     isMusicEnabled: () => musicEnabled
   };
 })();
+

@@ -4,9 +4,9 @@
 | Field | Value |
 | :--- | :--- |
 | **Product Name** | *Command & Conquer: Generals – Zero Hour (macOS Clean-Room Edition)* |
-| **Document Version** | `v2.0` (Phases 1–4 Complete + 4-Tier Human-QA Verified) |
-| **Last Updated** | October 21, 2026 |
-| **Target Platform** | macOS Native App Bundle (`C&C Generals Zero Hour.app`, Apple Silicon & Intel) + HTML5 Canvas / WebAudio Runtime |
+| **Document Version** | `v2.2` (Full 3D/2.5D CAD Roster, Seeded Lockstep Determinism, 1,000-Unit Perf Gate & 13-Playbook Human-QA Verified) |
+| **Last Updated** | October 23, 2026 |
+| **Target Platform** | macOS Native App Bundle (`C&C Generals Zero Hour.app`, Apple Silicon `arm64` default / Universal build option) + HTML5 Canvas / WebAudio Runtime |
 | **Repository** | [`https://github.com/malishan1122/cnc_generals`](https://github.com/malishan1122/cnc_generals) |
 | **Engineering Methodology** | Evidence-Gated Clean-Room Reverse Engineering (`SEEN` / `INFERRED` / `UNKNOWN`) of the SAGE (`GeneralsMD`) architecture |
 
@@ -14,13 +14,13 @@
 
 ## 1. Executive Summary & Product Vision
 
-**Command & Conquer: Generals – Zero Hour (macOS Clean-Room Edition)** is a zero-dependency, native macOS and HTML5 clean-room recreation of EA Pacific's 2003 Real-Time Strategy classic. Built from first principles against the open-sourced SAGE (`GeneralsMD`) architectural specification, it delivers the complete asymmetric 3-faction, 9-Sub-General experience—including **Generals' Challenge** and **Custom Skirmish** modes—inside a native macOS `WKWebView` application (`C&C Generals Zero Hour.app`) and any modern browser without external assets or copyright-encumbered media.
+**Command & Conquer: Generals – Zero Hour (macOS Clean-Room Edition)** is a zero-dependency, native macOS and HTML5 clean-room recreation inspired by EA Pacific's 2003 Real-Time Strategy classic. Built from first principles against the open-sourced SAGE (`GeneralsMD`) architectural specification, it delivers a **single-player skirmish and challenge gauntlet** across 3 asymmetric factions and 9 Sub-Generals inside a native macOS `WKWebView` application (`C&C Generals Zero Hour.app`) and any modern browser without external assets or copyright-encumbered media. Campaign, full replay UI, and multiplayer are not in this build.
 
 ### Core Product Pillars
-1. **100% Clean-Room & Self-Contained**: All visuals are rendered via procedural 2.5D isometric HTML5 Canvas geometry (`js/engine.js`, `js/vfx.js`); all sound effects and faction music themes are synthesized in real time via WebAudio (`js/audio.js`); all EVA announcements and General taunts use native macOS SpeechSynthesis.
-2. **Authentic Zero Hour Asymmetry**: Full implementation of **USA**, **China**, and **GLA** plus all **9 Zero Hour Sub-Generals** with authentic economy loops, power grid rules, exclusive units, veterancy chevrons, 5-star Generals Powers, and global Superweapons.
-3. **Deterministic 60Hz Simulation & Spatial Physics**: Fixed-timestep `1/60s` (`16.67ms`) simulation loop backed by a 128px `SpatialHashGrid`, 7 SAGE locomotor physics profiles, 8-way A* `NavigationGrid` (48px cells) with BFS flow fields, and 3D parabolic projectile ballistics.
-4. **4-Tier Automated QA & Human-Interaction Verification**: Every engine subsystem, AI doctrine, balance matchup (`9×9` = 81 games), and synthetic human UI interaction (`123` DOM/Canvas/Keyboard actions across 9 Playbooks) is continuously verified via automated test suites.
+1. **100% Clean-Room & Self-Contained**: All visuals are rendered via procedural 3D/2.5D isometric HTML5 Canvas geometry (`js/unit_models.js`, `js/engine.js`, `js/vfx.js`) and pre-baked procedural diorama sprites (`assets/diorama/`); all sound effects and faction music themes are synthesized in real time via WebAudio (`js/audio.js`); all EVA announcements and General taunts use native macOS SpeechSynthesis with sidechain music ducking.
+2. **Authentic Zero Hour Asymmetry**: Full implementation of **USA**, **China**, and **GLA** plus all **9 Zero Hour Sub-Generals** with authentic economy loops, power grid rules, exclusive units, veterancy chevrons, 5-star Generals Powers, and global Superweapons across **3 maps: Tournament Desert, Final Crusade, Defcon 6**.
+3. **Deterministic 60Hz Simulation, Seeded RNG & Spatial Physics**: Fixed-timestep `1/60s` (`16.67ms`) simulation loop (`step(tick, commandsForTick)`) with standalone Mulberry32 PRNG (`js/rng.js`), `gameSpeed`-invariant sub-step accumulation (`1x`–`3x`), validated command queue (`issueCommand()`, `exportReplay()`, `runReplay()`), FNV-1a state hashing (`computeStateHash()`), 128px `SpatialHashGrid`, 7 SAGE locomotor physics profiles, 8-way A* `NavigationGrid` (48px cells) with BFS flow fields, and 3D parabolic projectile ballistics capable of simulating 1,000 units under `6.0ms/tick` average.
+4. **Automated QA, Replay Determinism & Human-Interaction Verification**: Every engine subsystem, AI doctrine, 81-slice AI matchup matrix (`81/81` matchups), deterministic replay & save/load hash (`tests/determinism_verify.js`, `tests/game_speed_verify.js`, `tests/replay_hash_verify.js`), 1,000-unit performance budget (`tests/perf_budget.js`), and synthetic human UI interaction (`154` DOM/Canvas/Keyboard actions across 13 Playbooks, `87/87 PASS`) is continuously verified via automated test suites.
 
 ---
 
@@ -29,24 +29,31 @@
 ```mermaid
 flowchart TD
     subgraph macOS["Native macOS Shell (C&C Generals Zero Hour.app)"]
-        SwiftApp["macos_main.swift\nNSApplication + WKWebView + Native Menu Bar\n(Cmd+S / Cmd+L / Cmd+E / Ctrl+Cmd+F)"]
+        SwiftApp["macos_main.swift\nNSApplication + WKWebView + Native Menu Bar\n(Cmd+S / Cmd+L / Cmd+E / Cmd+T / Ctrl+Cmd+F)"]
     end
 
     subgraph Runtime["Clean-Room HTML5 RTS Runtime"]
-        Data["js/data.js (ZH_DATA)\n3 Factions, 9 Sub-Generals, 50+ Units/Structures,\n6×5 Armor Matrix, Abilities, Powers, 4 Maps"]
-        Engine["js/engine.js (ZH_ENGINE)\n60Hz Fixed-Step Loop, Economy, Combat, Garrison,\nTunnels, Superweapons, Save/Load (.zhsave)"]
+        RNG["js/rng.js (ZH_RNG)\nSeeded Mulberry32 PRNG &\nState Serialization"]
+        Data["js/data.js (ZH_DATA)\n3 Factions, 9 Sub-Generals, 50+ Units/Structures,\n6×5 Armor Matrix, Abilities, Powers, 3 Maps"]
+        Models["js/unit_models.js (ZH_UNIT_MODELS)\n39/39 Faction Unit & 38/38 Building\n3D/2.5D Parametric CAD Models & Diorama Registry"]
+        Studio["js/unit_studio.js (ZH_UNIT_STUDIO)\nInteractive 3D/2.5D Unit & Building\nDesign Workbench ([U])"]
+        Engine["js/engine.js (ZH_ENGINE)\n60Hz Seeded Step Loop, issueCommand() Queue,\nEconomy, Combat, Garrison, Replay, Save/Load (.zhsave)"]
         Spatial["js/spatial.js (ZH_SPATIAL)\nSpatialHashGrid (128px), 7 SAGE Locomotors,\nBallisticsEngine (3D Parabolic Arcs)"]
-        Nav["js/nav.js (ZH_NAV)\nNavigationGrid (48px), 8-Way A* + String Pulling,\nBFS Flow Fields & Doorway Clearance"]
-        VFX["js/vfx.js (ZH_VFX)\nArticulated Chassis/Turret/Barrel Rigs,\n4-Stage Scaffolding, Decals, Superweapon FX"]
-        Audio["js/audio.js (ZH_AUDIO)\n2.5D StereoPanner WebAudio, Dynamic Faction\nMusic Sequencer, Radio EVA & General Taunts"]
-        AI["js/ai.js (ZH_AI)\n9 Sub-General Doctrines, Multi-Squad Tactical Micro,\nThreat Heatmap Raids, Counter-Unit Matrix"]
-        UI["js/ui.js (ZH_UI)\nFaction-Skinned Tactical HUD, Drag-Box Priority Filter,\nControl Groups 0-9, Stances, Cameo Badges"]
+        Nav["js/nav.js (ZH_NAV)\nNavigationGrid (48px), 8-Way A* + Spiral Fallback,\nBFS Flow Fields & Doorway Clearance"]
+        VFX["js/vfx.js (ZH_VFX)\nArticulated Chassis/Turret/Barrel Rigs, China Tactical\nReadability Pass, 4-Stage Scaffolding, Decals, Superweapon FX"]
+        Audio["js/audio.js (ZH_AUDIO)\n2.5D StereoPanner WebAudio, Dynamic Faction\nMusic Sequencer, Sidechain Voice Ducking & General Taunts"]
+        AI["js/ai.js (ZH_AI)\n9 Sub-General Doctrines, Behavioral Difficulty Profiles,\nMulti-Squad Tactical Micro, Counter-Unit Matrix"]
+        UI["js/ui.js (ZH_UI)\nFaction-Skinned Tactical HUD, Onboarding Checklist,\nArmor Counter Hover Chip, Control Groups 0-9, Stances"]
     end
 
     SwiftApp --> UI
     UI --> Engine
+    UI --> Studio
     UI --> Audio
+    Studio --> Models
+    Engine --> RNG
     Engine --> Data
+    Engine --> Models
     Engine --> Spatial
     Engine --> Nav
     Engine --> VFX
@@ -56,18 +63,22 @@ flowchart TD
 
 | File | Responsibility | Lines of Code |
 | :--- | :--- | :---: |
-| [`index.html`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/index.html) | Application shell, Top Tactical Bar, Isometric Viewport, Bottom Command Bar, Challenge/Skirmish & Powers Modals | ~220 |
-| [`css/style.css`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/css/style.css) | Faction-themed HUD styling (`.hud-theme-usa`, `.hud-theme-china`, `.hud-theme-gla`), Cameo grid, modal & badge styles | ~850 |
-| [`js/data.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/data.js) | Declarative INI-style registry (`ZH_DATA`): 3 Factions, 9 Generals, Units, Buildings, Upgrades, Weapons, 4 Maps | ~2,870 |
-| [`js/spatial.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/spatial.js) | `SpatialHashGrid` (`O(1)` 128px queries), `LocomotorPhysics` (7 SAGE locomotor types), `BallisticsEngine` (3D arcs) | ~430 |
-| [`js/nav.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/nav.js) | `NavigationGrid` (48px cells, footprint rasterization, 8-way A* pathfinding, string pulling, BFS flow fields) | ~360 |
-| [`js/vfx.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/vfx.js) | `VFXRenderer` (articulated tank turrets/barrels, 4-stage scaffolding, persistent craters/scorch decals, Nuke/Scud/Particle FX) | ~540 |
-| [`js/audio.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/audio.js) | `ZH_AUDIO` WebAudio spatial synthesizer, procedural faction music sequencer (`USA`/`CHINA`/`GLA`), radio EVA & taunts | ~560 |
-| [`js/engine.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/engine.js) | Core 60Hz deterministic RTS simulation engine, combat, economy, garrison/tunnels, superweapons, `.zhsave` Save/Load | ~4,320 |
-| [`js/ai.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ai.js) | Autonomous AI Commander with 9 Sub-General personalities, multi-squad roles (`VANGUARD`/`FLANKER`/`BASE_DEFENSE`), counter-matrix | ~920 |
-| [`js/ui.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js) | Human input controller, drag-box priority filter, Control Groups `0–9`, Tactical Stances, Command Card & Save/Load hotkeys | ~1,510 |
-| [`js/simulator.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/simulator.js) | Deterministic headless `PlanSimulator` for automated multi-doctrine simulation and state invariant auditing | ~520 |
-| [`macos_main.swift`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/macos_main.swift) | Native macOS `NSApplication` + `WKWebView` wrapper with native Menu Bar (`Game`, `Audio`, `View`) & Retina support | ~245 |
+| [`index.html`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/index.html) | Application shell, Top Tactical Bar, Isometric Viewport, Onboarding Guide, Bottom Command Bar, Challenge/Skirmish, Powers & 3D Unit Studio Modals | 640 |
+| [`unit-studio.html`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/unit-studio.html) / [`usa-buildings-diorama.html`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/usa-buildings-diorama.html) / [`usa-units-diorama.html`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/usa-units-diorama.html) | Standalone Unit Studio entry point and interactive 3D/2.5D building & unit diorama inspection sheets | 15,485 (combined) |
+| [`css/style.css`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/css/style.css) | Faction-themed HUD styling (`.hud-theme-usa`, `.hud-theme-china`, `.hud-theme-gla`), Cameo grid, Unit Studio workbench, modal & badge styles | 3,936 |
+| [`js/rng.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/rng.js) | Standalone deterministic Mulberry32 PRNG (`ZH_RNG`) with seed hashing, range helpers, and state serialization | 58 |
+| [`js/data.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/data.js) | Declarative INI-style registry (`ZH_DATA`): 3 Factions, 9 Generals, Units, Buildings, Upgrades, Weapons, 3 Maps (Tournament Desert, Final Crusade, Defcon 6) | 3,194 |
+| [`js/spatial.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/spatial.js) | `SpatialHashGrid` (`O(1)` 128px queries), `LocomotorPhysics` (7 SAGE locomotor types), `BallisticsEngine` (3D arcs) | 676 |
+| [`js/nav.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/nav.js) | `NavigationGrid` (48px cells, footprint rasterization, 8-way A* pathfinding with spiral nearest-walkable fallback, string pulling, BFS flow fields) | 441 |
+| [`js/unit_models.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/unit_models.js) | `ZH_UNIT_MODELS`: Parametric 3D/2.5D CAD geometry and diorama sprite renderer for all 39 faction units and 38 faction/neutral structures | 12,642 |
+| [`js/vfx.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/vfx.js) | `VFXRenderer` (articulated tank turrets/barrels, China tactical readability pass, 4-stage scaffolding, persistent craters/scorch decals, Nuke/Scud/Particle FX) | 1,340 |
+| [`js/audio.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/audio.js) | `ZH_AUDIO` WebAudio spatial synthesizer, procedural faction music sequencer (`USA`/`CHINA`/`GLA`), sidechain ducking, radio EVA & taunts | 578 |
+| [`js/engine.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/engine.js) | Core 60Hz seeded deterministic RTS simulation engine, `issueCommand()` queue, Challenge 2.0 prefab outposts & 75s twists, replay export/runner, `.zhsave` Save/Load | 6,941 |
+| [`js/ai.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ai.js) | Autonomous AI Commander with 9 Sub-General personalities, behavioral difficulty profiles (`EASY`/`NORMAL`/`HARD`), multi-squad roles | 917 |
+| [`js/simulator.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/simulator.js) | Deterministic headless `PlanSimulator` for automated multi-doctrine simulation, 5x warp auto-play, and state invariant auditing | 1,175 |
+| [`js/unit_studio.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/unit_studio.js) | Interactive 3D/2.5D Unit & Building Studio (`[U]`): live turntable, camera elevation/zoom, wireframe/layer toggles, weapon test-fire, and battlefield squad spawn | 1,632 |
+| [`js/ui.js`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/js/ui.js) | Human input controller, drag-box priority filter, onboarding checklist, live armor-counter hover chip, Control Groups `0–9`, Tactical Stances, `?dev=1` gating | 4,416 |
+| [`macos_main.swift`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/macos_main.swift) | Native macOS `NSApplication` + `WKWebView` wrapper with native Menu Bar (`Game`, `Audio`, `View`), Retina support & fullscreen handling | 185 |
 
 ---
 
@@ -163,16 +174,13 @@ flowchart TD
 - **Menu & Modal Accessibility (`BUG-HUMAN-06`)**: Pressing `[F9]` works both during active gameplay and directly from the Start Screen (`#start-modal`), Main Menu (`☰ MENU`), or Victory/Defeat modal (`#victory-modal`), automatically restoring the match and closing any open menu modal.
 - **Dual Storage Backend**: Persists to browser `localStorage` with an automatic in-memory slot fallback (`GameEngine._memorySaveSlots`) for restricted/headless environments, plus `.zhsave` file export (`Cmd+E`) and import.
 
-### 6.2 Multi-Squad Tactical AI & 9×9 Balance Matrix (`SYS-26`, `SYS-27`)
-- **Multi-Squad Tactical Roles (`js/ai.js`)**:
+### 6.2 Multi-Squad Tactical AI, Behavioral Difficulty & 9×9 Smoke Matrix (`SYS-26`, `SYS-27`)
+- **Multi-Squad Tactical Roles & Difficulty Profiles (`js/ai.js`)**:
   - `BASE_DEFENSE`: Guards base perimeter and intercept vectors.
-  - `FLANKER`: Hunts enemy Dozers, Workers, and Supply Harvesters using threat-avoidance pathing (`findHighValueRaidTarget`) that skirts enemy defense turrets.
+  - `FLANKER`: Hunts enemy Dozers, Workers, and Supply Harvesters using threat-avoidance pathing (`findHighValueRaidTarget`) that skirts enemy defense turrets (enabled on `NORMAL`/`HARD`).
   - `VANGUARD`: Main combined-arms assault wave supported by dynamic counter-unit production (`computeCounterWeights`) and spatial cluster targeting (`findBestClusterTarget`) for Superweapons and Generals Powers.
-- **9×9 Sub-General Balance Telemetry (`tests/balance_matrix.js`)**:
-  - Verified across all **81 head-to-head matchups** (`9 Sub-Generals × 9 Sub-Generals`) with `0` runtime errors:
-    - **USA Aggregate Win Rate**: `47.9%` (within the `35%–65%` target band)
-    - **China Aggregate Win Rate**: `53.0%` (within the `35%–65%` target band)
-    - **GLA Aggregate Win Rate**: `49.1%` (within the `35%–65%` target band)
+- **9×9 Sub-General Smoke Telemetry (`tests/balance_matrix.js`)**:
+  - **81 short AI slices completed without a runtime throw. Not a human balance result.** Plus a full-match victory completion test (`runFullMatchVictoryCheck`) that plays to `checkVictoryConditions()` resolution.
 
 ### 6.3 Native macOS `.app` v2.0 Shell (`SYS-28`)
 - Compiled native macOS binary (`C&C Generals Zero Hour.app/Contents/MacOS/CnCGeneralsZeroHour`) built from [`macos_main.swift`](file:///Users/muhammad.shan/Documents/cnc-generals-zero-hour-mac/macos_main.swift).
@@ -183,14 +191,18 @@ flowchart TD
 
 ---
 
-## 7. 4-Tier Automated QA & Verification Gates (`SYS-24`, `SYS-29`, `SYS-30`)
+## 7. Automated QA & Verification Gates (`SYS-24`, `SYS-29` – `SYS-32`)
 
-Every release candidate must pass all 5 automated verification runners with **0 failures**:
+Every release candidate must pass all 9 automated verification runners with **0 failures**:
 
 | Suite | Command | Scope & Assertions | Status |
 | :--- | :--- | :--- | :---: |
-| **1. Phase 2 Engine Suite** | `node tests/phase2_verify.js` | SpatialHashGrid, 7 Locomotors, 8-Way A* NavGrid, 3D Ballistics, Garrisoning, Tech Buildings, Exclusive Units, 9 AI Doctrines | **6 / 6 PASS** |
+| **1. Phase 2 Engine Suite** | `node tests/phase2_verify.js` | SpatialHashGrid, 7 Locomotors, 8-Way A* NavGrid, 3D Ballistics, Garrisoning, Tech Buildings, Exclusive Units, 9 AI Doctrines | **20 / 20 PASS** |
 | **2. Phase 3 UX/VFX/Audio Suite** | `node tests/phase3_verify.js` | Control Groups `0–9`, Guard Leash, Force-Fire, Scatter, Waypoints, Cameo Refunds, Articulated Rigs, Decals, Superweapons, Spatial Audio, Doorway Clearance | **26 / 26 PASS** |
-| **3. Plan Simulator & Bug Audit** | `node tests/simulator_verify.js` | All 6 engine/AI/data bug regressions (`BUG-01..06`), 9 full AI-vs-AI skirmish simulations, UI fuzzing | **17 / 17 PASS** |
-| **4. Phase 4 & 9×9 Balance Suite** | `node tests/phase4_verify.js` | `.zhsave` Save/Load round-trip, Multi-Squad Tactical AI Micro, 81-matchup `9×9` General Balance Matrix, macOS `.app` v2.0 verification | **29 / 29 PASS** |
-| **5. Human-User UI Playbook Runner** | `node tests/human_qa_runner.js` | **9 End-to-End Human Playbooks** dispatching **123 synthetic DOM `.click()`, `<canvas>` mouse, and `window` keyboard events** (`BUG-HUMAN-01..07`) | **61 / 61 PASS** |
+| **3. Phase 4, 3D CAD Coverage & 81-Slice Suite** | `node tests/phase4_verify.js` | `.zhsave` Save/Load round-trip, Multi-Squad Tactical AI Micro, 39/39 Unit & 38/38 Building 3D CAD models, 81/81 9×9 General slices, macOS `.app` v2.0 verification | **39 / 39 PASS** |
+| **4. Human-User UI Playbook Runner** | `node tests/human_qa_runner.js` | **13 End-to-End Human Playbooks** dispatching **154 synthetic DOM `.click()`, `<canvas>` mouse, and `window` keyboard events** (`BUG-UI-01..09`, `BUG-ENG-01..02`, `BUG-AI-01`) | **87 / 87 PASS** |
+| **5. Deterministic Replay & Challenge 2.0 Suite** | `node tests/replay_hash_verify.js` | Seeded Mulberry32 determinism across 600 ticks, command-log replay hash, behavioral difficulty, Challenge 2.0 prefab + 75s twist, 80-unit `step()` `p95 <= 8ms` | **7 / 7 PASS** |
+| **6. Fixed-Timestep GameSpeed Invariance** | `node tests/game_speed_verify.js` | Verifies `gameSpeed` (`1x`, `1.5x`, `2x`, `3x`) advances fixed `1/60s` simulation ticks with identical state hashes (`hash(1x) === hash(2x) === hash(3x)`) | **PASS** |
+| **7. Seeded PRNG, Replay & Save/Load Determinism** | `node tests/determinism_verify.js` | Verifies standalone `js/rng.js`, zero `Math.random()` in simulation logic, validated `issueCommand()`, `exportReplay()` / `runReplay()`, and mid-match `.zhsave` determinism | **PASS** |
+| **8. 1,000-Unit Performance Budget & A* Fallback** | `node tests/perf_budget.js` | Benchmarks 1,000 active combat units (`500 vs 500`) across 300 ticks (`avg <= 6.0ms`, `p99 <= 12.0ms`) and verifies spiral nearest-walkable A* fallback for blocked goals | **PASS** |
+| **9. 9×9 Sub-General Matchup Matrix** | `node tests/balance_matrix.js` | Standalone 81-match (`9×9` Sub-Generals) seeded AI tournament runner plus full-match victory completion check (`runFullMatchVictoryCheck`) | **81 / 81 PASS** |

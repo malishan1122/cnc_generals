@@ -40,6 +40,23 @@ window.ZH_ENGINE = (function () {
       this.paused = false;
       this.gameSpeed = 1.0;
       this.gameTime = 0;
+      this.simTick = 0;
+      this.matchSeed = 1337;
+      this.simRngState = 1337;
+      this.nextEntityId = 1;
+      this.rng = (typeof window !== 'undefined' && window.ZH_RNG && ZH_RNG.SeededRNG)
+        ? new ZH_RNG.SeededRNG(1337)
+        : null;
+      this.cosmeticRng = (typeof window !== 'undefined' && window.ZH_RNG && ZH_RNG.SeededRNG)
+        ? new ZH_RNG.SeededRNG(9999)
+        : null;
+      this.cosmeticRngState = 9999;
+      this.commandLog = [];
+      this.pendingCommands = [];
+      this.events = [];
+      this.lastCommandRejection = null;
+      this.navDirty = false;
+      this.challengeTwistTriggered = false;
       this.mode = 'CHALLENGE'; // 'CHALLENGE' | 'SKIRMISH'
       this.challengeIndex = 0;
       this.difficulty = 'NORMAL'; // 'EASY' | 'NORMAL' | 'HARD'
@@ -86,7 +103,7 @@ window.ZH_ENGINE = (function () {
       }
 
       // Phase 2 Spatial Hash Grid & A* Navigation Grid
-      this.spatialGrid = window.ZH_SPATIAL ? new ZH_SPATIAL.SpatialHashGrid(128) : null;
+      this.spatialGrid = window.ZH_SPATIAL ? new ZH_SPATIAL.SpatialHashGrid(64) : null;
       this.navGrid = window.ZH_NAV ? new ZH_NAV.NavigationGrid(WORLD_SIZE, WORLD_SIZE, 48) : null;
 
       // World Entities
@@ -147,12 +164,49 @@ window.ZH_ENGINE = (function () {
           playerGeneralId: initialConfig.playerGenId || initialConfig.playerGeneralId || 'USA_GRANGER',
           aiGeneralId: initialConfig.enemyGenId || initialConfig.aiGeneralId || 'CHINA_KWAI',
           difficulty: initialConfig.difficulty || 'NORMAL',
-          challengeIndex: initialConfig.challengeIndex || 0
+          challengeIndex: initialConfig.challengeIndex || 0,
+          seed: initialConfig.seed
         });
       }
     }
 
+    allocId() {
+      const id = this.nextEntityId++;
+      nextEntityId = this.nextEntityId;
+      return id;
+    }
+
+    // Deterministic 32-bit Mulberry32 PRNG for all simulation-affecting randomness
+    simRandom() {
+      if (this.rng) {
+        this.rng.setState(this.simRngState);
+        const val = this.rng.next();
+        this.simRngState = this.rng.getState();
+        return val;
+      }
+      let t = (this.simRngState = (this.simRngState + 0x6D2B79F5) | 0);
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+
+    // Separate PRNG for cosmetic-only effects (particles, camera shake) so rendering never perturbs simulation RNG
+    cosmeticRandom() {
+      if (this.cosmeticRng) {
+        return this.cosmeticRng.next();
+      }
+      let t = (this.cosmeticRngState = (this.cosmeticRngState + 0x6D2B79F5) | 0);
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+
+    markNavDirty() {
+      this.navDirty = true;
+    }
+
     initMatch(config = {}) {
+      this.nextEntityId = 1;
       nextEntityId = 1;
       this.mode = config.mode || 'CHALLENGE';
       this.challengeIndex = config.challengeIndex || 0;
@@ -161,11 +215,26 @@ window.ZH_ENGINE = (function () {
       this.mapData = this.mapDef;
       this.minimapTerrain = null;
 
+      const seedVal = Number.isFinite(Number(config.seed)) ? (Number(config.seed) >>> 0) : 1337;
+      this.matchSeed = seedVal || 1337;
+      this.simRngState = this.matchSeed;
+      if (this.rng) this.rng.setState(this.simRngState);
+      if (this.cosmeticRng) this.cosmeticRng.setState((this.matchSeed ^ 0x9E3779B9) >>> 0);
+      this.cosmeticRngState = (this.matchSeed ^ 0x9E3779B9) >>> 0;
+      this.simTick = 0;
+      this.commandLog = [];
+      this.pendingCommands = [];
+      this.events = [];
+      this.lastCommandRejection = null;
+      this.navDirty = false;
+      this.challengeTwistTriggered = false;
+
       this.gameTime = 0;
       this.matchTime = 0;
       this.accumulator = 0;
       this.gameOver = false;
       this.matchOver = false;
+      this.victoryState = null;
       this._gameOverNotified = false;
       this.winner = null;
       this.paused = false;
@@ -191,6 +260,14 @@ window.ZH_ENGINE = (function () {
       this.mushroomClouds = [];
       this.moveMarkers = [];
       this.screenLabels = [];
+      this.rebuildHoles = [];
+      this.telemetryHistory = [];
+      this.telemetryTimer = 0;
+      this.passiveIncomeTimer = 0;
+      this.hordeCheckTimer = 0;
+      this.fogUpdateTimer = 0;
+      this.terrainCanvas = null;
+      this.terrainCanvasMapId = null;
       this.screenFlash = 0;
       this.lastAlertPos = null;
       this.underAttackTimer = 0;
@@ -202,6 +279,10 @@ window.ZH_ENGINE = (function () {
       this.pendingSuperweaponBuildingId = null;
       this.pendingAbilityUnitId = null;
       this.hoveredEntityId = null;
+
+      if (window.ZH_AI && typeof ZH_AI.resetTimers === 'function') {
+        ZH_AI.resetTimers();
+      }
 
       // Initialize Fog
       this.fog.fill(0);
@@ -222,9 +303,15 @@ window.ZH_ENGINE = (function () {
       this.spawnStartingBase(0, 440, WORLD_SIZE - 440);
       this.spawnStartingBase(1, WORLD_SIZE - 440, 440);
 
+      // Phase 3 (8.2): Challenge 2.0 Authored Forward Prefab Defenses & Specialist Guard
+      if (this.mode === 'CHALLENGE') {
+        this.spawnChallengePrefabBase(1, aiGen.id);
+      }
+
       // Rebuild Navigation Grid with initial structures
       if (this.navGrid) {
         this.navGrid.rebuild(this);
+        this.navDirty = false;
       }
 
       // Position Camera over Player Command Center
@@ -239,6 +326,7 @@ window.ZH_ENGINE = (function () {
       this.recalculatePower(0);
       this.recalculatePower(1);
       this.updateFogOfWar();
+      this.sampleTelemetrySnapshot();
 
       this.running = true;
       if (window.ZH_AUDIO) {
@@ -247,25 +335,219 @@ window.ZH_ENGINE = (function () {
       }
     }
 
+    spawnChallengePrefabBase(aiTeamId, generalId) {
+      const baseX = WORLD_SIZE - 440;
+      const baseY = 440;
+      const team = this.teams[aiTeamId];
+      if (!team) return;
+
+      // Give Challenge AI an extra reactor/power plant if power-based so forward turrets stay online
+      if (team.factionId === 'USA') {
+        this.spawnBuilding('USA_REACTOR', aiTeamId, baseX + 180, baseY - 120, true);
+      } else if (team.factionId === 'CHINA') {
+        this.spawnBuilding('CHINA_REACTOR', aiTeamId, baseX + 180, baseY - 120, true);
+      }
+
+      switch (generalId) {
+        case 'USA_GRANGER':
+          this.spawnBuilding('USA_AIRFIELD', aiTeamId, baseX - 220, baseY - 40, true);
+          this.spawnBuilding('USA_PATRIOT', aiTeamId, baseX - 240, baseY + 190, true);
+          this.spawnUnit('USA_COMANCHE', aiTeamId, baseX - 180, baseY + 140);
+          break;
+        case 'CHINA_KWAI':
+          this.spawnBuilding('CHINA_WAR_FACTORY', aiTeamId, baseX - 230, baseY + 40, true);
+          this.spawnBuilding('CHINA_GATTLING_CANNON', aiTeamId, baseX - 250, baseY + 210, true);
+          this.spawnUnit('CHINA_BATTLEMASTER', aiTeamId, baseX - 200, baseY + 150);
+          break;
+        case 'GLA_THRAX':
+          this.spawnBuilding('GLA_BARRACKS', aiTeamId, baseX - 190, baseY - 60, true);
+          this.spawnBuilding('GLA_TUNNEL_NETWORK', aiTeamId, baseX - 240, baseY + 190, true);
+          this.spawnBuilding('GLA_STINGER_SITE', aiTeamId, baseX - 120, baseY + 240, true);
+          this.spawnUnit('GLA_TOXIN_TRACTOR', aiTeamId, baseX - 200, baseY + 160);
+          break;
+        case 'USA_TOWNES':
+          this.spawnBuilding('USA_PATRIOT', aiTeamId, baseX - 250, baseY + 180, true);
+          this.spawnBuilding('USA_PATRIOT', aiTeamId, baseX - 110, baseY + 250, true);
+          this.spawnUnit('USA_LASER_CRUSADER', aiTeamId, baseX - 190, baseY + 150);
+          break;
+        case 'CHINA_SHIN_FAI':
+          this.spawnBuilding('CHINA_BUNKER', aiTeamId, baseX - 250, baseY + 190, true);
+          this.spawnBuilding('CHINA_GATTLING_CANNON', aiTeamId, baseX - 110, baseY + 250, true);
+          this.spawnUnit('CHINA_MINIGUNNER', aiTeamId, baseX - 210, baseY + 160);
+          this.spawnUnit('CHINA_TANK_HUNTER', aiTeamId, baseX - 180, baseY + 170);
+          break;
+        case 'GLA_KASSAD':
+          this.spawnBuilding('GLA_BARRACKS', aiTeamId, baseX - 190, baseY - 60, true);
+          this.spawnBuilding('GLA_TUNNEL_NETWORK', aiTeamId, baseX - 250, baseY + 190, true);
+          this.spawnBuilding('GLA_STINGER_SITE', aiTeamId, baseX - 110, baseY + 250, true);
+          this.spawnUnit('GLA_QUAD_CANNON', aiTeamId, baseX - 200, baseY + 160);
+          break;
+        case 'CHINA_TAO':
+          this.spawnBuilding('CHINA_PROPAGANDA_CENTER', aiTeamId, baseX + 160, baseY + 140, true);
+          this.spawnBuilding('CHINA_GATTLING_CANNON', aiTeamId, baseX - 240, baseY + 190, true);
+          this.spawnUnit('CHINA_NUKE_CANNON', aiTeamId, baseX - 210, baseY + 160);
+          break;
+        case 'GLA_JUHZIZ':
+          this.spawnBuilding('GLA_PALACE', aiTeamId, baseX + 150, baseY + 140, true);
+          this.spawnBuilding('GLA_TUNNEL_NETWORK', aiTeamId, baseX - 240, baseY + 190, true);
+          this.spawnBuilding('GLA_STINGER_SITE', aiTeamId, baseX - 110, baseY + 250, true);
+          this.spawnUnit('GLA_SCUD_LAUNCHER', aiTeamId, baseX - 200, baseY + 160);
+          break;
+        case 'USA_ALEXANDER':
+        default:
+          this.spawnBuilding('USA_STRATEGY_CENTER', aiTeamId, baseX + 150, baseY + 140, true);
+          this.spawnBuilding('USA_PATRIOT', aiTeamId, baseX - 250, baseY + 180, true);
+          this.spawnBuilding('USA_PATRIOT', aiTeamId, baseX - 110, baseY + 250, true);
+          this.spawnUnit('USA_AURORA_ALPHA', aiTeamId, baseX - 190, baseY + 150);
+          break;
+      }
+    }
+
+    updateChallengeScriptedTwist() {
+      if (this.mode !== 'CHALLENGE' || this.challengeTwistTriggered || this.gameTime < 75) return;
+      const aiTeam = this.teams[1];
+      if (!aiTeam) return;
+      this.challengeTwistTriggered = true;
+
+      const genId = aiTeam.generalId;
+      const gen = aiTeam.general;
+      const spawnX = WORLD_SIZE - 560;
+      const spawnY = 560;
+      const targetX = 520;
+      const targetY = WORLD_SIZE - 520;
+
+      let alertText = `${gen.name} Doctrinal Escalation!`;
+      let tauntText = 'Witness my true doctrinal superiority, General!';
+      const wave = [];
+
+      switch (genId) {
+        case 'USA_GRANGER':
+          alertText = '⚡ CHALLENGE TWIST: Gen. Granger scrambling King Raptor & Comanche Strike Wing!';
+          tauntText = 'Clear the skies! My King Raptors own this airspace!';
+          wave.push(this.spawnUnit('USA_KING_RAPTOR', 1, spawnX, spawnY));
+          wave.push(this.spawnUnit('USA_COMANCHE', 1, spawnX - 40, spawnY + 40));
+          wave.push(this.spawnUnit('USA_COMANCHE', 1, spawnX + 40, spawnY - 40));
+          break;
+        case 'CHINA_KWAI':
+          alertText = '⚡ CHALLENGE TWIST: Gen. Kwai deploying Veteran Emperor Overlord Spearhead!';
+          tauntText = 'My Emperor Overlord column will flatten your perimeter!';
+          wave.push(this.spawnUnit('CHINA_EMPEROR_OVERLORD', 1, spawnX, spawnY));
+          wave.push(this.spawnUnit('CHINA_BATTLEMASTER', 1, spawnX - 50, spawnY + 30));
+          wave.push(this.spawnUnit('CHINA_GATTLING_TANK', 1, spawnX + 30, spawnY + 50));
+          break;
+        case 'GLA_THRAX':
+          alertText = '⚡ CHALLENGE TWIST: Dr. Thrax unleashing Anthrax Beta & Toxin Ambush!';
+          tauntText = 'Breathe deeply, General! My fresh batch of Anthrax Beta is ready!';
+          aiTeam.upgrades.add('UPG_ANTHRAX_BETA');
+          wave.push(this.spawnUnit('GLA_TOXIN_TRACTOR', 1, spawnX, spawnY));
+          wave.push(this.spawnUnit('GLA_MARAUDER', 1, spawnX - 45, spawnY + 35));
+          wave.push(this.spawnUnit('GLA_RPG_TROOPER', 1, spawnX + 35, spawnY - 35));
+          break;
+        case 'USA_TOWNES':
+          alertText = '⚡ CHALLENGE TWIST: Gen. Townes deploying Laser Crusader & Avenger Task Force!';
+          tauntText = 'Focusing high-energy laser lenses on your command grid!';
+          wave.push(this.spawnUnit('USA_LASER_CRUSADER', 1, spawnX, spawnY));
+          wave.push(this.spawnUnit('USA_LASER_CRUSADER', 1, spawnX - 45, spawnY + 35));
+          wave.push(this.spawnUnit('USA_AVENGER', 1, spawnX + 35, spawnY - 35));
+          break;
+        case 'CHINA_SHIN_FAI':
+          alertText = '⚡ CHALLENGE TWIST: Gen. Shin Fai launching Assault Troop Crawler & Minigunner Wave!';
+          tauntText = 'Infantry wave advancing! Overrun their defenses!';
+          wave.push(this.spawnUnit('CHINA_ASSAULT_CRAWLER', 1, spawnX, spawnY));
+          wave.push(this.spawnUnit('CHINA_MINIGUNNER', 1, spawnX - 40, spawnY + 30));
+          wave.push(this.spawnUnit('CHINA_TANK_HUNTER', 1, spawnX + 30, spawnY - 40));
+          break;
+        case 'GLA_KASSAD':
+          alertText = '⚡ CHALLENGE TWIST: Prince Kassad activating GPS Scrambler Stealth Raid!';
+          tauntText = 'You cannot fight what your radar cannot see!';
+          wave.push(this.spawnUnit('GLA_HIJACKER', 1, spawnX, spawnY));
+          wave.push(this.spawnUnit('GLA_QUAD_CANNON', 1, spawnX - 45, spawnY + 35));
+          wave.push(this.spawnUnit('GLA_ROCKET_BUGGY', 1, spawnX + 35, spawnY - 35));
+          for (const u of wave) {
+            if (u) {
+              u.stealthed = true;
+              u.gpsScrambleTimer = 35;
+            }
+          }
+          break;
+        case 'CHINA_TAO':
+          alertText = '⚡ CHALLENGE TWIST: Gen. Tao rolling out Neutron-Loaded Nuke Cannon & Overlord!';
+          tauntText = 'Glow in the dark, General! Tactical nuclear artillery deployed!';
+          aiTeam.upgrades.add('UPG_ISOTOPE_STABILITY');
+          wave.push(this.spawnUnit('CHINA_NUKE_CANNON', 1, spawnX, spawnY));
+          wave.push(this.spawnUnit('CHINA_OVERLORD', 1, spawnX - 55, spawnY + 45));
+          break;
+        case 'GLA_JUHZIZ':
+          alertText = '⚡ CHALLENGE TWIST: Gen. Juhziz dispatching High-Explosive Bomb Truck & Scud Convoy!';
+          tauntText = 'Listen for the rumble of my Scud launchers and Bomb Trucks!';
+          wave.push(this.spawnUnit('GLA_BOMB_TRUCK', 1, spawnX, spawnY));
+          wave.push(this.spawnUnit('GLA_SCUD_LAUNCHER', 1, spawnX - 45, spawnY + 45));
+          wave.push(this.spawnUnit('GLA_QUAD_CANNON', 1, spawnX + 45, spawnY - 45));
+          break;
+        case 'USA_ALEXANDER':
+        default:
+          alertText = '⚡ CHALLENGE TWIST: Gen. Alexander launching Aurora Alpha & Paladin Strike Group!';
+          tauntText = 'Supersonic Aurora Alphas are inbound on your coordinates!';
+          wave.push(this.spawnUnit('USA_AURORA_ALPHA', 1, spawnX, spawnY));
+          wave.push(this.spawnUnit('USA_PALADIN', 1, spawnX - 45, spawnY + 45));
+          wave.push(this.spawnUnit('USA_TOMAHAWK', 1, spawnX + 45, spawnY - 45));
+          break;
+      }
+
+      for (const u of wave) {
+        if (!u) continue;
+        u.vetLevel = Math.max(u.vetLevel || 0, 1);
+        u.state = 'ATTACK_MOVE';
+        u.targetX = targetX;
+        u.targetY = targetY;
+      }
+
+      this.triggerAlert(alertText, '#f59e0b');
+      this.triggerTaunt(gen, tauntText);
+      this.addRadarPing(spawnX, spawnY, '#f59e0b');
+    }
+
+    sampleTelemetrySnapshot() {
+      if (!this.teams || this.teams.length < 2) return;
+      let p0Army = 0;
+      let p1Army = 0;
+      for (let i = 0; i < this.units.length; i++) {
+        const u = this.units[i];
+        if (u.dead) continue;
+        const c = (u.def && u.def.cost) ? u.def.cost : 400;
+        if (u.team === 0) p0Army += c;
+        else if (u.team === 1) p1Army += c;
+      }
+      this.telemetryHistory.push({
+        t: Math.round(this.gameTime),
+        p0Credits: Math.round(this.teams[0].credits),
+        p1Credits: Math.round(this.teams[1].credits),
+        p0Army,
+        p1Army
+      });
+    }
+
     createTeam(id, generalDef, isAI) {
       const factionDef = ZH_DATA.FACTIONS[generalDef.faction];
-      const aiBonus = isAI
-        ? (this.difficulty === 'HARD' ? 14000 : this.difficulty === 'EASY' ? 8500 : 10500)
+      const startCash = (isAI && this.difficulty === 'BRUTAL')
+        ? 12500
         : factionDef.startingCredits;
 
       return {
         id,
         isAI,
+        difficulty: this.difficulty,
         generalId: generalDef.id,
         general: generalDef,
         factionId: factionDef.id,
         faction: factionDef,
-        credits: aiBonus,
+        credits: startCash,
         powerProduced: 0,
         powerConsumed: 0,
         isLowPower: false,
         hasRadar: true,
         hasTechCenter: false,
+        strategyBattlePlan: 'BOMBARDMENT',
         rank: 1,
         xp: 0,
         generalPoints: 1,
@@ -291,7 +573,8 @@ window.ZH_ENGINE = (function () {
     }
 
     setupMapResources() {
-      // 1. Primary & Expansion Supply Docks
+      const mapId = (this.mapDef && this.mapDef.id) ? this.mapDef.id : 'TOURNAMENT_DESERT';
+      // 1. Primary & Expansion Supply Docks (home docks stay symmetric; contested/flank docks vary by map)
       const docks = [
         // Player Primary & Natural Expansion
         { x: 760, y: WORLD_SIZE - 360, amount: 24000 },
@@ -300,14 +583,22 @@ window.ZH_ENGINE = (function () {
         { x: WORLD_SIZE - 760, y: 360, amount: 24000 },
         { x: WORLD_SIZE - 360, y: 840, amount: 20000 },
         // Contested Center & Flank Supply Docks
-        { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2, amount: 32000 },
-        { x: 680, y: 680, amount: 22000 },
-        { x: WORLD_SIZE - 680, y: WORLD_SIZE - 680, amount: 22000 }
+        { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2, amount: mapId === 'TWILIGHT_FLAME' ? 38000 : 32000 },
+        {
+          x: mapId === 'FINAL_CRUSADE' ? 740 : (mapId === 'WINTER_WOLF' ? 620 : 680),
+          y: mapId === 'FINAL_CRUSADE' ? 620 : (mapId === 'WINTER_WOLF' ? 740 : 680),
+          amount: 22000
+        },
+        {
+          x: WORLD_SIZE - (mapId === 'FINAL_CRUSADE' ? 740 : (mapId === 'WINTER_WOLF' ? 620 : 680)),
+          y: WORLD_SIZE - (mapId === 'FINAL_CRUSADE' ? 620 : (mapId === 'WINTER_WOLF' ? 740 : 680)),
+          amount: 22000
+        }
       ];
 
       docks.forEach(d => {
         this.supplyDocks.push({
-          id: nextEntityId++,
+          id: this.allocId(),
           x: d.x,
           y: d.y,
           amount: d.amount,
@@ -335,7 +626,7 @@ window.ZH_ENGINE = (function () {
           passiveIncome: 35
         };
         this.techStructures.push({
-          id: nextEntityId++,
+          id: this.allocId(),
           isTechStructure: true,
           defId: tp.defId,
           def: tDef,
@@ -374,7 +665,7 @@ window.ZH_ENGINE = (function () {
       bunkerCoords.forEach(bc => {
         const occupants = [];
         this.garrisonBunkers.push({
-          id: nextEntityId++,
+          id: this.allocId(),
           isGarrisonBunker: true,
           defId: 'CIV_GARRISON_BUNKER',
           def: bunkerDef,
@@ -481,6 +772,146 @@ window.ZH_ENGINE = (function () {
       return true;
     }
 
+    isHeroActiveOrQueued(defId, teamId) {
+      const uDef = ZH_DATA.UNITS[defId];
+      if (!uDef || !uDef.isHero) return false;
+      const team = this.teams[teamId];
+      if (!team) return false;
+
+      // Active on battlefield
+      for (const u of this.units) {
+        if (u && u.team === teamId && u.hp > 0 && !u.dead && (u.defId === defId || (u.def && u.def.isHero))) {
+          return true;
+        }
+        if (u && u.team === teamId && Array.isArray(u.passengers)) {
+          for (const p of u.passengers) {
+            if (p && p.team === teamId && p.hp > 0 && (p.defId === defId || (p.def && p.def.isHero))) {
+              return true;
+            }
+          }
+        }
+      }
+      // Inside GLA tunnel network
+      if (Array.isArray(team.tunnelUnits)) {
+        for (const u of team.tunnelUnits) {
+          if (u && u.hp > 0 && (u.defId === defId || (u.def && u.def.isHero))) {
+            return true;
+          }
+        }
+      }
+      // Inside civilian garrison bunkers
+      if (Array.isArray(this.garrisonBunkers)) {
+        for (const g of this.garrisonBunkers) {
+          if (g && Array.isArray(g.occupants)) {
+            for (const u of g.occupants) {
+              if (u && u.team === teamId && u.hp > 0 && (u.defId === defId || (u.def && u.def.isHero))) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+      // Queued in any friendly production building
+      for (const b of this.buildings) {
+        if (b && b.team === teamId && b.hp > 0 && Array.isArray(b.queue)) {
+          for (const q of b.queue) {
+            const qDef = ZH_DATA.UNITS[q.id];
+            if (q && (q.id === defId || (qDef && qDef.isHero))) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    canTeamBuildStructure(defId, teamId, builderUnit = null) {
+      const team = this.teams[teamId];
+      if (!team) return { ok: false, code: 'INVALID_TEAM', reason: 'Unknown team.' };
+      const bDef = ZH_DATA.BUILDINGS[defId];
+      if (!bDef) return { ok: false, code: 'UNKNOWN_BUILDING', reason: 'Unknown building definition.' };
+      if (bDef.faction && bDef.faction !== team.factionId) {
+        return { ok: false, code: 'FACTION_MISMATCH', reason: `${bDef.name} belongs to ${bDef.faction}, not ${team.factionId}.` };
+      }
+      if (bDef.generalOnly && bDef.generalOnly !== team.generalId) {
+        return { ok: false, code: 'GENERAL_MISMATCH', reason: `${bDef.name} is restricted to ${bDef.generalOnly}.` };
+      }
+      if (!this.isEntityUnlocked(defId, teamId)) {
+        return { ok: false, code: 'PREREQ_LOCKED', reason: 'Requires Tech Center (Strategy / Propaganda / Palace)!' };
+      }
+      if (builderUnit) {
+        if (builderUnit.team !== teamId || builderUnit.hp <= 0 || !builderUnit.def || !builderUnit.def.isBuilder) {
+          return { ok: false, code: 'INVALID_BUILDER', reason: 'Unit is not a valid builder for this team.' };
+        }
+        if (Array.isArray(builderUnit.def.builds) && !builderUnit.def.builds.includes(defId)) {
+          return { ok: false, code: 'BUILDER_CANNOT_CONSTRUCT', reason: `${builderUnit.def.name} cannot construct ${bDef.name}.` };
+        }
+      }
+      return { ok: true };
+    }
+
+    canBuildingProduce(building, itemId) {
+      if (!building || !building.constructed || building.hp <= 0) {
+        return { ok: false, code: 'BUILDING_NOT_READY', reason: 'Building is not constructed or alive.' };
+      }
+      const team = this.teams[building.team];
+      if (!team) return { ok: false, code: 'INVALID_TEAM', reason: 'Invalid building team.' };
+
+      const uDef = ZH_DATA.UNITS[itemId];
+      const upgDef = ZH_DATA.UPGRADES[itemId];
+      if (uDef) {
+        if (uDef.faction && uDef.faction !== team.factionId) {
+          return { ok: false, code: 'FACTION_MISMATCH', reason: `${uDef.name} belongs to ${uDef.faction}, not ${team.factionId}.` };
+        }
+        if (!building.def || !Array.isArray(building.def.trains) || !building.def.trains.includes(itemId)) {
+          return { ok: false, code: 'INVALID_PRODUCER', reason: `${building.def ? building.def.name : 'Building'} cannot train ${uDef.name}.` };
+        }
+        if (uDef.generalOnly && uDef.generalOnly !== team.generalId) {
+          return { ok: false, code: 'GENERAL_MISMATCH', reason: `${uDef.name} is restricted to ${uDef.generalOnly}.` };
+        }
+        if (!this.isEntityUnlocked(itemId, building.team)) {
+          return { ok: false, code: 'PREREQ_LOCKED', reason: 'Requires Tech Center!' };
+        }
+        if (uDef.isHero && this.isHeroActiveOrQueued(itemId, building.team)) {
+          return { ok: false, code: 'HERO_LIMIT_REACHED', reason: 'Only one Hero / Commando unit may be active or queued!' };
+        }
+        return { ok: true, type: 'UNIT', def: uDef };
+      }
+      if (upgDef) {
+        if (!building.def || !Array.isArray(building.def.upgrades) || !building.def.upgrades.includes(itemId)) {
+          return { ok: false, code: 'INVALID_PRODUCER', reason: `${building.def ? building.def.name : 'Building'} cannot research ${upgDef.name}.` };
+        }
+        if (team.upgrades.has(itemId) || (Array.isArray(building.queue) && building.queue.some(q => q.id === itemId))) {
+          return { ok: false, code: 'ALREADY_RESEARCHED', reason: 'Upgrade already researched or queued.' };
+        }
+        return { ok: true, type: 'UPGRADE', def: upgDef };
+      }
+      return { ok: false, code: 'UNKNOWN_ITEM', reason: 'Unknown unit or upgrade ID.' };
+    }
+
+    computeUnitMaxHp(u) {
+      if (!u || !u.def) return 100;
+      const def = u.def;
+      const team = this.teams[u.team];
+      const mod = team && team.general ? (team.general.modifiers || {}) : {};
+      let maxHp = def.hp;
+      if (def.category === 'AIRCRAFT' && mod.aircraftHpMult) {
+        maxHp *= mod.aircraftHpMult;
+      }
+      if (def.category === 'TANK' && team && team.upgrades && team.upgrades.has('UPG_COMPOSITE_ARMOR')) {
+        maxHp *= 1.25;
+      }
+      if (def.category === 'INFANTRY' && mod.infantryHpMult) {
+        maxHp *= mod.infantryHpMult;
+      }
+      if ((u.salvageTier || 0) >= 1) {
+        maxHp *= 1.15;
+      }
+      const vetIdx = clamp(u.vetLevel || 0, 0, ZH_DATA.VETERANCY_LEVELS.length - 1);
+      const vetDef = ZH_DATA.VETERANCY_LEVELS[vetIdx] || { hpMult: 1.0 };
+      return Math.round(maxHp * (vetDef.hpMult || 1.0));
+    }
+
     getMissingPrereqs(defId, teamId) {
       const team = this.teams[teamId];
       if (!team) return [];
@@ -539,7 +970,7 @@ window.ZH_ENGINE = (function () {
 
       b.hp = 0;
       this.buildings.splice(idx, 1);
-      if (this.navGrid) this.navGrid.rebuild(this);
+      this.markNavDirty();
       this.recalculatePower(b.team);
       if (this.onStateChange) this.onStateChange();
       return refund;
@@ -560,7 +991,7 @@ window.ZH_ENGINE = (function () {
       }
 
       const b = {
-        id: nextEntityId++,
+        id: this.allocId(),
         isBuilding: true,
         defId,
         def,
@@ -586,7 +1017,8 @@ window.ZH_ENGINE = (function () {
       };
 
       this.buildings.push(b);
-      if (this.navGrid) this.navGrid.rebuild(this);
+      if (this._entityByIdMap) this._entityByIdMap.set(b.id, b);
+      this.markNavDirty();
 
       if (instantComplete) {
         this.onBuildingCompleted(b);
@@ -620,6 +1052,10 @@ window.ZH_ENGINE = (function () {
 
       // 2. Ensure position is not on a blocked NavigationGrid cell
       if (this.navGrid && typeof this.navGrid.isPassable === 'function') {
+        if (this.navDirty) {
+          this.navGrid.rebuild(this);
+          this.navDirty = false;
+        }
         const canCliff = locomotor === 'CLIFF_CLIMBER';
         const canWater = locomotor === 'HOVER';
         if (!this.navGrid.isPassable(sx, sy, canCliff, canWater)) {
@@ -643,7 +1079,7 @@ window.ZH_ENGINE = (function () {
         this.teams[b.team].stats.buildingsBuilt++;
       }
 
-      if (this.navGrid) this.navGrid.rebuild(this);
+      this.markNavDirty();
       this.recalculatePower(b.team);
 
       // Eject any ground units (such as the builder Dozer/Worker) trapped inside the completed building footprint
@@ -720,15 +1156,16 @@ window.ZH_ENGINE = (function () {
       const locomotor = def.locomotor || (window.ZH_SPATIAL ? ZH_SPATIAL.LocomotorSystem.inferLocomotor(def) : 'INFANTRY');
 
       // Jitter spawn position slightly to prevent exact overlap, then clamp outside building footprints & blocked cells
-      const angle = Math.random() * Math.PI * 2;
+      const angle = this.simRandom() * Math.PI * 2;
       const rawX = clamp(x + Math.cos(angle) * 8, 35, WORLD_SIZE - 35);
       const rawY = clamp(y + Math.sin(angle) * 8, 35, WORLD_SIZE - 35);
       const safePos = this.findSafeSpawnPosition(rawX, rawY, def.radius || 14, Boolean(def.isAir), locomotor);
       const sx = safePos.x;
       const sy = safePos.y;
 
+        const unitId = this.allocId();
       const u = {
-        id: nextEntityId++,
+        id: unitId,
         isUnit: true,
         defId,
         def,
@@ -751,8 +1188,16 @@ window.ZH_ENGINE = (function () {
         inPropaganda: false,
         stealthed: Boolean(def.stealthed || (mod.stealthAllUnits && def.category === 'INFANTRY')),
         gpsScrambleTimer: 0,
+        detectedTimer: 0,
         unmanned: false,
         garrisonedIn: null,
+        transportedIn: null,
+        passengers: [],
+        ammo: def.maxAmmo || 0,
+        maxAmmo: def.maxAmmo || 0,
+        reloadTimer: 0,
+        reloadingAtAirfieldId: null,
+        supersonicReturn: false,
         hasSpeakerTower: Boolean(def.isPropagandaCarrier && defId !== 'CHINA_OVERLORD'),
         hasGatlingCannon: false,
         overlordAddon: def.isPropagandaCarrier && defId !== 'CHINA_OVERLORD'
@@ -764,6 +1209,7 @@ window.ZH_ENGINE = (function () {
         disabledTimer: 0,
         empTimer: 0,
         attackCooldown: 0,
+        scanCooldown: (unitId & 7) * 0.02,
         pdlTimer: 0,
         rotorAngle: 0,
         recoilOffset: 0,
@@ -771,7 +1217,7 @@ window.ZH_ENGINE = (function () {
         controlGroup: null,
         waypoints: [],
         // Orders & State Machine
-        state: 'IDLE', // 'IDLE' | 'MOVE' | 'ATTACK_MOVE' | 'GUARD' | 'FORCE_FIRE' | 'ATTACK' | 'BUILD' | 'HARVEST' | 'RETURN_SUPPLY' | 'ENTER_TUNNEL' | 'CAPTURE' | 'ENTER_GARRISON' | 'RECREW_VEHICLE' | 'HIJACK_VEHICLE'
+        state: 'IDLE', // 'IDLE' | 'MOVE' | 'ATTACK_MOVE' | 'GUARD' | 'FORCE_FIRE' | 'ATTACK' | 'BUILD' | 'HARVEST' | 'RETURN_SUPPLY' | 'ENTER_TUNNEL' | 'CAPTURE' | 'ENTER_GARRISON' | 'ENTER_TRANSPORT' | 'REARM_AIRCRAFT' | 'RECREW_VEHICLE' | 'HIJACK_VEHICLE'
         targetX: sx,
         targetY: sy,
         guardX: sx,
@@ -784,6 +1230,7 @@ window.ZH_ENGINE = (function () {
       };
 
       this.units.push(u);
+      if (this._entityByIdMap) this._entityByIdMap.set(u.id, u);
       if (team && team.stats && this.gameTime > 0.5) {
         team.stats.unitsBuilt++;
         team.stats.unitsProduced = (team.stats.unitsProduced || 0) + 1;
@@ -837,7 +1284,7 @@ window.ZH_ENGINE = (function () {
         u.garrisonedIn = null;
         u.garrisonId = null;
         if (u.hp > 0) {
-          const ang = Math.random() * Math.PI * 2;
+          const ang = this.simRandom() * Math.PI * 2;
           u.x = clamp(bunker.x + Math.cos(ang) * (bunker.radius + 20), 40, WORLD_SIZE - 40);
           u.y = clamp(bunker.y + Math.sin(ang) * (bunker.radius + 20), 40, WORLD_SIZE - 40);
           u.state = 'IDLE';
@@ -850,6 +1297,95 @@ window.ZH_ENGINE = (function () {
       if (window.ZH_AUDIO) ZH_AUDIO.playSFX('click');
       if (this.onStateChange) this.onStateChange();
       return count;
+    }
+
+    // ========================================================================
+    // Transport Boarding (Humvee, Chinook, Troop Crawler, Helix, Technical)
+    // ========================================================================
+    enterTransport(unit, transport) {
+      if (!unit || !transport || unit.hp <= 0 || transport.hp <= 0) return false;
+      if (unit.team !== transport.team || unit.def.category !== 'INFANTRY') return false;
+      const cap = transport.def.transportCapacity || 0;
+      if (cap <= 0) return false;
+      if (!transport.passengers) transport.passengers = [];
+      if (transport.passengers.length >= cap) return false;
+
+      unit.transportedIn = transport.id;
+      unit.state = 'IDLE';
+      this.selectedIds.delete(unit.id);
+      if (!transport.passengers.includes(unit)) {
+        transport.passengers.push(unit);
+      }
+
+      if (unit.team === 0) {
+        if (window.ZH_AUDIO) ZH_AUDIO.playSFX('click');
+        this.triggerAlert(`${unit.def.shortName} boarded ${transport.def.shortName} (${transport.passengers.length}/${cap})`, '#38bdf8');
+      }
+      if (this.onStateChange) this.onStateChange();
+      return true;
+    }
+
+    unloadTransport(transportOrId) {
+      const transport = typeof transportOrId === 'object' ? transportOrId : this.units.find(u => u.id === transportOrId);
+      if (!transport || !transport.passengers || !transport.passengers.length) return 0;
+
+      const count = transport.passengers.length;
+      while (transport.passengers.length > 0) {
+        const u = transport.passengers.pop();
+        u.transportedIn = null;
+        if (u.hp > 0) {
+          const ang = this.simRandom() * Math.PI * 2;
+          const safe = this.findSafeSpawnPosition(
+            transport.x + Math.cos(ang) * ((transport.radius || 18) + 18),
+            transport.y + Math.sin(ang) * ((transport.radius || 18) + 18),
+            u.radius || 10,
+            false,
+            u.locomotor || 'INFANTRY'
+          );
+          u.x = safe.x;
+          u.y = safe.y;
+          u.state = 'IDLE';
+          if (!this.units.includes(u)) {
+            this.units.push(u);
+          }
+        }
+      }
+      if (window.ZH_AUDIO) ZH_AUDIO.playSFX('click');
+      if (transport.team === 0) {
+        this.triggerAlert(`${transport.def.shortName} unloaded ${count} infantry`, '#22c55e');
+      }
+      if (this.onStateChange) this.onStateChange();
+      return count;
+    }
+
+    setStrategyBattlePlan(buildingOrId, planKey) {
+      const valid = ['BOMBARDMENT', 'HOLD_THE_LINE', 'SEARCH_AND_DESTROY'];
+      if (!valid.includes(planKey)) return false;
+      const b = typeof buildingOrId === 'object' ? buildingOrId : this.buildings.find(st => st.id === buildingOrId);
+      const teamId = b ? b.team : 0;
+      const team = this.teams[teamId];
+      if (!team) return false;
+
+      team.strategyBattlePlan = planKey;
+      for (const st of this.buildings) {
+        if (st.team === teamId && st.defId === 'USA_STRATEGY_CENTER') {
+          st.battlePlan = planKey;
+        }
+      }
+      if (teamId === 0) {
+        const label = planKey === 'BOMBARDMENT'
+          ? 'Bombardment (+20% Firepower)'
+          : planKey === 'HOLD_THE_LINE'
+          ? 'Hold the Line (+20% Armor)'
+          : 'Search & Destroy (+20% Range)';
+        if (window.ZH_AUDIO) {
+          ZH_AUDIO.playSFX('promote');
+          ZH_AUDIO.speak(`Strategy Center battle plan active: ${label.split(' (')[0]}.`);
+        }
+        this.triggerAlert(`STRATEGY CENTER: ${label}`, '#38bdf8');
+      }
+      if (this.onStateChange) this.onStateChange();
+      return true;
     }
 
     // ========================================================================
@@ -926,7 +1462,7 @@ window.ZH_ENGINE = (function () {
           const cy = targetY || (u.y + Math.sin(u.angle) * 65);
           this.dealAreaDamage(cx, cy, 130, 185, 'FLAME_TOXIN', u.team, u);
           this.hazards.push({
-            id: nextEntityId++,
+            id: this.allocId(),
             type: 'FLAME',
             team: u.team,
             x: cx,
@@ -1082,6 +1618,10 @@ window.ZH_ENGINE = (function () {
 
         if (b.def.providesRadar) hasRadar = true;
         if (b.def.isTechCenter) hasTech = true;
+        if (b.defId === 'USA_STRATEGY_CENTER') {
+          if (!b.battlePlan) b.battlePlan = team.strategyBattlePlan || 'BOMBARDMENT';
+          team.strategyBattlePlan = b.battlePlan;
+        }
 
         if (b.def.power > 0) {
           let p = b.def.power;
@@ -1143,6 +1683,13 @@ window.ZH_ENGINE = (function () {
           return false;
         }
       }
+      for (const u of this.units) {
+        if (u.hp <= 0 || u.def.isAir || u.garrisonedIn || u.transportedIn) continue;
+        if (u.def.isBuilder && this.selectedIds.has(u.id)) continue;
+        if (dist(x, y, u.x, u.y) < (bRad + (u.radius || 14) + 2)) {
+          return false;
+        }
+      }
       return true;
     }
 
@@ -1196,14 +1743,20 @@ window.ZH_ENGINE = (function () {
 
     startBuildingPlacement(defId, teamId, x, y, builderUnit = null) {
       const def = ZH_DATA.BUILDINGS[defId];
-      if (!def) return null;
-      if (!this.isEntityUnlocked(defId, teamId)) {
-        if (teamId === 0) this.triggerAlert('Requires Tech Center (Strategy / Propaganda / Palace)!', '#f59e0b');
+      if (!def) {
+        this.lastCommandRejection = { ok: false, code: 'UNKNOWN_BUILDING', reason: 'Unknown building definition.' };
+        return null;
+      }
+      const ruleCheck = this.canTeamBuildStructure(defId, teamId, builderUnit);
+      if (!ruleCheck.ok) {
+        this.lastCommandRejection = ruleCheck;
+        if (teamId === 0) this.triggerAlert(ruleCheck.reason || 'Requires Tech Center!', '#f59e0b');
         return null;
       }
 
       const cost = this.getModifiedCost(defId, teamId);
       if (!this.canAfford(teamId, cost)) {
+        this.lastCommandRejection = { ok: false, code: 'INSUFFICIENT_FUNDS', reason: 'Insufficient funds!' };
         if (teamId === 0) {
           this.triggerAlert('Insufficient funds!', '#ef4444');
           if (window.ZH_AUDIO) ZH_AUDIO.speak('Insufficient funds.');
@@ -1213,15 +1766,24 @@ window.ZH_ENGINE = (function () {
 
       // Check collision with map bounds, existing buildings, supply docks, tech structures, and bunkers
       if (!this.canPlaceBuilding(defId, x, y)) {
+        this.lastCommandRejection = { ok: false, code: 'FOOTPRINT_BLOCKED', reason: 'Cannot build there — footprint blocked!' };
         if (teamId === 0) this.triggerAlert('Cannot build there — footprint blocked!', '#ef4444');
         return null;
       }
 
-      // Find an available Dozer or GLA Worker
+      // Find an available Dozer or GLA Worker capable of building defId
       let builder = builderUnit;
       if (!builder) {
-        const candidates = this.units.filter(u => u.team === teamId && u.def.isBuilder && u.hp > 0 && !u.unmanned && !u.garrisonedIn);
+        const candidates = this.units.filter(u =>
+          u.team === teamId &&
+          u.def.isBuilder &&
+          u.hp > 0 &&
+          !u.unmanned &&
+          !u.garrisonedIn &&
+          (!Array.isArray(u.def.builds) || u.def.builds.includes(defId))
+        );
         if (candidates.length === 0) {
+          this.lastCommandRejection = { ok: false, code: 'NO_BUILDER', reason: 'No Dozer or Worker available to construct!' };
           if (teamId === 0) this.triggerAlert('No Dozer or Worker available to construct!', '#ef4444');
           return null;
         }
@@ -1279,20 +1841,29 @@ window.ZH_ENGINE = (function () {
     }
 
     queueProduction(building, itemId) {
-      if (!building || !building.constructed || building.hp <= 0) return false;
+      if (!building || !building.constructed || building.hp <= 0) {
+        this.lastCommandRejection = { ok: false, code: 'BUILDING_NOT_READY', reason: 'Building is not constructed or alive.' };
+        return false;
+      }
+      const ruleCheck = this.canBuildingProduce(building, itemId);
+      if (!ruleCheck.ok) {
+        this.lastCommandRejection = ruleCheck;
+        if (building.team === 0) this.triggerAlert(ruleCheck.reason || 'Cannot produce item!', '#f59e0b');
+        return false;
+      }
       const team = this.teams[building.team];
 
       const uDef = ZH_DATA.UNITS[itemId];
       const upgDef = ZH_DATA.UPGRADES[itemId];
 
       if (uDef) {
-        if (!this.isEntityUnlocked(itemId, building.team)) {
-          if (building.team === 0) this.triggerAlert('Requires Tech Center!', '#f59e0b');
+        if (building.queue.length >= 9) {
+          this.lastCommandRejection = { ok: false, code: 'QUEUE_FULL', reason: 'Production queue is full!' };
           return false;
         }
-        if (building.queue.length >= 9) return false;
         const cost = this.getModifiedCost(itemId, building.team);
         if (!this.canAfford(building.team, cost)) {
+          this.lastCommandRejection = { ok: false, code: 'INSUFFICIENT_FUNDS', reason: 'Insufficient funds!' };
           if (building.team === 0) {
             this.triggerAlert('Insufficient funds!', '#ef4444');
             if (window.ZH_AUDIO) ZH_AUDIO.speak('Insufficient funds.');
@@ -1314,9 +1885,8 @@ window.ZH_ENGINE = (function () {
       }
 
       if (upgDef) {
-        if (team.upgrades.has(itemId)) return false;
-        if (building.queue.some(q => q.id === itemId)) return false;
         if (!this.canAfford(building.team, upgDef.cost)) {
+          this.lastCommandRejection = { ok: false, code: 'INSUFFICIENT_FUNDS', reason: 'Insufficient funds for upgrade!' };
           if (building.team === 0) this.triggerAlert('Insufficient funds for upgrade!', '#ef4444');
           return false;
         }
@@ -1525,7 +2095,7 @@ window.ZH_ENGINE = (function () {
       const count = team.tunnelUnits.length;
       while (team.tunnelUnits.length > 0) {
         const u = team.tunnelUnits.shift();
-        const ang = Math.random() * Math.PI * 2;
+        const ang = this.simRandom() * Math.PI * 2;
         u.x = clamp(tunnelBuilding.x + Math.cos(ang) * (tunnelBuilding.radius + 22), 40, WORLD_SIZE - 40);
         u.y = clamp(tunnelBuilding.y + Math.sin(ang) * (tunnelBuilding.radius + 22), 40, WORLD_SIZE - 40);
         u.hp = u.maxHp; // Full heal inside tunnel!
@@ -1575,7 +2145,7 @@ window.ZH_ENGINE = (function () {
       switch (powerId) {
         case 'GP_USA_SPY_DRONE': {
           this.spyDrones.push({
-            id: nextEntityId++,
+            id: this.allocId(),
             team: teamId,
             x: targetX,
             y: targetY,
@@ -1591,8 +2161,8 @@ window.ZH_ENGINE = (function () {
           this.triggerAlert('Incoming A-10 Thunderbolt Strike!', '#3b82f6');
           if (window.ZH_AUDIO) ZH_AUDIO.speak('A-10 Thunderbolt strike inbound!', { priority: true });
           for (let i = 0; i < 7; i++) {
-            const ox = targetX + (Math.random() - 0.5) * 160;
-            const oy = targetY + (Math.random() - 0.5) * 160;
+            const ox = targetX + (this.simRandom() - 0.5) * 160;
+            const oy = targetY + (this.simRandom() - 0.5) * 160;
             this.dealAreaDamage(ox, oy, 95, 190, 'HIGH_EXPLOSIVE', teamId);
             this.spawnBurst(ox, oy, '#f97316', 18);
           }
@@ -1605,7 +2175,7 @@ window.ZH_ENGINE = (function () {
           this.triggerAlert('AC-130U Spectre Gunship orbiting target zone!', '#3b82f6');
           if (window.ZH_AUDIO) ZH_AUDIO.speak('Spectre Gunship on station!', { priority: true });
           this.spectreGunships.push({
-            id: nextEntityId++,
+            id: this.allocId(),
             team: teamId,
             cx: targetX,
             cy: targetY,
@@ -1634,8 +2204,8 @@ window.ZH_ENGINE = (function () {
           this.triggerAlert('PLA Artillery Barrage saturating target coordinates!', '#ef4444');
           if (window.ZH_AUDIO) ZH_AUDIO.speak('Artillery barrage inbound!');
           for (let i = 0; i < 8; i++) {
-            const ox = targetX + (Math.random() - 0.5) * 170;
-            const oy = targetY + (Math.random() - 0.5) * 170;
+            const ox = targetX + (this.simRandom() - 0.5) * 170;
+            const oy = targetY + (this.simRandom() - 0.5) * 170;
             this.dealAreaDamage(ox, oy, 85, 165, 'HIGH_EXPLOSIVE', teamId);
             this.spawnBurst(ox, oy, '#ef4444', 16);
           }
@@ -1705,9 +2275,9 @@ window.ZH_ENGINE = (function () {
           if (team.stats) team.stats.creditsEarned += 1500;
           for (let i = 0; i < 4; i++) {
             this.salvageCrates.push({
-              id: nextEntityId++,
-              x: clamp(targetX + (Math.random() - 0.5) * 90, 50, WORLD_SIZE - 50),
-              y: clamp(targetY + (Math.random() - 0.5) * 90, 50, WORLD_SIZE - 50),
+              id: this.allocId(),
+              x: clamp(targetX + (this.simRandom() - 0.5) * 90, 50, WORLD_SIZE - 50),
+              y: clamp(targetY + (this.simRandom() - 0.5) * 90, 50, WORLD_SIZE - 50),
               timer: 90
             });
           }
@@ -1735,7 +2305,7 @@ window.ZH_ENGINE = (function () {
           if (window.ZH_AUDIO) ZH_AUDIO.speak('Anthrax Bomb deployed!', { priority: true });
           this.dealAreaDamage(targetX, targetY, pDef.radius, 420, 'FLAME_TOXIN', teamId);
           this.hazards.push({
-            id: nextEntityId++,
+            id: this.allocId(),
             type: 'TOXIN',
             team: teamId,
             x: targetX,
@@ -1789,7 +2359,7 @@ window.ZH_ENGINE = (function () {
         this.triggerAlert('ORBITAL PARTICLE CANNON BEAM ENGAGED!', '#38bdf8');
         if (window.ZH_AUDIO) ZH_AUDIO.speak('Particle Cannon activated!', { priority: true });
         this.activeBeams.push({
-          id: nextEntityId++,
+          id: this.allocId(),
           team: b.team,
           x: targetX,
           y: targetY,
@@ -1805,7 +2375,7 @@ window.ZH_ENGINE = (function () {
         const dmg = Math.round(950 * (mod.nukeDamageMult || 1.0));
         this.dealAreaDamage(targetX, targetY, 270, dmg, 'SUPERWEAPON', b.team);
         this.hazards.push({
-          id: nextEntityId++,
+          id: this.allocId(),
           type: 'RADIATION',
           team: b.team,
           x: targetX,
@@ -1825,7 +2395,7 @@ window.ZH_ENGINE = (function () {
           const sy = clamp(targetY + Math.sin(ang) * distOff, 60, WORLD_SIZE - 60);
           this.dealAreaDamage(sx, sy, 125, 420, 'SUPERWEAPON', b.team);
           this.hazards.push({
-            id: nextEntityId++,
+            id: this.allocId(),
             type: 'TOXIN',
             team: b.team,
             x: sx,
@@ -1843,6 +2413,684 @@ window.ZH_ENGINE = (function () {
     }
 
     // ========================================================================
+    // Command Queue, Deterministic Replay Step & State Hash (Phase 3)
+    // ========================================================================
+    assignUnitPath(u, destX, destY, newState = null) {
+      if (!u || u.hp <= 0) return;
+      if (newState) u.state = newState;
+      u.targetX = destX;
+      u.targetY = destY;
+      if (u.def && u.def.isAir) {
+        u.path = null;
+        return;
+      }
+      if (this.navGrid && typeof this.navGrid.findPath === 'function') {
+        if (this.navDirty) {
+          this.navGrid.rebuild(this);
+          this.navDirty = false;
+        }
+        const loco = u.locomotor || 'WHEEL';
+        const canCliff = loco === 'CLIFF_CLIMBER';
+        const canWater = loco === 'HOVER';
+        const destPassable = this.navGrid.isPassable(destX, destY, canCliff, canWater);
+        const d = Math.hypot(destX - u.x, destY - u.y);
+        if (d > 64 || !destPassable) {
+          const path = this.navGrid.findPath(u.x, u.y, destX, destY, loco);
+          if (Array.isArray(path) && path.length > 0) {
+            u.path = path;
+            if (!destPassable) {
+              const lastPt = path[path.length - 1];
+              u.targetX = lastPt.x;
+              u.targetY = lastPt.y;
+            }
+          } else {
+            u.path = null;
+          }
+        } else {
+          u.path = null;
+        }
+      }
+    }
+
+    enqueueCommand(cmd) {
+      if (!cmd || typeof cmd !== 'object') return;
+      const entry = {
+        ...cmd,
+        tick: cmd.tick !== undefined ? cmd.tick : (this.simTick || 0)
+      };
+      this.pendingCommands.push(entry);
+    }
+
+    validateCommand(cmd) {
+      if (!cmd || typeof cmd !== 'object' || !cmd.type) {
+        return { ok: false, code: 'INVALID_COMMAND', reason: 'Missing command type.' };
+      }
+      const teamId = cmd.teamId !== undefined ? cmd.teamId : 0;
+      const resolveOwnedUnits = () => {
+        const ids = Array.isArray(cmd.unitIds)
+          ? cmd.unitIds
+          : Array.isArray(cmd.ids)
+          ? cmd.ids
+          : cmd.unitId !== undefined
+          ? [cmd.unitId]
+          : Array.from(this.selectedIds);
+        const idSet = new Set(ids);
+        return this.units.filter(u => idSet.has(u.id) && u.hp > 0 && !u.dead && u.team === teamId);
+      };
+
+      switch (cmd.type) {
+        case 'SELECT_IDS':
+          return { ok: true };
+        case 'BUILD': {
+          const builder = cmd.builderId ? (this.units.find(u => u.id === cmd.builderId) || null) : null;
+          const ruleCheck = this.canTeamBuildStructure(cmd.defId, teamId, builder);
+          if (!ruleCheck.ok) return ruleCheck;
+          const cost = this.getModifiedCost(cmd.defId, teamId);
+          if (!this.canAfford(teamId, cost)) {
+            return { ok: false, code: 'INSUFFICIENT_FUNDS', reason: 'Insufficient funds!' };
+          }
+          if (!this.canPlaceBuilding(cmd.defId, cmd.x, cmd.y)) {
+            return { ok: false, code: 'FOOTPRINT_BLOCKED', reason: 'Cannot build there — footprint blocked!' };
+          }
+          return { ok: true };
+        }
+        case 'QUEUE_PRODUCTION': {
+          const b = this.buildings.find(x => x.id === cmd.buildingId) ||
+                    (!cmd.buildingId ? this.buildings.find(x => x.team === teamId && x.def.isCommandCenter) : null);
+          if (!b || b.hp <= 0 || !b.constructed) {
+            return { ok: false, code: 'BUILDING_NOT_READY', reason: 'Building is not constructed or alive.' };
+          }
+          if (cmd.teamId !== undefined && b.team !== teamId) {
+            return { ok: false, code: 'NOT_OWNER', reason: 'Cannot queue production on an enemy building.' };
+          }
+          return this.canBuildingProduce(b, cmd.itemId);
+        }
+        case 'CANCEL_PRODUCTION':
+        case 'SELL_BUILDING':
+        case 'SET_RALLY':
+        case 'OVERCHARGE':
+        case 'BATTLE_PLAN':
+        case 'DEPLOY_TUNNEL':
+        case 'SUPERWEAPON': {
+          const b = this.buildings.find(x => x.id === cmd.buildingId);
+          if (!b || b.hp <= 0) {
+            return { ok: false, code: 'INVALID_BUILDING', reason: 'Target building does not exist.' };
+          }
+          if (cmd.teamId !== undefined && b.team !== teamId) {
+            return { ok: false, code: 'NOT_OWNER', reason: 'Building does not belong to commanding team.' };
+          }
+          return { ok: true };
+        }
+        case 'EVACUATE_GARRISON': {
+          const g = this.garrisonBunkers.find(x => x.id === cmd.bunkerId);
+          if (!g || g.team !== teamId) {
+            return { ok: false, code: 'INVALID_GARRISON', reason: 'Garrison bunker is not controlled by team.' };
+          }
+          return { ok: true };
+        }
+        case 'UNLOAD_TRANSPORT': {
+          const tr = this.units.find(u => u.id === cmd.transportId);
+          if (!tr || tr.hp <= 0 || tr.team !== teamId) {
+            return { ok: false, code: 'INVALID_TRANSPORT', reason: 'Transport unit is invalid.' };
+          }
+          return { ok: true };
+        }
+        case 'UNLOCK_POWER':
+        case 'CAST_POWER': {
+          const team = this.teams[teamId];
+          if (!team) return { ok: false, code: 'INVALID_TEAM', reason: 'Invalid team.' };
+          if (!ZH_DATA.POWERS[cmd.powerId]) {
+            return { ok: false, code: 'UNKNOWN_POWER', reason: 'Unknown Generals Power.' };
+          }
+          return { ok: true };
+        }
+        case 'MOVE':
+        case 'ATTACK_MOVE':
+        case 'GUARD':
+        case 'FORCE_FIRE':
+        case 'STOP':
+        case 'SCATTER':
+        case 'SET_STANCE':
+        case 'ATTACK':
+        case 'CAPTURE':
+        case 'HARVEST':
+        case 'REPAIR_BUILDING':
+        case 'ENTER_GARRISON':
+        case 'ENTER_TRANSPORT':
+        case 'ENTER_TUNNEL':
+        case 'RECREW_VEHICLE':
+        case 'HIJACK_VEHICLE':
+        case 'ABILITY': {
+          const owned = resolveOwnedUnits();
+          if (owned.length === 0) {
+            return { ok: false, code: 'NO_VALID_UNITS', reason: 'No owned living units for command.' };
+          }
+          return { ok: true };
+        }
+        default:
+          return { ok: true };
+      }
+    }
+
+    issueCommand(cmd) {
+      const check = this.validateCommand(cmd);
+      if (!check.ok) {
+        this.lastCommandRejection = check;
+        return check;
+      }
+      if (cmd.deferToTick) {
+        this.enqueueCommand(cmd);
+        return { ok: true, deferred: true };
+      }
+      const res = this.applyCommand(cmd);
+      if (res === false || res === null) {
+        return this.lastCommandRejection || { ok: false, code: 'EXECUTION_FAILED', reason: 'Command execution returned false.' };
+      }
+      return { ok: true, result: res };
+    }
+
+    applyCommand(cmd) {
+      if (!cmd || !cmd.type) return false;
+      this.commandLog.push({
+        ...cmd,
+        tick: this.simTick || 0
+      });
+      const teamId = cmd.teamId !== undefined ? cmd.teamId : 0;
+      const getCmdUnits = () => {
+        if (Array.isArray(cmd.unitIds)) {
+          const set = new Set(cmd.unitIds);
+          return this.units.filter(u => set.has(u.id) && u.hp > 0 && !u.dead && u.team === teamId);
+        }
+        if (Array.isArray(cmd.ids)) {
+          this.selectedIds = new Set(cmd.ids);
+        }
+        if (cmd.unitId !== undefined) {
+          return this.units.filter(u => u.id === cmd.unitId && u.hp > 0 && !u.dead && u.team === teamId);
+        }
+        return this.units.filter(u => this.selectedIds.has(u.id) && u.hp > 0 && !u.dead && u.team === teamId);
+      };
+
+      switch (cmd.type) {
+        case 'SELECT_IDS': {
+          this.selectedIds.clear();
+          for (const id of (cmd.ids || [])) {
+            this.selectedIds.add(id);
+          }
+          return true;
+        }
+        case 'MOVE':
+        case 'ATTACK_MOVE': {
+          const units = getCmdUnits().filter(u => !u.unmanned);
+          const state = (cmd.type === 'ATTACK_MOVE' || cmd.attackMove) ? 'ATTACK_MOVE' : 'MOVE';
+          const count = units.length;
+          const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
+          units.forEach((u, idx) => {
+            const col = idx % cols;
+            const row = Math.floor(idx / cols);
+            const spacing = count > 1 ? 34 : 0;
+            const destX = clamp(cmd.x + (col - (cols - 1) / 2) * spacing, 40, WORLD_SIZE - 40);
+            const destY = clamp(cmd.y + (row - (Math.ceil(count / cols) - 1) / 2) * spacing, 40, WORLD_SIZE - 40);
+            if (cmd.append && Array.isArray(u.waypoints)) {
+              if (u.state === 'IDLE') {
+                u.state = state;
+                u.targetEntityId = null;
+                this.assignUnitPath(u, destX, destY);
+              } else {
+                u.waypoints.push({ x: destX, y: destY, state });
+              }
+            } else {
+              u.state = state;
+              u.targetEntityId = null;
+              u.waypoints = [];
+              this.assignUnitPath(u, destX, destY);
+            }
+          });
+          return units.length > 0;
+        }
+        case 'GUARD': {
+          const units = getCmdUnits().filter(u => !u.unmanned);
+          for (const u of units) {
+            u.state = 'GUARD';
+            u.guardX = cmd.x !== undefined ? cmd.x : u.x;
+            u.guardY = cmd.y !== undefined ? cmd.y : u.y;
+            u.targetEntityId = null;
+            u.waypoints = [];
+            this.assignUnitPath(u, u.guardX, u.guardY);
+          }
+          return units.length > 0;
+        }
+        case 'FORCE_FIRE': {
+          const units = getCmdUnits().filter(u => !u.unmanned && u.def.dmg > 0);
+          for (const u of units) {
+            u.state = 'FORCE_FIRE';
+            u.targetX = cmd.x;
+            u.targetY = cmd.y;
+            u.targetEntityId = null;
+            u.waypoints = [];
+          }
+          return units.length > 0;
+        }
+        case 'ATTACK': {
+          const units = getCmdUnits().filter(u => !u.unmanned);
+          for (const u of units) {
+            u.state = 'ATTACK';
+            u.targetEntityId = cmd.targetId;
+            u.waypoints = [];
+          }
+          return units.length > 0;
+        }
+        case 'CAPTURE': {
+          const units = getCmdUnits().filter(u => u.def.canCapture);
+          const target = this.techStructures.find(t => t.id === cmd.targetId) ||
+                         this.buildings.find(b => b.id === cmd.targetId);
+          if (!target) return false;
+          for (const u of units) {
+            u.state = 'CAPTURE';
+            u.targetEntityId = target.id;
+            this.assignUnitPath(u, target.x, target.y);
+          }
+          return units.length > 0;
+        }
+        case 'HARVEST': {
+          const units = getCmdUnits().filter(u => u.def.isHarvester);
+          const dock = this.supplyDocks.find(d => d.id === cmd.dockId);
+          if (!dock) return false;
+          for (const u of units) {
+            u.state = 'HARVEST';
+            u.supplyDockId = dock.id;
+            this.assignUnitPath(u, dock.x, dock.y);
+          }
+          return units.length > 0;
+        }
+        case 'REPAIR_BUILDING': {
+          const units = getCmdUnits().filter(u => u.def.isBuilder);
+          const b = this.buildings.find(x => x.id === cmd.buildingId);
+          if (!b) return false;
+          for (const u of units) {
+            u.state = 'BUILD';
+            u.buildTargetId = b.id;
+            this.assignUnitPath(u, b.x, b.y);
+          }
+          return units.length > 0;
+        }
+        case 'ENTER_GARRISON': {
+          const units = getCmdUnits().filter(u => u.def.category === 'INFANTRY');
+          const bunker = this.garrisonBunkers.find(g => g.id === cmd.bunkerId);
+          if (!bunker) return false;
+          for (const u of units) {
+            u.state = 'ENTER_GARRISON';
+            u.targetEntityId = bunker.id;
+            this.assignUnitPath(u, bunker.x, bunker.y);
+          }
+          return units.length > 0;
+        }
+        case 'EVACUATE_GARRISON': {
+          return this.evacuateGarrison(cmd.bunkerId) > 0;
+        }
+        case 'ENTER_TRANSPORT': {
+          const units = getCmdUnits().filter(u => u.def.category === 'INFANTRY');
+          const tr = this.units.find(u => u.id === cmd.transportId);
+          if (!tr) return false;
+          for (const u of units) {
+            u.state = 'ENTER_TRANSPORT';
+            u.targetEntityId = tr.id;
+            this.assignUnitPath(u, tr.x, tr.y);
+          }
+          return units.length > 0;
+        }
+        case 'UNLOAD_TRANSPORT': {
+          return this.unloadTransport(cmd.transportId) > 0;
+        }
+        case 'ENTER_TUNNEL': {
+          const units = getCmdUnits();
+          const b = this.buildings.find(x => x.id === cmd.buildingId);
+          if (!b) return false;
+          for (const u of units) {
+            u.state = 'ENTER_TUNNEL';
+            u.targetEntityId = b.id;
+            this.assignUnitPath(u, b.x, b.y);
+          }
+          return units.length > 0;
+        }
+        case 'DEPLOY_TUNNEL': {
+          const b = this.buildings.find(x => x.id === cmd.buildingId);
+          return b ? this.deployFromTunnel(b) : false;
+        }
+        case 'RECREW_VEHICLE': {
+          const units = getCmdUnits().filter(u => u.def.category === 'INFANTRY');
+          const hulk = this.units.find(u => u.id === cmd.targetId && u.unmanned && u.hp > 0);
+          if (!hulk || units.length === 0) return false;
+          const u = units[0];
+          u.state = 'RECREW_VEHICLE';
+          u.targetEntityId = hulk.id;
+          this.assignUnitPath(u, hulk.x, hulk.y);
+          return true;
+        }
+        case 'HIJACK_VEHICLE': {
+          const units = getCmdUnits().filter(u => u.defId === 'GLA_HIJACKER');
+          const veh = this.units.find(u => u.id === cmd.targetId && u.hp > 0);
+          if (!veh || units.length === 0) return false;
+          const u = units[0];
+          u.state = 'HIJACK_VEHICLE';
+          u.targetEntityId = veh.id;
+          this.assignUnitPath(u, veh.x, veh.y);
+          return true;
+        }
+        case 'BUILD': {
+          let builder = null;
+          if (cmd.builderId) {
+            this.selectedIds = new Set([cmd.builderId]);
+            builder = this.units.find(u => u.id === cmd.builderId) || null;
+          }
+          return this.startBuildingPlacement(cmd.defId, teamId, cmd.x, cmd.y, builder);
+        }
+        case 'QUEUE_PRODUCTION': {
+          const b = this.buildings.find(x => x.id === cmd.buildingId) ||
+                    (!cmd.buildingId ? this.buildings.find(x => x.team === teamId && x.def.isCommandCenter) : null);
+          return b ? this.queueProduction(b, cmd.itemId) : false;
+        }
+        case 'CANCEL_PRODUCTION': {
+          const b = this.buildings.find(x => x.id === cmd.buildingId);
+          return b ? this.cancelProduction(b, cmd.queueIndex !== undefined ? cmd.queueIndex : 0) : false;
+        }
+        case 'SELL_BUILDING': {
+          return this.sellBuilding(cmd.buildingId);
+        }
+        case 'SET_RALLY': {
+          const b = this.buildings.find(x => x.id === cmd.buildingId);
+          if (!b || b.hp <= 0) return false;
+          b.rallyX = clamp(cmd.x, 60, WORLD_SIZE - 60);
+          b.rallyY = clamp(cmd.y, 60, WORLD_SIZE - 60);
+          return true;
+        }
+        case 'OVERCHARGE': {
+          const b = this.buildings.find(x => x.id === cmd.buildingId);
+          return b ? this.toggleOvercharge(b) : false;
+        }
+        case 'BATTLE_PLAN': {
+          return this.setStrategyBattlePlan(cmd.buildingId, cmd.planKey);
+        }
+        case 'UNLOCK_POWER': {
+          return this.unlockGeneralsPower(teamId, cmd.powerId);
+        }
+        case 'CAST_POWER': {
+          const team = this.teams[teamId];
+          if (team && !team.unlockedPowers.has(cmd.powerId)) {
+            this.unlockGeneralsPower(teamId, cmd.powerId);
+          }
+          return this.castGeneralsPower(teamId, cmd.powerId, cmd.x, cmd.y);
+        }
+        case 'SUPERWEAPON': {
+          return this.fireSuperweapon(cmd.buildingId, cmd.x, cmd.y);
+        }
+        case 'ABILITY': {
+          const units = getCmdUnits();
+          if (units.length === 0) return false;
+          return this.activateUnitAbility(units[0].id, cmd.x, cmd.y);
+        }
+        case 'SET_STANCE': {
+          const units = getCmdUnits();
+          for (const u of units) {
+            u.stance = cmd.stance || 'GUARD';
+          }
+          return units.length > 0;
+        }
+        case 'SCATTER': {
+          const units = getCmdUnits().filter(u => !u.unmanned);
+          for (const u of units) {
+            const ang = this.simRandom() * Math.PI * 2;
+            const distScatter = 65 + this.simRandom() * 45;
+            u.state = 'MOVE';
+            u.targetEntityId = null;
+            u.waypoints = [];
+            this.assignUnitPath(
+              u,
+              clamp(u.x + Math.cos(ang) * distScatter, 45, WORLD_SIZE - 45),
+              clamp(u.y + Math.sin(ang) * distScatter, 45, WORLD_SIZE - 45)
+            );
+          }
+          return units.length > 0;
+        }
+        case 'STOP': {
+          const units = getCmdUnits();
+          for (const u of units) {
+            u.state = 'IDLE';
+            u.path = null;
+            u.targetEntityId = null;
+            u.waypoints = [];
+          }
+          return units.length > 0;
+        }
+        default:
+          return false;
+      }
+    }
+
+    exportReplay() {
+      return {
+        version: '1.0',
+        seed: this.matchSeed,
+        config: {
+          mode: this.mode,
+          mapId: this.mapDef ? this.mapDef.id : 'TOURNAMENT_DESERT',
+          playerGeneralId: this.teams[0] ? this.teams[0].generalId : 'USA_GRANGER',
+          aiGeneralId: this.teams[1] ? this.teams[1].generalId : 'CHINA_KWAI',
+          difficulty: this.difficulty,
+          challengeIndex: this.challengeIndex || 0,
+          seed: this.matchSeed
+        },
+        totalTicks: this.simTick || 0,
+        commands: this.commandLog.map(c => ({ ...c })),
+        finalHash: this.computeStateHash()
+      };
+    }
+
+    runReplay(replayData, options = {}) {
+      if (!replayData || !replayData.config) return { ok: false, reason: 'INVALID_REPLAY' };
+      const targetTicks = options.ticks !== undefined ? options.ticks : (replayData.totalTicks || 0);
+      const checkpointInterval = options.checkpointInterval || 300;
+      const runAI = Boolean(options.runAI);
+      this.initMatch({
+        ...replayData.config,
+        seed: replayData.seed !== undefined ? replayData.seed : replayData.config.seed
+      });
+      this.running = true;
+
+      const byTick = new Map();
+      if (Array.isArray(replayData.commands)) {
+        for (const cmd of replayData.commands) {
+          const t = cmd.tick || 0;
+          if (!byTick.has(t)) byTick.set(t, []);
+          byTick.get(t).push(cmd);
+        }
+      }
+
+      const checkpoints = {};
+      for (let tick = 1; tick <= targetTicks; tick++) {
+        if (typeof options.onBeforeStep === 'function') {
+          options.onBeforeStep(this, tick);
+        }
+        const cmds = byTick.get(tick) || [];
+        const hash = this.step(tick, cmds);
+        if (runAI && window.ZH_AI && typeof ZH_AI.update === 'function') {
+          ZH_AI.update(this, FIXED_STEP);
+        }
+        if (tick % checkpointInterval === 0 || tick === targetTicks) {
+          checkpoints[tick] = hash;
+        }
+      }
+      return {
+        ok: true,
+        finalHash: this.computeStateHash(),
+        checkpoints
+      };
+    }
+
+    step(tick, commands = []) {
+      const targetTick = (typeof tick === 'number' && tick > 0) ? tick : ((this.simTick || 0) + 1);
+      this.simTick = targetTick;
+      if (Array.isArray(commands) && commands.length > 0) {
+        for (const cmd of commands) {
+          this.applyCommand(cmd);
+        }
+      }
+      this.simTick = targetTick - 1;
+      this.update(FIXED_STEP, true);
+      this.simTick = targetTick;
+      return this.computeStateHash();
+    }
+
+    computeStateHash() {
+      let h = 2166136261 >>> 0;
+      const mix = (val) => {
+        h = Math.imul((h ^ (val | 0)) >>> 0, 16777619) >>> 0;
+      };
+      if (!this._strHashCache) this._strHashCache = new Map();
+      const strCache = this._strHashCache;
+      const getStrHash = (str) => {
+        const s = str || '';
+        let sh = strCache.get(s);
+        if (sh === undefined) {
+          sh = 2166136261 >>> 0;
+          for (let i = 0; i < s.length; i++) {
+            sh = Math.imul((sh ^ (s.charCodeAt(i) & 0xff)) >>> 0, 16777619) >>> 0;
+          }
+          strCache.set(s, sh);
+        }
+        return sh;
+      };
+      const mixStr = (str) => {
+        h = Math.imul((h ^ getStrHash(str)) >>> 0, 16777619) >>> 0;
+      };
+
+      mix(this.simTick || 0);
+      mix(this.simRngState || 0);
+      mix(this.nextEntityId || 0);
+      mix(Math.round((this.gameTime || 0) * 1000));
+
+      for (const t of this.teams) {
+        mix(t.id);
+        mix(Math.round(t.credits));
+        mix(t.powerProduced);
+        mix(t.powerConsumed);
+        mix(t.isLowPower ? 1 : 0);
+        mix(t.hasTechCenter ? 1 : 0);
+        mixStr(t.strategyBattlePlan);
+        mix(t.rank);
+        mix(t.xp);
+        mix(t.generalPoints);
+        mix(t.upgrades ? t.upgrades.size : 0);
+        mix(t.unlockedPowers ? t.unlockedPowers.size : 0);
+        mix((t.tunnelUnits || []).length);
+      }
+
+      for (const b of this.buildings) {
+        mix(b.id);
+        mix(b._defIdHash !== undefined ? b._defIdHash : (b._defIdHash = getStrHash(b.defId)));
+        mix(b.team);
+        mix(Math.round(b.x * 10));
+        mix(Math.round(b.y * 10));
+        mix(Math.round(b.hp * 10));
+        mix(b.constructed ? 1 : 0);
+        mix(Math.round((b.buildProgress || 0) * 1000));
+        mix((b.queue || []).length);
+        if (b.queue && b.queue.length > 0) {
+          mixStr(b.queue[0].id);
+          mix(Math.round((b.queue[0].timer || 0) * 100));
+        }
+        mix(Math.round((b.superweaponTimer || 0) * 10));
+        mix(b.superweaponReady ? 1 : 0);
+        mix(b.overcharged ? 1 : 0);
+      }
+
+      const units = this.units;
+      for (let i = 0, len = units.length; i < len; i++) {
+        const u = units[i];
+        h = Math.imul((h ^ (u.id | 0)) >>> 0, 16777619) >>> 0;
+        const dh = u._defIdHash !== undefined ? u._defIdHash : (u._defIdHash = getStrHash(u.defId));
+        h = Math.imul((h ^ dh) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ (u.team | 0)) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ ((u.x * 10) | 0)) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ ((u.y * 10) | 0)) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ ((u.hp * 10) | 0)) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ ((u.maxHp * 10) | 0)) >>> 0, 16777619) >>> 0;
+        if (u._lastStateStr !== u.state) {
+          u._lastStateStr = u.state;
+          u._stateHash = getStrHash(u.state);
+        }
+        h = Math.imul((h ^ (u._stateHash | 0)) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ (u.targetEntityId | 0)) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ (u.vetLevel | 0)) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ (u.xp | 0)) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ (u.salvageTier | 0)) >>> 0, 16777619) >>> 0;
+        const flags = (u.stealthed ? 1 : 0) | (u.unmanned ? 2 : 0) | ((u.ammo | 0) << 4) | (((u.passengers ? u.passengers.length : 0) | 0) << 12);
+        h = Math.imul((h ^ flags) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ (((u.detectedTimer || 0) * 100) | 0)) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ (((u.stealthRevealTimer || 0) * 100) | 0)) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ ((u.garrisonedIn || 0) | 0)) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ ((u.transportedIn || 0) | 0)) >>> 0, 16777619) >>> 0;
+        h = Math.imul((h ^ (((u.supplyCarried || 0) * 10) | 0)) >>> 0, 16777619) >>> 0;
+      }
+
+      for (const p of this.projectiles) {
+        mix(p.id);
+        mix(p.team);
+        mix(Math.round(p.x * 10));
+        mix(Math.round(p.y * 10));
+        mix(Math.round((p.progress || 0) * 1000));
+      }
+
+      for (const bm of this.activeBeams) {
+        mix(bm.id);
+        mix(Math.round(bm.x * 10));
+        mix(Math.round(bm.y * 10));
+        mix(Math.round((bm.timer || 0) * 100));
+      }
+
+      for (const hz of this.hazards) {
+        mix(hz.id);
+        mix(Math.round(hz.x * 10));
+        mix(Math.round(hz.y * 10));
+        mix(Math.round((hz.timer || 0) * 100));
+      }
+
+      for (const sd of this.spyDrones) {
+        mix(sd.id);
+        mix(Math.round(sd.x * 10));
+        mix(Math.round(sd.y * 10));
+        mix(Math.round((sd.timer || 0) * 100));
+      }
+
+      for (const sg of this.spectreGunships) {
+        mix(sg.id);
+        mix(Math.round(sg.x * 10));
+        mix(Math.round(sg.y * 10));
+        mix(Math.round((sg.timer || 0) * 100));
+      }
+
+      for (const d of this.supplyDocks) {
+        mix(d.id);
+        mix(Math.round(d.amount));
+      }
+
+      for (const ts of this.techStructures) {
+        mix(ts.id);
+        mix(ts.team);
+        mix(Math.round(ts.hp * 10));
+        mix(Math.round((ts.captureProgress || 0) * 100));
+      }
+
+      for (const g of this.garrisonBunkers) {
+        mix(g.id);
+        mix(g.team);
+        mix(Math.round(g.hp * 10));
+        mix((g.occupants || []).length);
+      }
+
+      return ('00000000' + (h >>> 0).toString(16)).slice(-8);
+    }
+
+    // ========================================================================
     // Main Simulation Step (60Hz Fixed-Timestep Accumulator + Direct Tick)
     // ========================================================================
     stepFixed(rawDt) {
@@ -1850,22 +3098,42 @@ window.ZH_ENGINE = (function () {
         this.checkVictoryConditions();
       }
       if (!this.running || this.paused || this.gameOver) return;
-      this.accumulator += Math.min(0.1, rawDt) * this.gameSpeed;
-      while (this.accumulator + 1e-9 >= FIXED_STEP) {
-        this.update(FIXED_STEP);
+      const clampedDt = Math.min(0.1, Math.max(0, Number(rawDt) || 0));
+      const speed = Math.max(0.1, Number(this.gameSpeed) || 1.0);
+      this.accumulator += clampedDt * speed;
+      let steps = 0;
+      const maxSteps = 16;
+      while (this.accumulator + 1e-9 >= FIXED_STEP && steps < maxSteps) {
+        this.update(FIXED_STEP, true);
         this.accumulator = Math.max(0, this.accumulator - FIXED_STEP);
+        steps++;
       }
     }
 
-    update(rawDt) {
+    update(rawDt, fromFixedStep = false) {
       if ((this.matchOver || this.gameOver) && !this._gameOverNotified) {
         this.checkVictoryConditions();
       }
       if (!this.running || this.paused || this.gameOver) return;
-      const dt = Math.min(0.05, rawDt) * this.gameSpeed;
+      const dt = fromFixedStep
+        ? FIXED_STEP
+        : ((typeof rawDt === 'number' && rawDt > 0) ? Math.min(0.25, rawDt) : FIXED_STEP);
       this.gameTime += dt;
       this.matchTime = this.gameTime;
       this.simTick = (this.simTick || 0) + 1;
+
+      if (this.pendingCommands && this.pendingCommands.length > 0) {
+        const due = this.pendingCommands.splice(0, this.pendingCommands.length);
+        for (const cmd of due) {
+          this.applyCommand(cmd);
+        }
+      }
+
+      if (this.navDirty && this.navGrid) {
+        this.navGrid.rebuild(this);
+        this.navDirty = false;
+      }
+
       if (this.underAttackTimer > 0) {
         this.underAttackTimer = Math.max(0, this.underAttackTimer - dt);
       }
@@ -1874,10 +3142,17 @@ window.ZH_ENGINE = (function () {
         this.cam.shake = Math.max(0, this.cam.shake - dt * 28);
       }
 
-      // 0. Rebuild SpatialHashGrid for O(k) queries
+      // 0. Rebuild SpatialHashGrid & O(1) Entity ID Map for queries
       if (this.spatialGrid) {
         this.spatialGrid.rebuild(this.units, this.buildings);
       }
+      if (!this._entityByIdMap) this._entityByIdMap = new Map();
+      else this._entityByIdMap.clear();
+      for (let i = 0; i < this.units.length; i++) this._entityByIdMap.set(this.units[i].id, this.units[i]);
+      for (let i = 0; i < this.buildings.length; i++) this._entityByIdMap.set(this.buildings[i].id, this.buildings[i]);
+      for (let i = 0; i < this.garrisonBunkers.length; i++) this._entityByIdMap.set(this.garrisonBunkers[i].id, this.garrisonBunkers[i]);
+      for (let i = 0; i < this.techStructures.length; i++) this._entityByIdMap.set(this.techStructures[i].id, this.techStructures[i]);
+      this._entityMapTick = this.simTick;
 
       // 1. Update Generals Power Cooldowns & GLA Tunnel Healing
       for (const team of this.teams) {
@@ -1924,6 +3199,32 @@ window.ZH_ENGINE = (function () {
       this.updateBuildings(dt);
       this.updateGarrisonBunkers(dt);
 
+      // 4b. Reset abandoned capture progress on tech structures and buildings
+      for (const ts of this.techStructures) {
+        if (ts.captureProgress > 0) {
+          const activeCapturer = this.units.some(u =>
+            u.hp > 0 && u.state === 'CAPTURE' && u.targetEntityId === ts.id &&
+            dist(u.x, u.y, ts.x, ts.y) <= (ts.radius || 36) + u.radius + (u.def.isRemoteHacker ? 120 : 34)
+          );
+          if (!activeCapturer) {
+            ts.captureProgress = 0;
+            ts.capturingTeam = -1;
+          }
+        }
+      }
+      for (const b of this.buildings) {
+        if (b.captureProgress > 0) {
+          const activeCapturer = this.units.some(u =>
+            u.hp > 0 && u.state === 'CAPTURE' && u.targetEntityId === b.id &&
+            dist(u.x, u.y, b.x, b.y) <= (b.radius || 36) + u.radius + (u.def.isRemoteHacker ? 120 : 34)
+          );
+          if (!activeCapturer) {
+            b.captureProgress = 0;
+            b.capturingTeam = -1;
+          }
+        }
+      }
+
       // 5. Update Units (Locomotor Movement, Harvesting, Building, Combat, PDL, Abilities)
       this.updateUnits(dt);
 
@@ -1946,9 +3247,43 @@ window.ZH_ENGINE = (function () {
         this.updateFogOfWar();
       }
 
-      // 9. Update AI Commander
+      // 8b. Sample Force Telemetry & Update GLA Rebuild Holes
+      this.telemetryTimer = (this.telemetryTimer || 0) + dt;
+      if (this.telemetryTimer >= 5.0) {
+        this.telemetryTimer = 0;
+        this.sampleTelemetrySnapshot();
+      }
+      if (this.rebuildHoles && this.rebuildHoles.length > 0) {
+        for (let i = this.rebuildHoles.length - 1; i >= 0; i--) {
+          const hole = this.rebuildHoles[i];
+          // Enemy ground unit standing directly on GLA hole crushes it
+          const crushedByEnemy = this.units.some(
+            u => u.team !== hole.team && u.hp > 0 && !u.def.isAir && !u.garrisonedIn && !u.transportedIn && dist(u.x, u.y, hole.x, hole.y) <= hole.radius + u.radius
+          );
+          if (crushedByEnemy) {
+            this.spawnFloatingText(hole.x, hole.y - 12, 'GLA HOLE CRUSHED!', '#ef4444');
+            this.rebuildHoles.splice(i, 1);
+            continue;
+          }
+          hole.timer -= dt;
+          if (hole.timer <= 0) {
+            this.rebuildHoles.splice(i, 1);
+            const rebuilt = this.spawnBuilding(hole.defId, hole.team, hole.x, hole.y, false);
+            if (rebuilt) {
+              rebuilt.hp = Math.round(rebuilt.maxHp * 0.35);
+              rebuilt.buildProgress = 0.35;
+              this.spawnFloatingText(hole.x, hole.y - 18, 'GLA REBUILD STARTED!', '#eab308');
+            }
+          }
+        }
+      }
+
+      // 9. Update AI Commander & Challenge Mode Scripted Twist
       if (window.ZH_AI) {
         ZH_AI.update(this, dt);
+      }
+      if (this.mode === 'CHALLENGE') {
+        this.updateChallengeScriptedTwist();
       }
 
       // 10. Check Victory / Defeat Conditions
@@ -1962,21 +3297,38 @@ window.ZH_ENGINE = (function () {
       }
 
       // China Nationalism Horde Bonus (5+ friendly horde-eligible units within 145px)
+      const hordeRadiusSq = 145 * 145;
+      const coreClusterSq = 72 * 72;
+      const coreCluster = [];
       for (const u of this.units) {
-        if (!u.def.hasHordeBonus || u.hp <= 0 || u.unmanned) continue;
+        if (u.inHorde || !u.def.hasHordeBonus || u.hp <= 0 || u.unmanned) continue;
         let count = 0;
-        const nearby = this.spatialGrid
-          ? this.spatialGrid.queryRadius(u.x, u.y, 145)
-          : this.units;
-        for (const other of nearby) {
-          if (other.isUnit && other.team === u.team && other.def.hasHordeBonus && other.hp > 0) {
-            if (dist(u.x, u.y, other.x, other.y) <= 145) {
+        coreCluster.length = 0;
+        if (this.spatialGrid && typeof this.spatialGrid.forEachInRadius === 'function') {
+          this.spatialGrid.forEachInRadius(u.x, u.y, 145, (other, dSq) => {
+            if (other.isUnit && other.team === u.team && other.def.hasHordeBonus && other.hp > 0 && dSq <= hordeRadiusSq) {
               count++;
-              if (count >= 5) break;
+              if (dSq <= coreClusterSq) coreCluster.push(other);
+              if (count >= 5 && coreCluster.length >= 5) return true;
+            }
+            return false;
+          });
+        } else {
+          for (const other of this.units) {
+            if (other.isUnit && other.team === u.team && other.def.hasHordeBonus && other.hp > 0) {
+              if (dist(u.x, u.y, other.x, other.y) <= 145) {
+                count++;
+                if (count >= 5) break;
+              }
             }
           }
         }
-        if (count >= 5) u.inHorde = true;
+        if (count >= 5) {
+          u.inHorde = true;
+          if (coreCluster.length >= 5) {
+            for (let k = 0; k < coreCluster.length; k++) coreCluster[k].inHorde = true;
+          }
+        }
       }
 
       // China Speaker Tower & Overlord Propaganda Aura
@@ -1993,9 +3345,18 @@ window.ZH_ENGINE = (function () {
       }
 
       for (const em of emitters) {
-        for (const u of this.units) {
-          if (u.team === em.team && u.hp > 0 && dist(u.x, u.y, em.x, em.y) <= em.r) {
-            u.inPropaganda = true;
+        const emRSq = em.r * em.r;
+        if (this.spatialGrid && typeof this.spatialGrid.forEachInRadius === 'function') {
+          this.spatialGrid.forEachInRadius(em.x, em.y, em.r, (u, dSq) => {
+            if (u.isUnit && u.team === em.team && u.hp > 0 && dSq <= emRSq) {
+              u.inPropaganda = true;
+            }
+          });
+        } else {
+          for (const u of this.units) {
+            if (u.team === em.team && u.hp > 0 && dist(u.x, u.y, em.x, em.y) <= em.r) {
+              u.inPropaganda = true;
+            }
           }
         }
       }
@@ -2084,15 +3445,25 @@ window.ZH_ENGINE = (function () {
                   if (spawned.def.isHarvester && !spawned.def.isBuilder) {
                     this.assignNearestSupplyDock(spawned);
                   } else {
-                    spawned.state = 'ATTACK_MOVE';
-                    spawned.targetX = clamp(b.rallyX + (c - (count - 1) * 0.5) * 22 + (Math.random() - 0.5) * 18, 40, WORLD_SIZE - 40);
-                    spawned.targetY = clamp(b.rallyY + (Math.random() - 0.5) * 18, 40, WORLD_SIZE - 40);
+                    const rx = clamp(b.rallyX + (c - (count - 1) * 0.5) * 22 + (this.simRandom() - 0.5) * 18, 40, WORLD_SIZE - 40);
+                    const ry = clamp(b.rallyY + (this.simRandom() - 0.5) * 18, 40, WORLD_SIZE - 40);
+                    this.assignUnitPath(spawned, rx, ry, 'ATTACK_MOVE');
                   }
                 }
               }
               if (b.team === 0 && window.ZH_AUDIO) ZH_AUDIO.speak('Unit ready.');
             } else if (item.type === 'UPGRADE') {
               team.upgrades.add(item.id);
+              if (item.id === 'UPG_COMPOSITE_ARMOR') {
+                for (const u of this.units) {
+                  if (u.team === b.team && u.hp > 0 && u.def.category === 'TANK') {
+                    const newMaxHp = this.computeUnitMaxHp(u);
+                    const hpGain = Math.max(0, newMaxHp - u.maxHp);
+                    u.maxHp = newMaxHp;
+                    u.hp = Math.min(u.maxHp, u.hp + hpGain);
+                  }
+                }
+              }
               this.recalculatePower(b.team);
               if (b.team === 0) {
                 this.triggerAlert(`Upgrade Complete: ${ZH_DATA.UPGRADES[item.id].name}`, '#22c55e');
@@ -2153,12 +3524,59 @@ window.ZH_ENGINE = (function () {
           this.destroyUnit(u, i);
           continue;
         }
-        if (u.garrisonedIn || u.garrisonId) {
+        if (u.garrisonedIn || u.garrisonId || u.transportedIn) {
           continue;
         }
 
         u.rotorAngle += dt * 16;
         if (u.abilityCooldown > 0) u.abilityCooldown = Math.max(0, u.abilityCooldown - dt);
+        if (u.detectedTimer > 0) u.detectedTimer = Math.max(0, u.detectedTimer - dt);
+        if (u.stealthRevealTimer > 0) u.stealthRevealTimer = Math.max(0, u.stealthRevealTimer - dt);
+        if (u.stealthedWhenStill) {
+          u.stealthed = (u.state === 'IDLE' && u.attackCooldown <= 0 && (u.stealthRevealTimer || 0) <= 0);
+        } else if (u.def.stealthed && (u.stealthRevealTimer || 0) <= 0 && (u.detectedTimer || 0) <= 0) {
+          u.stealthed = true;
+        }
+        if ((u.stealthed || u.def.stealthed || u.stealthedWhenStill) &&
+            ((u.detectedTimer || 0) <= 0.25 || ((this.simTick + u.id) % 6) === 0)) {
+          const detRange = (this.teams[1 - u.team] && this.teams[1 - u.team].strategyBattlePlan === 'SEARCH_AND_DESTROY') ? 280 : 225;
+          const detRangeSq = detRange * detRange;
+          const bldRangeSq = 230 * 230;
+          let revealedByDetector = false;
+          if (this.spatialGrid && typeof this.spatialGrid.forEachInRadius === 'function') {
+            this.spatialGrid.forEachInRadius(u.x, u.y, Math.max(detRange, 230), (other, dSq) => {
+              if (other.isUnit && other.team !== u.team && other.hp > 0 && !other.garrisonedIn && !other.transportedIn) {
+                if ((other.def.detectsStealth || other.defId === 'USA_AVENGER' || other.defId === 'USA_PATHFINDER' || other.defId === 'CHINA_LISTENING_OUTPOST') &&
+                    dSq <= detRangeSq) {
+                  revealedByDetector = true;
+                  return true;
+                }
+              } else if (other.isBuilding && other.team !== u.team && other.constructed && other.hp > 0 && other.def.isDefense) {
+                if (dSq <= bldRangeSq) {
+                  revealedByDetector = true;
+                  return true;
+                }
+              }
+              return false;
+            });
+          } else {
+            revealedByDetector = this.units.some(
+              other => other.team !== u.team && other.hp > 0 && !other.garrisonedIn && !other.transportedIn &&
+                (other.def.detectsStealth || other.defId === 'USA_AVENGER' || other.defId === 'USA_PATHFINDER' || other.defId === 'CHINA_LISTENING_OUTPOST') &&
+                dist(u.x, u.y, other.x, other.y) <= detRange
+            ) || this.buildings.some(
+              b => b.team !== u.team && b.constructed && b.hp > 0 && b.def.isDefense && dist(u.x, u.y, b.x, b.y) <= 230
+            );
+          }
+          if (!revealedByDetector && this.spyDrones.length > 0) {
+            revealedByDetector = this.spyDrones.some(
+              sd => sd.team !== u.team && dist(u.x, u.y, sd.x, sd.y) <= sd.radius
+            );
+          }
+          if (revealedByDetector) {
+            u.detectedTimer = 1.0;
+          }
+        }
         if (u.laserLockTimer > 0) {
           u.laserLockTimer = Math.max(0, u.laserLockTimer - dt);
           u.laserLockedTimer = u.laserLockTimer;
@@ -2180,6 +3598,39 @@ window.ZH_ENGINE = (function () {
 
         const team = this.teams[u.team];
         const vetDef = ZH_DATA.VETERANCY_LEVELS[u.vetLevel] || ZH_DATA.VETERANCY_LEVELS[0];
+
+        // Sync Transport Passengers & Fireport Combat (Humvee, Combat Chinook, Helix, Listening Outpost)
+        if (u.passengers && u.passengers.length > 0) {
+          for (const occ of u.passengers) {
+            occ.x = u.x;
+            occ.y = u.y;
+            if (u.def.fireports && occ.def && occ.def.weapon) {
+              occ.attackCooldown = Math.max(0, (occ.attackCooldown || 0) - dt);
+              if (occ.attackCooldown <= 0) {
+                const fpRange = occ.def.weapon.range * 1.15;
+                const fpTarget = this.findBestTarget(u, fpRange, occ.def.weapon.antiAir);
+                if (fpTarget) {
+                  this.fireWeapon(
+                    {
+                      id: occ.id,
+                      isUnit: true,
+                      defId: occ.defId,
+                      def: occ.def,
+                      team: u.team,
+                      x: u.x,
+                      y: u.y,
+                      vetLevel: occ.vetLevel || u.vetLevel,
+                      salvageTier: occ.salvageTier || 0
+                    },
+                    fpTarget,
+                    occ.def.weapon
+                  );
+                  occ.attackCooldown = occ.def.weapon.cooldown;
+                }
+              }
+            }
+          }
+        }
 
         // Veterancy / Propaganda / GLA Junk Repair / Tech Hospital / Tech Repair Bay self-healing
         let healRate = vetDef.selfHeal;
@@ -2233,14 +3684,20 @@ window.ZH_ENGINE = (function () {
 
         // GLA Salvage Crate Collection
         if (team.factionId === 'GLA' && this.salvageCrates.length > 0) {
+          const maxCrateR = u.radius + 22;
+          const maxCrateRSq = maxCrateR * maxCrateR;
           for (let cIdx = this.salvageCrates.length - 1; cIdx >= 0; cIdx--) {
             const crate = this.salvageCrates[cIdx];
-            if (dist(u.x, u.y, crate.x, crate.y) <= u.radius + 22) {
+            const cdx = u.x - crate.x;
+            const cdy = u.y - crate.y;
+            if (cdx * cdx + cdy * cdy <= maxCrateRSq) {
               this.salvageCrates.splice(cIdx, 1);
               if (u.def.canSalvage && u.salvageTier < 2) {
                 u.salvageTier++;
-                u.maxHp = Math.round(u.maxHp * 1.15);
-                u.hp = Math.min(u.maxHp, u.hp + 120);
+                const newMaxHp = this.computeUnitMaxHp(u);
+                const hpGain = Math.max(120, newMaxHp - u.maxHp);
+                u.maxHp = newMaxHp;
+                u.hp = Math.min(u.maxHp, u.hp + hpGain);
                 this.spawnFloatingText(u.x, u.y - 16, `SALVAGE TIER ${u.salvageTier}!`, '#fde047');
               } else {
                 team.credits += 150;
@@ -2283,25 +3740,74 @@ window.ZH_ENGINE = (function () {
         this.stepUnitStateMachine(u, dt);
       }
 
-      // Soft Ground Unit Separation
-      for (let i = 0; i < this.units.length; i++) {
-        const a = this.units[i];
-        if (a.def.isAir || a.garrisonedIn || a.garrisonId) continue;
-        for (let j = i + 1; j < this.units.length; j++) {
-          const b = this.units[j];
-          if (b.def.isAir || b.garrisonedIn || b.garrisonId) continue;
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const d = Math.hypot(dx, dy);
-          const minD = a.radius + b.radius + 2;
-          if (d > 0.01 && d < minD) {
+      // Soft Ground Unit Separation & Tank vs Infantry Crush (SquishCollide) via Spatial Hash
+      if (this.spatialGrid && typeof this.spatialGrid.forEachInRadius === 'function') {
+        let curA = null;
+        const resolvePair = (b, dSq) => {
+          if (!b || !b.isUnit || b.id <= curA.id || b.hp <= 0 || curA.hp <= 0 || b.def.isAir || b.garrisonedIn || b.garrisonId || b.transportedIn) return false;
+          const minD = curA.radius + b.radius + 2;
+          if (dSq > 0.0001 && dSq < minD * minD) {
+            const dx = b.x - curA.x;
+            const dy = b.y - curA.y;
+            const d = Math.sqrt(dSq);
+            if (curA.team !== b.team && curA.team >= 0 && b.team >= 0 && !curA.unmanned && !b.unmanned) {
+              if (curA.def.category === 'TANK' && b.def.category === 'INFANTRY' && curA.state !== 'IDLE') {
+                this.spawnFloatingText(b.x, b.y - 12, 'CRUSHED!', '#ef4444');
+                this.applyDamageToTarget(b, 9999, 'CRUSH', curA.team, curA);
+                return false;
+              } else if (b.def.category === 'TANK' && curA.def.category === 'INFANTRY' && b.state !== 'IDLE') {
+                this.spawnFloatingText(curA.x, curA.y - 12, 'CRUSHED!', '#ef4444');
+                this.applyDamageToTarget(curA, 9999, 'CRUSH', b.team, b);
+                return true;
+              }
+            }
             const push = (minD - d) * 0.25;
             const nx = dx / d;
             const ny = dy / d;
-            a.x = clamp(a.x - nx * push, 25, WORLD_SIZE - 25);
-            a.y = clamp(a.y - ny * push, 25, WORLD_SIZE - 25);
+            curA.x = clamp(curA.x - nx * push, 25, WORLD_SIZE - 25);
+            curA.y = clamp(curA.y - ny * push, 25, WORLD_SIZE - 25);
             b.x = clamp(b.x + nx * push, 25, WORLD_SIZE - 25);
             b.y = clamp(b.y + ny * push, 25, WORLD_SIZE - 25);
+          }
+          return false;
+        };
+        for (let i = 0; i < this.units.length; i++) {
+          const a = this.units[i];
+          if (!a || a.hp <= 0 || a.def.isAir || a.garrisonedIn || a.garrisonId || a.transportedIn) continue;
+          curA = a;
+          this.spatialGrid.forEachInRadius(a.x, a.y, a.radius + 2, resolvePair);
+        }
+      } else {
+        for (let i = 0; i < this.units.length; i++) {
+          const a = this.units[i];
+          if (!a || a.hp <= 0 || a.def.isAir || a.garrisonedIn || a.garrisonId || a.transportedIn) continue;
+          for (let j = i + 1; j < this.units.length; j++) {
+            const b = this.units[j];
+            if (!b || b.hp <= 0 || b.def.isAir || b.garrisonedIn || b.garrisonId || b.transportedIn) continue;
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const d = Math.hypot(dx, dy);
+            const minD = a.radius + b.radius + 2;
+            if (d > 0.01 && d < minD) {
+              if (a.team !== b.team && a.team >= 0 && b.team >= 0 && !a.unmanned && !b.unmanned) {
+                if (a.def.category === 'TANK' && b.def.category === 'INFANTRY' && a.state !== 'IDLE') {
+                  this.spawnFloatingText(b.x, b.y - 12, 'CRUSHED!', '#ef4444');
+                  this.applyDamageToTarget(b, 9999, 'CRUSH', a.team, a);
+                  continue;
+                } else if (b.def.category === 'TANK' && a.def.category === 'INFANTRY' && b.state !== 'IDLE') {
+                  this.spawnFloatingText(a.x, a.y - 12, 'CRUSHED!', '#ef4444');
+                  this.applyDamageToTarget(a, 9999, 'CRUSH', b.team, b);
+                  break;
+                }
+              }
+              const push = (minD - d) * 0.25;
+              const nx = dx / d;
+              const ny = dy / d;
+              a.x = clamp(a.x - nx * push, 25, WORLD_SIZE - 25);
+              a.y = clamp(a.y - ny * push, 25, WORLD_SIZE - 25);
+              b.x = clamp(b.x + nx * push, 25, WORLD_SIZE - 25);
+              b.y = clamp(b.y + ny * push, 25, WORLD_SIZE - 25);
+            }
           }
         }
       }
@@ -2309,15 +3815,17 @@ window.ZH_ENGINE = (function () {
       // Hard Ground Unit vs. Building Footprint Exclusion (prevents units from ever being pushed inside buildings)
       for (let i = 0; i < this.units.length; i++) {
         const u = this.units[i];
-        if (!u || u.hp <= 0 || u.def.isAir || u.garrisonedIn || u.garrisonId) continue;
+        if (!u || u.hp <= 0 || u.def.isAir || u.garrisonedIn || u.garrisonId || u.transportedIn) continue;
+        const uR = (u.radius || 14) + 8;
         for (let j = 0; j < this.buildings.length; j++) {
           const b = this.buildings[j];
           if (!b || b.hp <= 0) continue;
-          const minD = b.radius + (u.radius || 14) + 8;
+          const minD = b.radius + uR;
           const dx = u.x - b.x;
           const dy = u.y - b.y;
-          const d = Math.hypot(dx, dy);
-          if (d < minD) {
+          const dSq = dx * dx + dy * dy;
+          if (dSq < minD * minD) {
+            const d = Math.sqrt(dSq);
             const exitAng = d > 0.5 ? Math.atan2(dy, dx) : angleBetween(b.x, b.y, b.rallyX || b.x, b.rallyY || (b.y + 90));
             u.x = clamp(b.x + Math.cos(exitAng) * minD, 25, WORLD_SIZE - 25);
             u.y = clamp(b.y + Math.sin(exitAng) * minD, 25, WORLD_SIZE - 25);
@@ -2327,6 +3835,41 @@ window.ZH_ENGINE = (function () {
     }
 
     stepUnitStateMachine(u, dt) {
+      // 0. AIRCRAFT AMMO REARMING LOOP (Raptor, King Raptor, Aurora, MiG)
+      if (u.maxAmmo > 0 && u.ammo <= 0 && u.state !== 'REARM_AIRCRAFT') {
+        u.state = 'REARM_AIRCRAFT';
+        u.supersonicReturn = Boolean(u.def.supersonicSpeedBoost);
+      }
+      if (u.state === 'REARM_AIRCRAFT') {
+        const airfield = this.buildings.find(
+          b => b.team === u.team && b.constructed && b.hp > 0 && (b.defId === 'USA_AIRFIELD' || b.defId === 'CHINA_AIRFIELD')
+        ) || this.buildings.find(b => b.team === u.team && b.constructed && b.hp > 0 && b.def.isCommandCenter);
+        if (!airfield) {
+          u.reloadTimer = (u.reloadTimer || 0) + dt * 0.5;
+          if (u.reloadTimer >= (u.def.reloadTime || 4.0)) {
+            u.ammo = u.maxAmmo;
+            u.reloadTimer = 0;
+            u.supersonicReturn = false;
+            u.state = 'IDLE';
+          }
+          return;
+        }
+        const d = dist(u.x, u.y, airfield.x, airfield.y);
+        if (d > 52) {
+          this.moveUnitToward(u, airfield.x, airfield.y, dt);
+        } else {
+          u.reloadTimer = (u.reloadTimer || 0) + dt;
+          if (u.reloadTimer >= (u.def.reloadTime || 3.5)) {
+            u.ammo = u.maxAmmo;
+            u.reloadTimer = 0;
+            u.supersonicReturn = false;
+            u.state = 'IDLE';
+            this.spawnFloatingText(u.x, u.y - 16, 'REARMED!', '#38bdf8');
+          }
+        }
+        return;
+      }
+
       // 1. BUILD / REPAIR STATE (Dozer / Worker) (BUG-06)
       if (u.state === 'BUILD') {
         const targetId = u.buildTargetId || u.targetEntityId;
@@ -2460,6 +4003,24 @@ window.ZH_ENGINE = (function () {
         return;
       }
 
+      // 5b. ENTER FRIENDLY TRANSPORT (Humvee, Chinook, Helix, Technical, Troop Crawler)
+      if (u.state === 'ENTER_TRANSPORT') {
+        const transport = this.units.find(
+          v => v.id === u.targetEntityId && v.team === u.team && v.hp > 0 && v.def && v.def.transportCapacity > 0
+        );
+        if (!transport || (transport.passengers && transport.passengers.length >= transport.def.transportCapacity)) {
+          u.state = 'IDLE';
+          return;
+        }
+        const d = dist(u.x, u.y, transport.x, transport.y);
+        if (d > (transport.radius || 18) + u.radius + 24) {
+          this.moveUnitToward(u, transport.x, transport.y, dt);
+        } else {
+          this.enterTransport(u, transport);
+        }
+        return;
+      }
+
       // 6. RE-CREW UNMANNED VEHICLE (After Jarmen Kell Pilot Snipe!)
       if (u.state === 'RECREW_VEHICLE') {
         const veh = this.units.find(v => v.id === u.targetEntityId && v.unmanned && v.hp > 0);
@@ -2515,11 +4076,15 @@ window.ZH_ENGINE = (function () {
           this.moveUnitToward(u, techTarget.x, techTarget.y, dt);
         } else {
           const capSpeed = u.def.isRemoteHacker ? 0.55 : 0.28;
+          if (techTarget.capturingTeam !== undefined && techTarget.capturingTeam !== -1 && techTarget.capturingTeam !== u.team) {
+            techTarget.captureProgress = 0;
+          }
           techTarget.capturingTeam = u.team;
           techTarget.captureProgress = (techTarget.captureProgress || 0) + dt * capSpeed;
           if (techTarget.captureProgress >= 1.0) {
             techTarget.team = u.team;
             techTarget.captureProgress = 0;
+            techTarget.capturingTeam = -1;
             const bonus = (techTarget.def && techTarget.def.captureBonus) || 250;
             if (bonus > 0) {
               this.teams[u.team].credits += bonus;
@@ -2593,9 +4158,18 @@ window.ZH_ENGINE = (function () {
         const gx = u.guardX !== undefined ? u.guardX : u.x;
         const gy = u.guardY !== undefined ? u.guardY : u.y;
         if (u.def.weapon) {
+          u.scanCooldown = Math.max(0, (u.scanCooldown || 0) - dt);
           const wRange = this.getEffectiveWeaponRange(u);
           const scanRange = Math.max(220, wRange + 50);
-          const enemy = this.findBestTarget(u, scanRange, u.def.weapon.antiAir);
+          let enemy = null;
+          if (u.targetEntity && u.targetEntity.hp > 0 && u.targetEntity.team !== u.team && !u.targetEntity.unmanned &&
+              dist(gx, gy, u.targetEntity.x, u.targetEntity.y) <= 260) {
+            enemy = u.targetEntity;
+          } else if (u.scanCooldown <= 0) {
+            enemy = this.findBestTarget(u, scanRange, u.def.weapon.antiAir);
+            u.targetEntity = enemy || null;
+            u.scanCooldown = 0.12 + ((u.id & 7) * 0.02);
+          }
           if (enemy && dist(gx, gy, enemy.x, enemy.y) <= 260) {
             u.targetEntityId = enemy.id;
             const d = dist(u.x, u.y, enemy.x, enemy.y) - (enemy.radius || 0);
@@ -2621,9 +4195,18 @@ window.ZH_ENGINE = (function () {
 
       // 10. MOVE / ATTACK_MOVE / IDLE
       if (u.def.weapon && (u.state === 'IDLE' || u.state === 'ATTACK_MOVE')) {
+        u.scanCooldown = Math.max(0, (u.scanCooldown || 0) - dt);
+        let enemy = null;
         const wRange = this.getEffectiveWeaponRange(u);
-        const scanRange = Math.max(wRange + 35, u.def.sight * 0.85);
-        const enemy = this.findBestTarget(u, scanRange, u.def.weapon.antiAir);
+        const scanRange = u.state === 'IDLE' ? wRange : Math.max(wRange + 35, u.def.sight * 0.85);
+        if (u.targetEntity && u.targetEntity.hp > 0 && u.targetEntity.team !== u.team && !u.targetEntity.unmanned &&
+            dist(u.x, u.y, u.targetEntity.x, u.targetEntity.y) - (u.targetEntity.radius || 0) <= scanRange) {
+          enemy = u.targetEntity;
+        } else if (u.scanCooldown <= 0) {
+          enemy = this.findBestTarget(u, scanRange, u.def.weapon.antiAir);
+          u.targetEntity = enemy || null;
+          u.scanCooldown = 0.12 + ((u.id & 7) * 0.02);
+        }
         if (enemy) {
           const d = dist(u.x, u.y, enemy.x, enemy.y) - (enemy.radius || 0);
           if (d <= wRange) {
@@ -2658,8 +4241,16 @@ window.ZH_ENGINE = (function () {
     }
 
     moveUnitToward(u, tx, ty, dt) {
+      let effDt = dt;
+      if (u.def && u.def.supersonicSpeedBoost) {
+        if ((u.state === 'ATTACK' || u.state === 'FORCE_FIRE') && u.ammo > 0) {
+          effDt = dt * 1.65;
+        } else if (u.supersonicReturn && u.state === 'REARM_AIRCRAFT') {
+          effDt = dt * 0.72;
+        }
+      }
       if (window.ZH_SPATIAL && ZH_SPATIAL.LocomotorSystem) {
-        ZH_SPATIAL.LocomotorSystem.stepUnitMovement(u, tx, ty, dt, this.spatialGrid, this.navGrid);
+        ZH_SPATIAL.LocomotorSystem.stepUnitMovement(u, tx, ty, effDt, this.spatialGrid, this.navGrid);
         u.x = clamp(u.x, 25, WORLD_SIZE - 25);
         u.y = clamp(u.y, 25, WORLD_SIZE - 25);
         return;
@@ -2667,7 +4258,7 @@ window.ZH_ENGINE = (function () {
       const ang = angleBetween(u.x, u.y, tx, ty);
       u.angle = ang;
       u.turretAngle = ang;
-      const step = u.speed * dt;
+      const step = u.speed * effDt;
       u.x = clamp(u.x + Math.cos(ang) * step, 25, WORLD_SIZE - 25);
       u.y = clamp(u.y + Math.sin(ang) * step, 25, WORLD_SIZE - 25);
     }
@@ -2680,12 +4271,21 @@ window.ZH_ENGINE = (function () {
       const mod = team.general.modifiers || {};
       if (u.defId === 'USA_HUMVEE' && team.upgrades.has('UPG_TOW_MISSILE')) r += 35;
       if (u.def.weapon.damageType === 'SNIPER' && mod.sniperBonusMult) r *= mod.sniperBonusMult;
-      if (team.hasTechCenter && team.factionId === 'USA') r *= 1.1;
+      if (team.hasTechCenter && team.factionId === 'USA') {
+        if (team.strategyBattlePlan === 'SEARCH_AND_DESTROY') {
+          r *= 1.20;
+        } else {
+          r *= 1.10;
+        }
+      }
       return r;
     }
 
     findEntityById(id) {
       if (!id) return null;
+      if (this._entityByIdMap && this._entityMapTick === this.simTick) {
+        return this._entityByIdMap.get(id) || null;
+      }
       return (
         this.units.find(u => u.id === id) ||
         this.buildings.find(b => b.id === id) ||
@@ -2699,28 +4299,38 @@ window.ZH_ENGINE = (function () {
       let best = null;
       let bestScore = Infinity;
 
-      const candidates = this.spatialGrid
-        ? this.spatialGrid.queryRadius(attacker.x, attacker.y, maxRange + 80)
-        : [...this.units, ...this.buildings];
-
-      for (const ent of candidates) {
+      const evaluateCandidate = (ent, dSqArg) => {
         if (ent.isUnit) {
-          if (ent.team === attacker.team || ent.team < 0 || ent.unmanned || ent.garrisonedIn || ent.garrisonId || ent.hp <= 0) continue;
-          if (ent.stealthed && dist(attacker.x, attacker.y, ent.x, ent.y) > 95) continue;
-          if (ent.def.isAir && !canHitAir) continue;
-          const d = dist(attacker.x, attacker.y, ent.x, ent.y) - ent.radius;
+          if (ent.team === attacker.team || ent.team < 0 || ent.unmanned || ent.garrisonedIn || ent.garrisonId || ent.transportedIn || ent.hp <= 0) return false;
+          if (ent.def.isAir && !canHitAir) return false;
+          const maxEffR = maxRange + ent.radius;
+          if (dSqArg !== undefined && dSqArg > maxEffR * maxEffR) return false;
+          const rawD = dSqArg !== undefined ? Math.sqrt(dSqArg) : dist(attacker.x, attacker.y, ent.x, ent.y);
+          if (ent.stealthed && !(ent.detectedTimer > 0) && rawD > 95) return false;
+          const d = rawD - ent.radius;
           if (d <= maxRange && d < bestScore) {
             bestScore = d;
             best = ent;
           }
         } else if (ent.isBuilding) {
-          if (ent.team === attacker.team || ent.hp <= 0) continue;
-          const d = dist(attacker.x, attacker.y, ent.x, ent.y) - ent.radius;
+          if (ent.team === attacker.team || ent.hp <= 0) return false;
+          const maxEffR = maxRange + ent.radius;
+          if (dSqArg !== undefined && dSqArg > maxEffR * maxEffR) return false;
+          const rawD = dSqArg !== undefined ? Math.sqrt(dSqArg) : dist(attacker.x, attacker.y, ent.x, ent.y);
+          const d = rawD - ent.radius;
           if (d <= maxRange && d + 25 < bestScore) {
             bestScore = d + 25;
             best = ent;
           }
         }
+        return false;
+      };
+
+      if (this.spatialGrid && typeof this.spatialGrid.forEachInRadius === 'function') {
+        this.spatialGrid.forEachInRadius(attacker.x, attacker.y, maxRange, evaluateCandidate);
+      } else {
+        for (const u of this.units) evaluateCandidate(u);
+        for (const b of this.buildings) evaluateCandidate(b);
       }
 
       // Check hostile occupied Civilian Garrison Bunkers
@@ -2754,9 +4364,19 @@ window.ZH_ENGINE = (function () {
         attacker.recoilBarrelToggle = ((attacker.recoilBarrelToggle || 0) + 1) % 2;
       }
 
-      // Uncloak stealth units briefly when firing
-      if (attacker.isUnit && attacker.stealthed && attacker.gpsScrambleTimer <= 0) {
+      // Uncloak stealth units briefly when firing (recloaks after 2.0s out of combat)
+      if (attacker.isUnit && (attacker.stealthed || (attacker.def && attacker.def.stealthed)) && (attacker.gpsScrambleTimer || 0) <= 0) {
         attacker.stealthed = false;
+        attacker.stealthRevealTimer = 2.0;
+      }
+
+      // Consume Aircraft Munitions (Raptor, King Raptor, Aurora, MiG)
+      if (attacker.isUnit && attacker.maxAmmo > 0) {
+        attacker.ammo = Math.max(0, (attacker.ammo || 0) - 1);
+        if (attacker.ammo <= 0) {
+          attacker.state = 'REARM_AIRCRAFT';
+          attacker.supersonicReturn = Boolean(attacker.def && attacker.def.supersonicSpeedBoost);
+        }
       }
 
       // Suicide Demolition Detonation (GLA Terrorist, Combat Cycle, Bomb Truck)
@@ -2778,6 +4398,7 @@ window.ZH_ENGINE = (function () {
         if (attacker.laserLockTimer > 0) dmg *= 1.25;
 
         if (team) {
+          if (team.hasTechCenter && team.factionId === 'USA' && team.strategyBattlePlan === 'BOMBARDMENT') dmg *= 1.20;
           if (attacker.defId === 'USA_RANGER' && team.upgrades.has('UPG_FLASHBANGS')) dmg *= 1.4;
           if (attacker.defId === 'USA_HUMVEE' && team.upgrades.has('UPG_TOW_MISSILE')) dmg *= 1.45;
           if (attacker.defId === 'USA_COMANCHE' && team.upgrades.has('UPG_ROCKET_PODS')) dmg *= 1.35;
@@ -2793,6 +4414,7 @@ window.ZH_ENGINE = (function () {
         if ((attacker.defId === 'USA_AURORA' || attacker.defId === 'USA_AURORA_ALPHA') && mod.auroraDamageMult) dmg *= mod.auroraDamageMult;
         if (attacker.hasGatlingCannon) dmg *= 1.2;
       } else if (attacker.isBuilding && team) {
+        if (team.hasTechCenter && team.factionId === 'USA' && team.strategyBattlePlan === 'BOMBARDMENT') dmg *= 1.20;
         if (attacker.defId === 'CHINA_GATTLING_CANNON' && team.upgrades.has('UPG_CHAIN_GUNS')) dmg *= 1.25;
         if (attacker.defId === 'GLA_STINGER_SITE' && team.upgrades.has('UPG_AP_ROCKETS')) dmg *= 1.25;
         if (mod.defenseDamageMult) dmg *= mod.defenseDamageMult;
@@ -2827,7 +4449,7 @@ window.ZH_ENGINE = (function () {
 
       // Spawn Ballistic / Missile / Flame Projectile with 3D Parabolic Arc metadata
       const proj = {
-        id: nextEntityId++,
+        id: this.allocId(),
         team: attacker.team,
         attackerId: attacker.id,
         attackerDefId: attacker.defId,
@@ -2869,10 +4491,12 @@ window.ZH_ENGINE = (function () {
     updateProjectiles(dt) {
       for (let i = this.projectiles.length - 1; i >= 0; i--) {
         const p = this.projectiles[i];
-        const liveTarget = this.findEntityById(p.targetId);
+        const liveTarget = p.targetId ? this.findEntityById(p.targetId) : null;
         if (liveTarget && liveTarget.hp > 0) {
           p.tx = liveTarget.x;
           p.ty = liveTarget.y;
+        } else {
+          p.targetId = 0;
         }
 
         const d = dist(p.x, p.y, p.tx, p.ty);
@@ -2892,7 +4516,7 @@ window.ZH_ENGINE = (function () {
 
           if (p.leavesHazard) {
             this.hazards.push({
-              id: nextEntityId++,
+              id: this.allocId(),
               type: p.leavesHazard,
               team: p.team,
               x: p.tx,
@@ -2931,24 +4555,46 @@ window.ZH_ENGINE = (function () {
         ZH_VFX.addDecal(this, decalType, x, y, Math.min(95, radius * 0.45), 0, 120);
       }
 
-      for (const u of this.units) {
-        if (u.team === sourceTeam || u.hp <= 0 || u.garrisonedIn || u.garrisonId) continue;
-        const d = dist(x, y, u.x, u.y);
-        if (d <= radius + u.radius) {
-          const falloff = Math.max(0.35, 1 - d / (radius + u.radius + 20));
-          this.applyDamageToTarget(u, baseDamage * falloff, damageType, sourceTeam, attacker);
+      if (this.spatialGrid && typeof this.spatialGrid.forEachInRadius === 'function') {
+        this.spatialGrid.forEachInRadius(x, y, radius, (ent, dSq) => {
+          if (ent.isUnit) {
+            if (ent.team === sourceTeam || ent.hp <= 0 || ent.garrisonedIn || ent.garrisonId || ent.transportedIn) return;
+            const maxR = radius + ent.radius;
+            if (dSq <= maxR * maxR) {
+              const d = Math.sqrt(dSq);
+              const falloff = Math.max(0.35, 1 - d / (maxR + 20));
+              this.applyDamageToTarget(ent, baseDamage * falloff, damageType, sourceTeam, attacker);
+            }
+          } else if (ent.isBuilding) {
+            if (ent.team === sourceTeam || ent.hp <= 0) return;
+            const maxR = radius + ent.radius;
+            if (dSq <= maxR * maxR) {
+              const d = Math.sqrt(dSq);
+              const falloff = Math.max(0.45, 1 - d / (maxR + 30));
+              this.applyDamageToTarget(ent, baseDamage * falloff, damageType, sourceTeam, attacker);
+            }
+          }
+        });
+      } else {
+        for (const u of this.units) {
+          if (u.team === sourceTeam || u.hp <= 0 || u.garrisonedIn || u.garrisonId || u.transportedIn) continue;
+          const d = dist(x, y, u.x, u.y);
+          if (d <= radius + u.radius) {
+            const falloff = Math.max(0.35, 1 - d / (radius + u.radius + 20));
+            this.applyDamageToTarget(u, baseDamage * falloff, damageType, sourceTeam, attacker);
+          }
         }
-      }
-      for (const b of this.buildings) {
-        if (b.team === sourceTeam || b.hp <= 0) continue;
-        const d = dist(x, y, b.x, b.y);
-        if (d <= radius + b.radius) {
-          const falloff = Math.max(0.45, 1 - d / (radius + b.radius + 30));
-          this.applyDamageToTarget(b, baseDamage * falloff, damageType, sourceTeam, attacker);
+        for (const b of this.buildings) {
+          if (b.team === sourceTeam || b.hp <= 0) continue;
+          const d = dist(x, y, b.x, b.y);
+          if (d <= radius + b.radius) {
+            const falloff = Math.max(0.45, 1 - d / (radius + b.radius + 30));
+            this.applyDamageToTarget(b, baseDamage * falloff, damageType, sourceTeam, attacker);
+          }
         }
       }
       for (const g of this.garrisonBunkers) {
-        if (g.team === sourceTeam || g.occupants.length === 0) continue;
+        if (g.occupants.length === 0 || g.team === sourceTeam) continue;
         const d = dist(x, y, g.x, g.y);
         if (d <= radius + g.radius) {
           const falloff = Math.max(0.45, 1 - d / (radius + g.radius + 30));
@@ -2999,7 +4645,12 @@ window.ZH_ENGINE = (function () {
       const row = ZH_DATA.DAMAGE_MATRIX[damageType] || ZH_DATA.DAMAGE_MATRIX.SMALL_ARMS;
       const scalar = row[armorClass] !== undefined ? row[armorClass] : 1.0;
 
-      const finalDmg = Math.max(1, rawDamage * scalar);
+      const targetTeam = target.team >= 0 ? this.teams[target.team] : null;
+      const holdLineMult = (targetTeam && targetTeam.hasTechCenter && targetTeam.factionId === 'USA' && targetTeam.strategyBattlePlan === 'HOLD_THE_LINE')
+        ? 0.80
+        : 1.0;
+
+      const finalDmg = Math.max(1, rawDamage * scalar * holdLineMult);
       target.hp -= finalDmg;
 
       // Grant XP on kill
@@ -3018,8 +4669,10 @@ window.ZH_ENGINE = (function () {
           ) {
             attacker.vetLevel++;
             const newVet = ZH_DATA.VETERANCY_LEVELS[attacker.vetLevel];
-            attacker.maxHp = Math.round(attacker.def.hp * newVet.hpMult);
-            attacker.hp = attacker.maxHp;
+            const newMaxHp = this.computeUnitMaxHp(attacker);
+            const hpGain = Math.max(0, newMaxHp - attacker.maxHp);
+            attacker.maxHp = newMaxHp;
+            attacker.hp = Math.min(attacker.maxHp, attacker.hp + hpGain);
             this.spawnFloatingText(attacker.x, attacker.y - 18, `★ ${newVet.name.toUpperCase()}!`, '#fde047');
             if (attacker.team === 0 && window.ZH_AUDIO) ZH_AUDIO.playSFX('promote');
           }
@@ -3065,6 +4718,21 @@ window.ZH_ENGINE = (function () {
       this.spawnBurst(u.x, u.y, '#f97316', u.def.category === 'TANK' ? 18 : 8);
       if (window.ZH_AUDIO) ZH_AUDIO.playSFX('explosion');
 
+      // Eject surviving transport passengers at 50% HP around the wreck
+      if (u.passengers && u.passengers.length > 0) {
+        const count = u.passengers.length;
+        for (let p = 0; p < count; p++) {
+          const occ = u.passengers[p];
+          occ.transportedIn = null;
+          occ.hp = Math.max(10, Math.round(occ.hp * 0.5));
+          const ang = (p / count) * Math.PI * 2;
+          occ.x = clamp(u.x + Math.cos(ang) * 28, 30, WORLD_SIZE - 30);
+          occ.y = clamp(u.y + Math.sin(ang) * 28, 30, WORLD_SIZE - 30);
+          occ.state = 'IDLE';
+        }
+        u.passengers = [];
+      }
+
       const team = this.teams[u.team];
       if (team && team.stats) team.stats.unitsLost++;
       const enemy = this.teams[1 - u.team];
@@ -3075,13 +4743,14 @@ window.ZH_ENGINE = (function () {
 
       if (u.def.category === 'TANK' || u.def.category === 'LIGHT_VEHICLE') {
         this.salvageCrates.push({
-          id: nextEntityId++,
+          id: this.allocId(),
           x: u.x,
           y: u.y,
           timer: 75
         });
       }
 
+      if (this._entityByIdMap) this._entityByIdMap.delete(u.id);
       this.units.splice(index, 1);
       if (this.onStateChange) this.onStateChange();
     }
@@ -3097,8 +4766,26 @@ window.ZH_ENGINE = (function () {
       if (team && team.stats) team.stats.buildingsLost++;
       const enemy = this.teams[1 - teamId];
       if (enemy && enemy.stats) enemy.stats.buildingsDestroyed++;
+
+      // Authentic GLA Rebuild Hole mechanic (constructed non-Command-Center structures leave a rebuild hole)
+      if (team && team.factionId === 'GLA' && b.constructed && !b.def.isCommandCenter) {
+        if (!this.rebuildHoles) this.rebuildHoles = [];
+        this.rebuildHoles.push({
+          id: this.allocId(),
+          defId: b.defId,
+          def: b.def,
+          team: teamId,
+          x: b.x,
+          y: b.y,
+          radius: 28,
+          timer: 20,
+          maxTimer: 20
+        });
+      }
+
+      if (this._entityByIdMap) this._entityByIdMap.delete(b.id);
       this.buildings.splice(index, 1);
-      if (this.navGrid) this.navGrid.rebuild(this);
+      this.markNavDirty();
       this.recalculatePower(teamId);
       if (this.onStateChange) this.onStateChange();
     }
@@ -3112,7 +4799,7 @@ window.ZH_ENGINE = (function () {
         beam.x += Math.cos(ang) * 45 * dt;
         beam.y += Math.sin(ang) * 45 * dt;
         this.dealAreaDamage(beam.x, beam.y, beam.radius, beam.dps * dt, 'SUPERWEAPON', beam.team);
-        if (Math.random() < 0.45) {
+        if (this.simRandom() < 0.45) {
           this.spawnBurst(beam.x, beam.y, '#38bdf8', 3);
         }
         if (beam.timer <= 0) {
@@ -3128,8 +4815,8 @@ window.ZH_ENGINE = (function () {
         sg.shotTimer -= dt;
         if (sg.shotTimer <= 0) {
           sg.shotTimer = 0.65;
-          const ox = sg.cx + (Math.random() - 0.5) * 140;
-          const oy = sg.cy + (Math.random() - 0.5) * 140;
+          const ox = sg.cx + (this.simRandom() - 0.5) * 140;
+          const oy = sg.cy + (this.simRandom() - 0.5) * 140;
           this.dealAreaDamage(ox, oy, 75, 95, 'HIGH_EXPLOSIVE', sg.team);
           this.spawnBurst(ox, oy, '#fde047', 12);
           if (window.ZH_AUDIO) ZH_AUDIO.playSFX('cannon');
@@ -3174,7 +4861,9 @@ window.ZH_ENGINE = (function () {
           pt.y += pt.vy * dt;
         }
         if (pt.timer <= 0) {
-          this.particles.splice(i, 1);
+          const lastIdx = this.particles.length - 1;
+          if (i !== lastIdx) this.particles[i] = this.particles[lastIdx];
+          this.particles.pop();
         }
       }
 
@@ -3184,7 +4873,9 @@ window.ZH_ENGINE = (function () {
         ft.timer -= dt;
         ft.y -= 24 * dt;
         if (ft.timer <= 0) {
-          this.floatingTexts.splice(i, 1);
+          const lastIdx = this.floatingTexts.length - 1;
+          if (i !== lastIdx) this.floatingTexts[i] = this.floatingTexts[lastIdx];
+          this.floatingTexts.pop();
         }
       }
 
@@ -3273,7 +4964,10 @@ window.ZH_ENGINE = (function () {
       }
 
       if (this.fogCtx && typeof this.fogCtx.createImageData === 'function') {
-        const img = this.fogCtx.createImageData(FOG_GRID, FOG_GRID);
+        if (!this._fogImageData) {
+          this._fogImageData = this.fogCtx.createImageData(FOG_GRID, FOG_GRID);
+        }
+        const img = this._fogImageData;
         if (img && img.data) {
           const d = img.data;
           for (let i = 0; i < this.fog.length; i++) {
@@ -3310,6 +5004,7 @@ window.ZH_ENGINE = (function () {
         this._gameOverNotified = true;
         const w = this.winner !== null && this.winner !== undefined ? this.winner : 0;
         this.winner = w;
+        this.victoryState = w === 0 ? 'VICTORY' : 'DEFEAT';
         if (this.onGameOver) this.onGameOver(w);
         return;
       }
@@ -3324,6 +5019,7 @@ window.ZH_ENGINE = (function () {
         this.matchOver = true;
         this._gameOverNotified = true;
         this.winner = 0;
+        this.victoryState = 'VICTORY';
         if (window.ZH_AUDIO) {
           ZH_AUDIO.playSFX('promote');
           ZH_AUDIO.speak('You are victorious, General!', { priority: true });
@@ -3334,6 +5030,7 @@ window.ZH_ENGINE = (function () {
         this.matchOver = true;
         this._gameOverNotified = true;
         this.winner = 1;
+        this.victoryState = 'DEFEAT';
         if (window.ZH_AUDIO) ZH_AUDIO.speak('You have been defeated.', { priority: true });
         if (this.onGameOver) this.onGameOver(1);
       }
@@ -3343,24 +5040,27 @@ window.ZH_ENGINE = (function () {
     // Visual FX Spawners
     // ========================================================================
     spawnBurst(x, y, color, count = 12) {
-      for (let i = 0; i < count; i++) {
-        const ang = Math.random() * Math.PI * 2;
-        const spd = 25 + Math.random() * 115;
+      if (this.particles.length >= 320) return;
+      const limit = Math.min(count, 320 - this.particles.length);
+      for (let i = 0; i < limit; i++) {
+        const ang = this.cosmeticRandom() * Math.PI * 2;
+        const spd = 25 + this.cosmeticRandom() * 115;
         this.particles.push({
           type: 'SPARK',
           x,
           y,
           vx: Math.cos(ang) * spd,
           vy: Math.sin(ang) * spd,
-          r: 2.5 + Math.random() * 4.5,
+          r: 2.5 + this.cosmeticRandom() * 4.5,
           color,
-          timer: 0.28 + Math.random() * 0.32,
+          timer: 0.28 + this.cosmeticRandom() * 0.32,
           maxTimer: 0.6
         });
       }
     }
 
     spawnFloatingText(x, y, text, color = '#ffffff') {
+      if (this.floatingTexts.length >= 64) return;
       this.floatingTexts.push({
         x,
         y,
@@ -3408,10 +5108,13 @@ window.ZH_ENGINE = (function () {
       if (typeof ctx.setTransform === 'function') {
         ctx.setTransform(dpr * z, 0, 0, dpr * z, 0, 0);
       }
+      if (window.ZH_UnitModels && typeof ZH_UnitModels.setZoomStrokeScale === 'function') {
+        ZH_UnitModels.setZoomStrokeScale(z);
+      }
 
       // Screen Shake
-      const sx = this.cam.shake > 0 ? (Math.random() - 0.5) * this.cam.shake : 0;
-      const sy = this.cam.shake > 0 ? (Math.random() - 0.5) * this.cam.shake : 0;
+      const sx = this.cam.shake > 0 ? (this.cosmeticRandom() - 0.5) * this.cam.shake : 0;
+      const sy = this.cam.shake > 0 ? (this.cosmeticRandom() - 0.5) * this.cam.shake : 0;
       ctx.translate(-this.cam.x + sx, -this.cam.y + sy);
 
       // 1. Terrain Background, Tactical Grid & Persistent Battlefield Decals (SYS-22)
@@ -3477,9 +5180,11 @@ window.ZH_ENGINE = (function () {
     renderMoveMarkers(ctx) {
       if (!this.moveMarkers || this.moveMarkers.length === 0) return;
       for (const m of this.moveMarkers) {
+        if (!Number.isFinite(m.x) || !Number.isFinite(m.y)) continue;
         const elapsed = Number.isFinite(m.t) ? m.t : (Number.isFinite(m.age) ? m.age : 0);
-        const p = clamp(elapsed / 0.45, 0, 1);
-        const r = 24 * (1 - p * 0.72);
+        const dur = Number.isFinite(m.duration) && m.duration > 0 ? m.duration : 0.45;
+        const p = clamp(elapsed / dur, 0, 1);
+        const r = Math.max(2, 24 * (1 - p * 0.72));
         const alpha = (1 - p) * 0.85;
         const isAttack = m.kind === 'attack' || m.color === '#ef4444';
         const isTactical = m.kind === 'tactical' || m.color === '#eab308';
@@ -3569,43 +5274,248 @@ window.ZH_ENGINE = (function () {
       }
     }
 
-    renderTerrain(ctx) {
-      ctx.fillStyle = this.mapDef.bgPrimary;
-      ctx.fillRect(this.cam.x, this.cam.y, this.cam.w, this.cam.h);
+    ensureBiomeTerrainCanvas() {
+      const mapId = (this.mapDef && this.mapDef.id) || 'SCORCHED_EARTH';
+      if (this.terrainCanvas && this.terrainCanvasMapId === mapId) {
+        return this.terrainCanvas;
+      }
+      if (typeof document === 'undefined' || typeof document.createElement !== 'function') return null;
 
-      // Strategic diagonal highway & central basin
-      ctx.strokeStyle = this.mapDef.roadColor;
-      ctx.lineWidth = 74;
-      ctx.beginPath();
-      ctx.moveTo(220, WORLD_SIZE - 220);
-      ctx.lineTo(WORLD_SIZE - 220, 220);
-      ctx.stroke();
+      const c = document.createElement('canvas');
+      if (!c || typeof c.getContext !== 'function') return null;
+      c.width = WORLD_SIZE;
+      c.height = WORLD_SIZE;
+      const tctx = c.getContext('2d');
+      if (!tctx || typeof tctx.createLinearGradient !== 'function' || typeof tctx.ellipse !== 'function') return null;
 
-      ctx.fillStyle = this.mapDef.bgSecondary;
-      ctx.beginPath();
-      ctx.arc(WORLD_SIZE / 2, WORLD_SIZE / 2, 340, 0, Math.PI * 2);
-      ctx.fill();
+      const primary = this.mapDef.bgPrimary || '#d4a359';
+      const secondary = this.mapDef.bgSecondary || '#b8863e';
+      const roadColor = this.mapDef.roadColor || '#8c6d46';
 
-      // Tactical Grid Lines
-      ctx.strokeStyle = this.mapDef.gridColor;
-      ctx.lineWidth = 1;
+      // 1. Base Biome Fill + Sun-Lit Top-Left to Bottom-Right Gradient
+      tctx.fillStyle = primary;
+      tctx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
+
+      const sunGrad = tctx.createLinearGradient(0, 0, WORLD_SIZE, WORLD_SIZE);
+      sunGrad.addColorStop(0, 'rgba(255, 250, 230, 0.12)');
+      sunGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0)');
+      sunGrad.addColorStop(1, 'rgba(15, 23, 42, 0.16)');
+      tctx.fillStyle = sunGrad;
+      tctx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
+
+      // 2. Stepped Ligne-Claire Topographic Contour Terraces & Mesas
+      const drawMesa = (cx, cy, rx, ry, rot, layers) => {
+        for (let i = layers; i >= 1; i--) {
+          const s = i / layers;
+          tctx.save();
+          tctx.translate(cx, cy);
+          tctx.rotate(rot);
+          // Drop shadow
+          tctx.fillStyle = 'rgba(15, 23, 42, 0.12)';
+          tctx.beginPath();
+          tctx.ellipse(5, 7, rx * s, ry * s, 0, 0, Math.PI * 2);
+          tctx.fill();
+          // Mesa terrace fill
+          tctx.fillStyle = i % 2 === 0 ? secondary : primary;
+          tctx.strokeStyle = 'rgba(15, 23, 42, 0.24)';
+          tctx.lineWidth = 2;
+          tctx.beginPath();
+          tctx.ellipse(0, 0, rx * s, ry * s, 0, 0, Math.PI * 2);
+          tctx.fill();
+          tctx.stroke();
+          tctx.restore();
+        }
+      };
+
+      // Base peripheral plateaus & central basin contours
+      drawMesa(WORLD_SIZE * 0.5, WORLD_SIZE * 0.5, 460, 390, 0.35, 3);
+      drawMesa(520, 620, 260, 180, -0.3, 2);
+      drawMesa(WORLD_SIZE - 520, WORLD_SIZE - 620, 260, 180, -0.3, 2);
+      drawMesa(640, WORLD_SIZE - 540, 290, 210, 0.4, 2);
+      drawMesa(WORLD_SIZE - 640, 540, 290, 210, 0.4, 2);
+
+      // 3. Map-Specific Biome Landmark Detail
+      if (mapId === 'TOURNAMENT_DESERT') {
+        // Sweeping wind-carved sand dune ridges
+        tctx.strokeStyle = 'rgba(120, 72, 24, 0.22)';
+        tctx.lineWidth = 3;
+        for (let d = 220; d < WORLD_SIZE - 200; d += 190) {
+          tctx.beginPath();
+          tctx.moveTo(120, d);
+          tctx.bezierCurveTo(WORLD_SIZE * 0.33, d - 65, WORLD_SIZE * 0.66, d + 65, WORLD_SIZE - 120, d - 20);
+          tctx.stroke();
+        }
+      } else if (mapId === 'FINAL_CRUSADE') {
+        // Riverbed / canal channels & agricultural plots
+        tctx.save();
+        tctx.strokeStyle = '#1e3a5f';
+        tctx.lineWidth = 56;
+        tctx.beginPath();
+        tctx.moveTo(0, WORLD_SIZE * 0.5);
+        tctx.bezierCurveTo(WORLD_SIZE * 0.35, WORLD_SIZE * 0.44, WORLD_SIZE * 0.65, WORLD_SIZE * 0.56, WORLD_SIZE, WORLD_SIZE * 0.5);
+        tctx.stroke();
+        tctx.strokeStyle = '#38bdf8';
+        tctx.globalAlpha = 0.28;
+        tctx.lineWidth = 36;
+        tctx.stroke();
+        tctx.restore();
+      } else if (mapId === 'DEFCON_6') {
+        // High-altitude snow drifts & ice shelves
+        tctx.fillStyle = 'rgba(241, 245, 249, 0.26)';
+        for (let i = 0; i < 14; i++) {
+          const sx = 240 + ((i * 517) % (WORLD_SIZE - 480));
+          const sy = 240 + ((i * 797) % (WORLD_SIZE - 480));
+          tctx.beginPath();
+          tctx.ellipse(sx, sy, 140 + (i % 3) * 45, 70 + (i % 2) * 35, (i * 0.4), 0, Math.PI * 2);
+          tctx.fill();
+        }
+      }
+
+      // 4. Strategic Tarmac Highway Network (Curbed edges + dashed median markings)
+      const drawHighway = (x1, y1, x2, y2, width) => {
+        tctx.save();
+        tctx.lineCap = 'round';
+        // Curb / shoulder
+        tctx.strokeStyle = 'rgba(15, 23, 42, 0.38)';
+        tctx.lineWidth = width + 10;
+        tctx.beginPath();
+        tctx.moveTo(x1, y1);
+        tctx.lineTo(x2, y2);
+        tctx.stroke();
+        // Asphalt / road surface
+        tctx.strokeStyle = roadColor;
+        tctx.lineWidth = width;
+        tctx.beginPath();
+        tctx.moveTo(x1, y1);
+        tctx.lineTo(x2, y2);
+        tctx.stroke();
+        // Center dashed tactical lane stripe
+        tctx.strokeStyle = 'rgba(254, 240, 138, 0.36)';
+        tctx.lineWidth = 2.5;
+        tctx.setLineDash([18, 16]);
+        tctx.beginPath();
+        tctx.moveTo(x1, y1);
+        tctx.lineTo(x2, y2);
+        tctx.stroke();
+        tctx.restore();
+      };
+
+      drawHighway(220, WORLD_SIZE - 220, WORLD_SIZE - 220, 220, 74);
+      drawHighway(380, 380, WORLD_SIZE - 380, WORLD_SIZE - 380, 52);
+
+      // 5. Central Tactical Plaza / Command Basin
+      tctx.save();
+      tctx.fillStyle = secondary;
+      tctx.strokeStyle = 'rgba(15, 23, 42, 0.35)';
+      tctx.lineWidth = 3;
+      tctx.beginPath();
+      tctx.arc(WORLD_SIZE / 2, WORLD_SIZE / 2, 260, 0, Math.PI * 2);
+      tctx.fill();
+      tctx.stroke();
+
+      tctx.strokeStyle = 'rgba(248, 250, 252, 0.16)';
+      tctx.setLineDash([12, 10]);
+      tctx.lineWidth = 2;
+      tctx.beginPath();
+      tctx.arc(WORLD_SIZE / 2, WORLD_SIZE / 2, 190, 0, Math.PI * 2);
+      tctx.stroke();
+      tctx.restore();
+
+      // 6. Deterministic Ligne-Claire Rock Outcrops & Scrub Clusters
+      for (let i = 0; i < 42; i++) {
+        const rx = 180 + ((i * 613 + 97) % (WORLD_SIZE - 360));
+        const ry = 180 + ((i * 929 + 181) % (WORLD_SIZE - 360));
+        // Keep away from spawn bases & center highway
+        if ((rx < 850 && ry > WORLD_SIZE - 850) || (rx > WORLD_SIZE - 850 && ry < 850)) continue;
+        const rSize = 9 + (i % 4) * 4;
+        tctx.save();
+        tctx.translate(rx, ry);
+        tctx.fillStyle = 'rgba(15, 23, 42, 0.22)';
+        tctx.beginPath();
+        tctx.ellipse(3, 4, rSize * 1.15, rSize * 0.75, 0, 0, Math.PI * 2);
+        tctx.fill();
+
+        tctx.fillStyle = secondary;
+        tctx.strokeStyle = 'rgba(15, 23, 42, 0.45)';
+        tctx.lineWidth = 1.5;
+        tctx.beginPath();
+        tctx.moveTo(-rSize, 0);
+        tctx.lineTo(-rSize * 0.4, -rSize * 0.75);
+        tctx.lineTo(rSize * 0.55, -rSize * 0.55);
+        tctx.lineTo(rSize, rSize * 0.2);
+        tctx.lineTo(0, rSize * 0.65);
+        tctx.closePath();
+        tctx.fill();
+        tctx.stroke();
+        tctx.restore();
+      }
+
+      // 7. Subtle Tactical Coordinate Grid
+      tctx.strokeStyle = this.mapDef.gridColor || 'rgba(15, 23, 42, 0.08)';
+      tctx.lineWidth = 1;
       const step = 160;
-      const xStart = Math.floor(this.cam.x / step) * step;
-      const yStart = Math.floor(this.cam.y / step) * step;
-      ctx.beginPath();
-      for (let x = xStart; x <= this.cam.x + this.cam.w; x += step) {
-        ctx.moveTo(x, this.cam.y);
-        ctx.lineTo(x, this.cam.y + this.cam.h);
+      tctx.beginPath();
+      for (let x = 0; x <= WORLD_SIZE; x += step) {
+        tctx.moveTo(x, 0);
+        tctx.lineTo(x, WORLD_SIZE);
       }
-      for (let y = yStart; y <= this.cam.y + this.cam.h; y += step) {
-        ctx.moveTo(this.cam.x, y);
-        ctx.lineTo(this.cam.x + this.cam.w, y);
+      for (let y = 0; y <= WORLD_SIZE; y += step) {
+        tctx.moveTo(0, y);
+        tctx.lineTo(WORLD_SIZE, y);
       }
-      ctx.stroke();
+      tctx.stroke();
+
+      this.terrainCanvas = c;
+      this.terrainCanvasMapId = mapId;
+      return c;
+    }
+
+    renderTerrain(ctx) {
+      const baked = this.ensureBiomeTerrainCanvas();
+      if (baked) {
+        const sx = clamp(Math.floor(this.cam.x), 0, WORLD_SIZE);
+        const sy = clamp(Math.floor(this.cam.y), 0, WORLD_SIZE);
+        const sw = clamp(Math.ceil(this.cam.w) + 2, 1, WORLD_SIZE - sx);
+        const sh = clamp(Math.ceil(this.cam.h) + 2, 1, WORLD_SIZE - sy);
+        if (sw > 0 && sh > 0) {
+          ctx.drawImage(baked, sx, sy, sw, sh, sx, sy, sw, sh);
+        }
+      } else {
+        ctx.fillStyle = this.mapDef.bgPrimary;
+        ctx.fillRect(this.cam.x, this.cam.y, this.cam.w, this.cam.h);
+      }
 
       // Phase 3 Persistent Battlefield Decals (Craters, Scorch Trails, Tank Treads)
       if (window.ZH_VFX && ZH_VFX.renderDecals) {
         ZH_VFX.renderDecals(ctx, this);
+      }
+
+      // GLA Rebuild Holes (Underground Reconstruction Tunnels)
+      if (this.rebuildHoles && this.rebuildHoles.length > 0) {
+        for (const h of this.rebuildHoles) {
+          if (h.team !== 0 && !this.isPositionVisible(h.x, h.y)) continue;
+          ctx.save();
+          ctx.fillStyle = '#0f172a';
+          ctx.strokeStyle = '#eab308';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(h.x, h.y, 24, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          const prog = clamp(1 - h.timer / (h.maxTimer || 25), 0, 1);
+          ctx.strokeStyle = '#22c55e';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(h.x, h.y, 29, -Math.PI / 2, -Math.PI / 2 + prog * Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = '#fde047';
+          ctx.font = 'bold 9px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(`GLA HOLE ${Math.ceil(h.timer)}s`, h.x, h.y + 40);
+          ctx.restore();
+        }
       }
     }
 
@@ -3632,25 +5542,31 @@ window.ZH_ENGINE = (function () {
     }
 
     renderMapResources(ctx) {
-      // 1. Supply Docks
+      // 1. Supply Docks (Bespoke 3D Ligne-Claire Compound + Dynamic Cargo Stacks)
       for (const d of this.supplyDocks) {
         ctx.save();
-        ctx.fillStyle = '#475569';
-        ctx.strokeStyle = '#94a3b8';
-        ctx.lineWidth = 2;
-        ctx.fillRect(d.x - 44, d.y - 34, 88, 68);
-        ctx.strokeRect(d.x - 44, d.y - 34, 88, 68);
+        const drew3D = window.ZH_UnitModels && typeof ZH_UnitModels.renderSupplyDock3D === 'function'
+          ? ZH_UnitModels.renderSupplyDock3D(ctx, d, this.gameTime)
+          : false;
 
-        const ratio = clamp(d.amount / d.maxAmount, 0, 1);
-        const crates = Math.ceil(ratio * 12);
-        for (let i = 0; i < crates; i++) {
-          const cx = d.x - 34 + (i % 4) * 18;
-          const cy = d.y - 24 + Math.floor(i / 4) * 16;
-          ctx.fillStyle = '#ca8a04';
-          ctx.fillRect(cx, cy, 14, 12);
-          ctx.strokeStyle = '#fef08a';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(cx, cy, 14, 12);
+        if (!drew3D) {
+          ctx.fillStyle = '#475569';
+          ctx.strokeStyle = '#94a3b8';
+          ctx.lineWidth = 2;
+          ctx.fillRect(d.x - 44, d.y - 34, 88, 68);
+          ctx.strokeRect(d.x - 44, d.y - 34, 88, 68);
+
+          const ratio = clamp(d.amount / d.maxAmount, 0, 1);
+          const crates = Math.ceil(ratio * 12);
+          for (let i = 0; i < crates; i++) {
+            const cx = d.x - 34 + (i % 4) * 18;
+            const cy = d.y - 24 + Math.floor(i / 4) * 16;
+            ctx.fillStyle = '#ca8a04';
+            ctx.fillRect(cx, cy, 14, 12);
+            ctx.strokeStyle = '#fef08a';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(cx, cy, 14, 12);
+          }
         }
 
         ctx.fillStyle = '#fef08a';
@@ -3761,15 +5677,20 @@ window.ZH_ENGINE = (function () {
       for (const c of this.salvageCrates) {
         if (!this.isPositionVisible(c.x, c.y)) continue;
         ctx.save();
-        ctx.fillStyle = '#a16207';
-        ctx.strokeStyle = '#fde047';
-        ctx.lineWidth = 2;
-        ctx.fillRect(c.x - 9, c.y - 9, 18, 18);
-        ctx.strokeRect(c.x - 9, c.y - 9, 18, 18);
-        ctx.fillStyle = '#fef08a';
-        ctx.font = 'bold 9px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('⚙', c.x, c.y + 3);
+        const drew3D = window.ZH_UnitModels && typeof ZH_UnitModels.renderSalvageCrate3D === 'function'
+          ? ZH_UnitModels.renderSalvageCrate3D(ctx, c, this.gameTime)
+          : false;
+        if (!drew3D) {
+          ctx.fillStyle = '#a16207';
+          ctx.strokeStyle = '#fde047';
+          ctx.lineWidth = 2;
+          ctx.fillRect(c.x - 9, c.y - 9, 18, 18);
+          ctx.strokeRect(c.x - 9, c.y - 9, 18, 18);
+          ctx.fillStyle = '#fef08a';
+          ctx.font = 'bold 9px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('⚙', c.x, c.y + 3);
+        }
         ctx.restore();
       }
     }
@@ -3935,9 +5856,10 @@ window.ZH_ENGINE = (function () {
 
     renderUnits(ctx, airPass) {
       for (const u of this.units) {
-        if (u.garrisonedIn || u.garrisonId) continue;
+        if (u.garrisonedIn || u.garrisonId || u.transportedIn) continue;
         if (Boolean(u.def.isAir) !== airPass) continue;
         if (u.team !== 0 && !u.unmanned && !this.isPositionVisible(u.x, u.y)) continue;
+        if (u.team !== 0 && u.stealthed && !(u.detectedTimer > 0)) continue;
 
         const team = u.team >= 0 ? this.teams[u.team] : null;
         const col = u.unmanned ? '#94a3b8' : (team ? team.faction.color : '#94a3b8');
@@ -3947,7 +5869,7 @@ window.ZH_ENGINE = (function () {
 
         ctx.save();
         if (u.stealthed) {
-          ctx.globalAlpha = u.team === 0 ? 0.55 : 0.28;
+          ctx.globalAlpha = u.team === 0 ? 0.55 : 0.48;
         }
 
         // China Horde Bonus Star Indicator
@@ -4055,7 +5977,11 @@ window.ZH_ENGINE = (function () {
         if (window.ZH_VFX && ZH_VFX.renderArticulatedUnit && team) {
           ctx.save();
           ctx.translate(u.x, u.y);
-          ZH_VFX.renderArticulatedUnit(ctx, u, team.faction);
+          ZH_VFX.renderArticulatedUnit(ctx, u, team.faction, {
+            zoom: (this.cam && this.cam.zoom) || 1,
+            selected: isSel,
+            hovered: isHov
+          });
           ctx.restore();
         } else {
           ctx.save();
@@ -4087,6 +6013,11 @@ window.ZH_ENGINE = (function () {
           this.queueLabel(u.x, u.y - r - 14, '[UNMANNED]', '#fde047', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 3);
         } else if (u.disabledTimer > 0 || u.empTimer > 0) {
           this.queueLabel(u.x, u.y - r - 14, '⚡ EMP', '#38bdf8', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 3);
+        } else if (u.passengers && u.passengers.length > 0) {
+          this.queueLabel(u.x, u.y - r - 14, `[${u.passengers.length}/${u.def.transportCapacity}]`, '#22c55e', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 3);
+        } else if (u.maxAmmo > 0 && (isSel || isHov || u.state === 'RELOAD_AIRFIELD')) {
+          const ammoLabel = u.state === 'RELOAD_AIRFIELD' ? `REARM ${u.ammo}/${u.maxAmmo}` : `AMMO ${u.ammo}/${u.maxAmmo}`;
+          this.queueLabel(u.x, u.y - r - 14, ammoLabel, '#38bdf8', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 2);
         } else if (u.state === 'GUARD') {
           ctx.fillStyle = '#38bdf8';
           ctx.font = 'bold 8px monospace';
@@ -4206,15 +6137,12 @@ window.ZH_ENGINE = (function () {
     }
 
     renderFogOfWar(ctx) {
-      if (this.fogCanvas && this.fogCtx && typeof this.fogCtx.createImageData === 'function') {
-        const probe = this.fogCtx.createImageData(1, 1);
-        if (probe && probe.data && typeof ctx.drawImage === 'function') {
-          ctx.save();
-          ctx.imageSmoothingEnabled = true;
-          ctx.drawImage(this.fogCanvas, 0, 0, WORLD_SIZE, WORLD_SIZE);
-          ctx.restore();
-          return;
-        }
+      if (this.fogCanvas && this._fogImageData && this._fogImageData.data && typeof ctx.drawImage === 'function') {
+        ctx.save();
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(this.fogCanvas, 0, 0, WORLD_SIZE, WORLD_SIZE);
+        ctx.restore();
+        return;
       }
       const gx0 = Math.max(0, Math.floor(this.cam.x / FOG_CELL));
       const gx1 = Math.min(FOG_GRID - 1, Math.ceil((this.cam.x + this.cam.w) / FOG_CELL));
@@ -4443,13 +6371,25 @@ window.ZH_ENGINE = (function () {
         inHorde: Boolean(u.inHorde),
         inPropaganda: Boolean(u.inPropaganda),
         stealthed: Boolean(u.stealthed),
+        stealthedWhenStill: Boolean(u.stealthedWhenStill),
+        stealthRevealTimer: u.stealthRevealTimer || 0,
+        detectedTimer: u.detectedTimer || 0,
         gpsScrambleTimer: u.gpsScrambleTimer || 0,
         unmanned: Boolean(u.unmanned),
         garrisonedIn: u.garrisonedIn || u.garrisonId || null,
+        transportedIn: u.transportedIn || null,
+        passengerIds: (u.passengers || []).map(p => p.id),
+        passengerUnits: (u.passengers || []).filter(p => !this.units.includes(p)).map(p => this.serializeUnit(p)),
+        ammo: u.ammo !== undefined ? u.ammo : (u.def && u.def.maxAmmo ? u.def.maxAmmo : 0),
+        maxAmmo: u.maxAmmo !== undefined ? u.maxAmmo : (u.def && u.def.maxAmmo ? u.def.maxAmmo : 0),
+        reloadTimer: u.reloadTimer || 0,
+        reloadingAtAirfieldId: u.reloadingAtAirfieldId || null,
+        supersonicReturn: Boolean(u.supersonicReturn),
         overlordAddon: u.overlordAddon || null,
         hasSpeakerTower: Boolean(u.hasSpeakerTower),
         hasGatlingCannon: Boolean(u.hasGatlingCannon),
         laserLockTimer: u.laserLockTimer || 0,
+        laserLockedTimer: u.laserLockedTimer || 0,
         abilityCooldown: u.abilityCooldown || 0,
         disabledTimer: u.disabledTimer || 0,
         empTimer: u.empTimer || 0,
@@ -4461,7 +6401,12 @@ window.ZH_ENGINE = (function () {
         hackTimer: u.hackTimer || 0,
         controlGroup: u.controlGroup || null,
         aiSquad: u.aiSquad || null,
+        stance: u.stance || 'GUARD',
         waypoints: Array.isArray(u.waypoints) ? u.waypoints.map(w => ({ x: w.x, y: w.y })) : [],
+        path: Array.isArray(u.path) ? u.path.map(w => ({ x: w.x, y: w.y })) : null,
+        repathTimer: u.repathTimer || 0,
+        scanTimer: u.scanTimer || 0,
+        scanCooldown: u.scanCooldown || 0,
         state: u.state || 'IDLE',
         targetX: u.targetX,
         targetY: u.targetY,
@@ -4476,16 +6421,26 @@ window.ZH_ENGINE = (function () {
     }
 
     hydrateUnit(raw) {
-      const def = ZH_DATA.UNITS[raw.defId];
-      if (!def) return null;
+      const baseDef = ZH_DATA.UNITS[raw.defId];
+      if (!baseDef) return null;
+      const hasSpeaker = Boolean(raw.hasSpeakerTower || raw.overlordAddon === 'SPEAKER_TOWER');
+      const def = hasSpeaker
+        ? Object.assign({}, baseDef, { isPropagandaCarrier: true, auraRadius: 195 })
+        : baseDef;
       return {
         ...raw,
         isUnit: true,
         def,
         overlordAddon: raw.overlordAddon || null,
+        hasSpeakerTower: hasSpeaker,
+        hasGatlingCannon: Boolean(raw.hasGatlingCannon || raw.overlordAddon === 'GATLING_CANNON'),
         garrisonedIn: raw.garrisonedIn || null,
         garrisonId: raw.garrisonedIn || null,
-        waypoints: Array.isArray(raw.waypoints) ? raw.waypoints.map(w => ({ x: w.x, y: w.y })) : []
+        transportedIn: raw.transportedIn || null,
+        passengers: [],
+        stance: raw.stance || 'GUARD',
+        waypoints: Array.isArray(raw.waypoints) ? raw.waypoints.map(w => ({ x: w.x, y: w.y })) : [],
+        path: Array.isArray(raw.path) ? raw.path.map(w => ({ x: w.x, y: w.y })) : null
       };
     }
 
@@ -4497,11 +6452,15 @@ window.ZH_ENGINE = (function () {
         }
       }
 
+      if (this.rng && typeof this.rng.getState === 'function') {
+        this.simRngState = this.rng.getState();
+      }
+
       return {
         format: 'CNC_ZH_SAVE_V2',
         version: '2.0.0',
         savedAt: new Date().toISOString(),
-        nextEntityId,
+        nextEntityId: this.nextEntityId || nextEntityId,
         mode: this.mode,
         challengeIndex: this.challengeIndex,
         difficulty: this.difficulty,
@@ -4509,6 +6468,9 @@ window.ZH_ENGINE = (function () {
         gameTime: this.gameTime,
         matchTime: this.gameTime,
         simTick: this.simTick || 0,
+        matchSeed: this.matchSeed || 20261022,
+        simRngState: this.simRngState || 20261022,
+        commandLog: (this.commandLog || []).slice(-500),
         gameSpeed: this.gameSpeed,
         paused: this.paused,
         gameOver: this.gameOver,
@@ -4517,6 +6479,10 @@ window.ZH_ENGINE = (function () {
         hordeCheckTimer: this.hordeCheckTimer,
         fogUpdateTimer: this.fogUpdateTimer,
         underAttackTimer: this.underAttackTimer,
+        telemetryTimer: this.telemetryTimer || 0,
+        telemetryHistory: (this.telemetryHistory || []).slice(-120),
+        navDirty: Boolean(this.navDirty),
+        challengeTwistTriggered: Boolean(this.challengeTwistTriggered),
         lastAlertPos: this.lastAlertPos ? { ...this.lastAlertPos } : null,
         cam: { ...this.cam },
         selectedIds: Array.from(this.selectedIds),
@@ -4525,6 +6491,7 @@ window.ZH_ENGINE = (function () {
         teams: this.teams.map(t => ({
           id: t.id,
           isAI: t.isAI,
+          difficulty: t.difficulty || this.difficulty,
           generalId: t.generalId,
           factionId: t.factionId,
           credits: t.credits,
@@ -4533,6 +6500,7 @@ window.ZH_ENGINE = (function () {
           isLowPower: t.isLowPower,
           hasRadar: t.hasRadar,
           hasTechCenter: t.hasTechCenter,
+          strategyBattlePlan: t.strategyBattlePlan || 'BOMBARDMENT',
           rank: t.rank,
           xp: t.xp,
           generalPoints: t.generalPoints,
@@ -4564,6 +6532,12 @@ window.ZH_ENGINE = (function () {
           superweaponTimer: b.superweaponTimer || 0,
           superweaponMaxTimer: b.superweaponMaxTimer || 150,
           superweaponReady: Boolean(b.superweaponReady),
+          battlePlan: b.battlePlan || 'BOMBARDMENT',
+          captureProgress: b.captureProgress || 0,
+          capturingTeam: b.capturingTeam !== undefined ? b.capturingTeam : -1,
+          laserLockTimer: b.laserLockTimer || 0,
+          laserLockedTimer: b.laserLockedTimer || 0,
+          pdlTimer: b.pdlTimer || 0,
           controlGroup: b.controlGroup || null
         })),
         units: this.units.map(u => this.serializeUnit(u)),
@@ -4605,26 +6579,71 @@ window.ZH_ENGINE = (function () {
         })),
         salvageCrates: this.salvageCrates.map(c => ({ ...c })),
         hazards: this.hazards.map(h => ({ ...h })),
+        projectiles: (this.projectiles || []).map(p => ({ ...p })),
+        activeBeams: (this.activeBeams || []).map(ab => ({ ...ab })),
+        spyDrones: (this.spyDrones || []).map(sd => ({ ...sd })),
+        spectreGunships: (this.spectreGunships || []).map(sg => ({ ...sg })),
+        rebuildHoles: (this.rebuildHoles || []).map(rh => ({ ...rh })),
         decals: (this.decals || []).slice(-120).map(d => ({ ...d })),
         aiState: window.ZH_AI && typeof ZH_AI.serializeState === 'function' ? ZH_AI.serializeState() : null
       };
     }
 
+    validateSavePayload(snapshot) {
+      if (!snapshot || typeof snapshot !== 'object') {
+        return { ok: false, reason: 'Snapshot is not an object' };
+      }
+      if (snapshot.format !== 'CNC_ZH_SAVE_V2') {
+        return { ok: false, reason: 'Invalid or unsupported .zhsave format' };
+      }
+      if (snapshot.version && snapshot.version !== '2.0.0') {
+        return { ok: false, reason: `Unsupported save schema version: ${snapshot.version}` };
+      }
+      if (!Array.isArray(snapshot.teams) || snapshot.teams.length < 2) {
+        return { ok: false, reason: 'Save snapshot requires at least 2 teams' };
+      }
+      if (Array.isArray(snapshot.buildings)) {
+        for (const b of snapshot.buildings) {
+          if (!b || !b.defId || !ZH_DATA.BUILDINGS[b.defId]) {
+            return { ok: false, reason: `Unknown building defId in save: ${b && b.defId}` };
+          }
+        }
+      }
+      if (Array.isArray(snapshot.units)) {
+        for (const u of snapshot.units) {
+          if (!u || !u.defId || !ZH_DATA.UNITS[u.defId]) {
+            return { ok: false, reason: `Unknown unit defId in save: ${u && u.defId}` };
+          }
+        }
+      }
+      return { ok: true };
+    }
+
     deserializeState(snapshot) {
-      if (!snapshot || snapshot.format !== 'CNC_ZH_SAVE_V2') {
-        throw new Error('Invalid or unsupported .zhsave format');
+      const check = this.validateSavePayload(snapshot);
+      if (!check.ok) {
+        this.lastCommandRejection = { ok: false, code: 'INVALID_SAVE', reason: check.reason || 'Invalid or unsupported .zhsave format' };
+        return false;
       }
 
-      nextEntityId = snapshot.nextEntityId || 1000;
+      this.nextEntityId = snapshot.nextEntityId || 1000;
+      nextEntityId = this.nextEntityId;
       this.mode = snapshot.mode || 'SKIRMISH';
       this.challengeIndex = snapshot.challengeIndex || 0;
       this.difficulty = snapshot.difficulty || 'NORMAL';
       this.mapDef = ZH_DATA.MAPS.find(m => m.id === snapshot.mapId) || ZH_DATA.MAPS[0];
       this.mapData = this.mapDef;
 
-      this.gameTime = snapshot.gameTime || snapshot.matchTime || 0;
+      this.gameTime = snapshot.gameTime !== undefined ? snapshot.gameTime : (snapshot.matchTime || 0);
       this.matchTime = this.gameTime;
       this.simTick = snapshot.simTick || 0;
+      this.matchSeed = snapshot.matchSeed || 20261022;
+      this.simRngState = snapshot.simRngState !== undefined ? snapshot.simRngState : this.matchSeed;
+      if (this.rng && typeof this.rng.setState === 'function') {
+        this.rng.setState(this.simRngState);
+      }
+      this.commandLog = Array.isArray(snapshot.commandLog) ? snapshot.commandLog.slice() : [];
+      this.pendingCommands = [];
       this.accumulator = 0;
       this.gameSpeed = snapshot.gameSpeed || 1.0;
       this.paused = Boolean(snapshot.paused);
@@ -4635,6 +6654,10 @@ window.ZH_ENGINE = (function () {
       this.hordeCheckTimer = snapshot.hordeCheckTimer || 0;
       this.fogUpdateTimer = snapshot.fogUpdateTimer || 0;
       this.underAttackTimer = snapshot.underAttackTimer || 0;
+      this.telemetryTimer = snapshot.telemetryTimer || 0;
+      this.telemetryHistory = Array.isArray(snapshot.telemetryHistory) ? snapshot.telemetryHistory.slice() : [];
+      this.navDirty = Boolean(snapshot.navDirty);
+      this.challengeTwistTriggered = Boolean(snapshot.challengeTwistTriggered);
       this.lastAlertPos = snapshot.lastAlertPos ? { ...snapshot.lastAlertPos } : null;
 
       if (snapshot.cam) {
@@ -4651,6 +6674,7 @@ window.ZH_ENGINE = (function () {
         return {
           id: t.id,
           isAI: t.isAI,
+          difficulty: t.difficulty || this.difficulty,
           generalId: generalDef.id,
           general: generalDef,
           factionId: factionDef.id,
@@ -4661,6 +6685,7 @@ window.ZH_ENGINE = (function () {
           isLowPower: Boolean(t.isLowPower),
           hasRadar: t.hasRadar !== undefined ? t.hasRadar : true,
           hasTechCenter: Boolean(t.hasTechCenter),
+          strategyBattlePlan: t.strategyBattlePlan || 'BOMBARDMENT',
           rank: t.rank || 1,
           xp: t.xp || 0,
           generalPoints: t.generalPoints !== undefined ? t.generalPoints : 1,
@@ -4693,6 +6718,9 @@ window.ZH_ENGINE = (function () {
           ...b,
           isBuilding: true,
           def,
+          battlePlan: b.battlePlan || 'BOMBARDMENT',
+          captureProgress: b.captureProgress || 0,
+          capturingTeam: b.capturingTeam !== undefined ? b.capturingTeam : -1,
           queue: (b.queue || []).map(q => ({ ...q }))
         };
       }).filter(Boolean);
@@ -4745,6 +6773,28 @@ window.ZH_ENGINE = (function () {
       });
       this.garrisonStructures = this.garrisonBunkers;
 
+      // Re-link transport passengers
+      for (const u of this.units) {
+        const linkedPassengers = (u.passengerIds || []).map(id => unitById.get(id)).filter(Boolean);
+        if (Array.isArray(u.passengerUnits) && u.passengerUnits.length > 0) {
+          for (const rawP of u.passengerUnits) {
+            if (!unitById.has(rawP.id)) {
+              const hydratedP = this.hydrateUnit(rawP);
+              if (hydratedP) {
+                hydratedP.transportedIn = u.id;
+                this.units.push(hydratedP);
+                unitById.set(hydratedP.id, hydratedP);
+                linkedPassengers.push(hydratedP);
+              }
+            }
+          }
+        }
+        linkedPassengers.forEach(p => {
+          p.transportedIn = u.id;
+        });
+        u.passengers = linkedPassengers;
+      }
+
       // Re-link targetEntity references on units
       const allEntitiesById = new Map();
       this.buildings.forEach(b => allEntitiesById.set(b.id, b));
@@ -4759,15 +6809,18 @@ window.ZH_ENGINE = (function () {
         }
       }
 
-      // Restore Crates, Hazards, Decals & Transient VFX
+      // Restore Crates, Hazards, Projectiles, Beams, Drones, Gunships, Rebuild Holes & Decals
       this.salvageCrates = (snapshot.salvageCrates || []).map(c => ({ ...c }));
       this.hazards = (snapshot.hazards || []).map(h => ({ ...h }));
+      this.projectiles = (snapshot.projectiles || []).map(p => ({ ...p }));
+      this.activeBeams = (snapshot.activeBeams || []).map(ab => ({ ...ab }));
+      this.spyDrones = (snapshot.spyDrones || []).map(sd => ({ ...sd }));
+      this.spectreGunships = (snapshot.spectreGunships || []).map(sg => ({ ...sg }));
+      this.rebuildHoles = (snapshot.rebuildHoles || []).map(rh => ({ ...rh }));
       this.decals = (snapshot.decals || []).map(d => ({ ...d }));
-      this.projectiles = [];
       this.particles = [];
       this.shockwaves = [];
       this.mushroomClouds = [];
-      this.activeBeams = [];
       this.floatingTexts = [];
       this.radarPings = [];
 
@@ -4792,8 +6845,9 @@ window.ZH_ENGINE = (function () {
       // Restore Fog of War
       if (Array.isArray(snapshot.fog) && snapshot.fog.length === this.fog.length) {
         this.fog.set(snapshot.fog);
+      } else {
+        this.updateFogOfWar();
       }
-      this.updateFogOfWar();
       this.minimapTerrain = null;
 
       // Restore AI State
@@ -4841,8 +6895,18 @@ window.ZH_ENGINE = (function () {
         raw = GameEngine._memorySaveSlots[slotKey];
       }
       if (raw) {
-        const snapshot = JSON.parse(raw);
-        return this.deserializeState(snapshot);
+        try {
+          const snapshot = JSON.parse(raw);
+          const check = this.validateSavePayload(snapshot);
+          if (!check.ok) {
+            this.lastCommandRejection = { ok: false, code: 'INVALID_SAVE', reason: check.reason };
+            return false;
+          }
+          return this.deserializeState(snapshot);
+        } catch (err) {
+          this.lastCommandRejection = { ok: false, code: 'CORRUPT_SAVE', reason: err.message };
+          return false;
+        }
       }
       return false;
     }
@@ -4852,8 +6916,18 @@ window.ZH_ENGINE = (function () {
     }
 
     importSaveJSON(jsonString) {
-      const snapshot = typeof jsonString === 'string' ? JSON.parse(jsonString) : jsonString;
-      return this.deserializeState(snapshot);
+      try {
+        const snapshot = typeof jsonString === 'string' ? JSON.parse(jsonString) : jsonString;
+        const check = this.validateSavePayload(snapshot);
+        if (!check.ok) {
+          this.lastCommandRejection = { ok: false, code: 'INVALID_SAVE', reason: check.reason };
+          return false;
+        }
+        return this.deserializeState(snapshot);
+      } catch (err) {
+        this.lastCommandRejection = { ok: false, code: 'CORRUPT_SAVE', reason: err.message };
+        return false;
+      }
     }
   }
 

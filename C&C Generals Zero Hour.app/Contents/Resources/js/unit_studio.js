@@ -141,6 +141,22 @@ window.ZH_UNIT_STUDIO = (function () {
         speed: 0
       });
     }
+    if (window.ZH_UNIT_MODELS && typeof window.ZH_UNIT_MODELS.getModelSpec === 'function') {
+      const spec = window.ZH_UNIT_MODELS.getModelSpec(defId);
+      if (spec) {
+        return {
+          id: spec.id,
+          name: spec.name,
+          faction: spec.faction || 'USA',
+          category: spec.category || 'DEFENSE',
+          cost: 600,
+          hp: 1000,
+          size: 72,
+          radius: 25,
+          speed: 0
+        };
+      }
+    }
     return null;
   }
 
@@ -208,10 +224,21 @@ window.ZH_UNIT_STUDIO = (function () {
   // ==========================================================================
   function getAllUnitsList() {
     if (!window.ZH_DATA) return [];
-    const units = Object.values(window.ZH_DATA.UNITS || {});
-    const buildings = Object.values(window.ZH_DATA.BUILDINGS || {}).map((b) => resolveStudioEntityDef(b.id));
-    const techBuildings = Object.values(window.ZH_DATA.TECH_BUILDINGS || {}).map((tb) => resolveStudioEntityDef(tb.id));
-    return units.concat(buildings, techBuildings).filter(Boolean);
+    const seen = new Set();
+    const list = [];
+    const pushItem = (item) => {
+      if (item && item.id && !seen.has(item.id)) {
+        seen.add(item.id);
+        list.push(item);
+      }
+    };
+    Object.values(window.ZH_DATA.UNITS || {}).forEach(pushItem);
+    Object.values(window.ZH_DATA.BUILDINGS || {}).forEach((b) => pushItem(resolveStudioEntityDef(b.id)));
+    Object.values(window.ZH_DATA.TECH_BUILDINGS || {}).forEach((tb) => pushItem(resolveStudioEntityDef(tb.id)));
+    if (window.ZH_UNIT_MODELS && typeof window.ZH_UNIT_MODELS.getRegistry === 'function') {
+      Object.keys(window.ZH_UNIT_MODELS.getRegistry()).forEach((id) => pushItem(resolveStudioEntityDef(id)));
+    }
+    return list;
   }
 
   function getFilteredUnitsList() {

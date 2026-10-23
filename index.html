@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Command &amp; Conquer: Generals – Zero Hour (macOS Clean-Room Edition)</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='10' fill='%230d110b' stroke='%23eab308' stroke-width='4'/><polygon points='32,8 39,24 56,26 43,38 47,55 32,46 17,55 21,38 8,26 25,24' fill='%23eab308'/></svg>" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -27,7 +28,7 @@
         🚜 Dozer / Worker [B]
       </button>
       <button class="hud-btn" id="btn-select-combat" title="Select all combat units on the battlefield [Q]">
-        ⚔️ All Combat Units
+        ⚔️ All Combat Units [Q]
       </button>
       <button class="hud-btn" id="btn-hud-unit-studio" title="Open Interactive 3D/2.5D Unit Design Studio (Shortcut: U)">
         🛠️ Unit Studio [U]
@@ -73,6 +74,29 @@
       <div id="taunt-general-name">☣️ Dr. Thrax</div>
       <div id="taunt-general-text">"Take a deep breath, General!"</div>
     </div>
+
+    <!-- Phase 1 (6.2) First-Match 3-Beat Tactical Onboarding Guide -->
+    <aside id="onboarding-guide" class="onboarding-guide" role="region" aria-label="Tactical Field Briefing">
+      <div class="onboarding-header">
+        <span class="onboarding-kicker">⚡ TACTICAL FIELD BRIEFING (3 STEPS)</span>
+        <button id="btn-dismiss-onboarding" class="onboarding-dismiss-btn" type="button" title="Dismiss Field Briefing">✕</button>
+      </div>
+      <ol class="onboarding-beats">
+        <li id="onboarding-beat-1" class="onboarding-beat">
+          <span class="beat-check">1</span>
+          <span class="beat-text">Press <b>[B]</b> to select your Builder &amp; construct a <b>Supply Center / Stash</b> near a Gold Dock.</span>
+        </li>
+        <li id="onboarding-beat-2" class="onboarding-beat">
+          <span class="beat-check">2</span>
+          <span class="beat-text">Construct a <b>Power Plant &amp; Barracks</b>, then train your first <b>Combat Squad</b>.</span>
+        </li>
+        <li id="onboarding-beat-3" class="onboarding-beat">
+          <span class="beat-check">3</span>
+          <span class="beat-text">Press <b>[Q]</b> (or drag-select) your squad, press <b>[A]</b>, and click toward the enemy to <b>Attack-Move</b>.</span>
+        </li>
+      </ol>
+      <div class="onboarding-footer">Victory Rule: Destroy every enemy building and builder.</div>
+    </aside>
   </main>
 
   <!-- ==================== BOTTOM ZERO HOUR COMMAND BAR ==================== -->
@@ -328,22 +352,25 @@
             </div>
 
             <div class="doctrine-card">
-              <div class="doctrine-header-label">OPFOR THREAT LEVEL &amp; ROE:</div>
+              <div class="doctrine-header-label">OPFOR THREAT LEVEL, STARTING CREDITS &amp; ROE:</div>
               <div id="difficulty-pills" class="difficulty-pills">
-                <button class="diff-btn" data-diff="EASY">CADET [LVL-1]</button>
-                <button class="diff-btn active" data-diff="NORMAL">COMMANDER [LVL-2]</button>
-                <button class="diff-btn" data-diff="HARD">GENERAL [LVL-3]</button>
+                <button class="diff-btn" data-diff="EASY">CADET [AI $8.5K]</button>
+                <button class="diff-btn active" data-diff="NORMAL">COMMANDER [AI $10.5K]</button>
+                <button class="diff-btn" data-diff="HARD">GENERAL [AI $14.0K]</button>
               </div>
               <div id="difficulty-intel-desc" class="difficulty-intel-desc">
-                Commander Doctrine: Balanced multi-squad combined arms, active tech capture &amp; coordinated flank attacks.
+                Commander Doctrine (AI $10,500 vs You $10,000): Balanced combined-arms squads, 55s first attack, active tech capture &amp; coordinated flanks.
+              </div>
+              <div id="victory-rule-banner" class="victory-rule-banner">
+                🏆 <b>Victory Rule:</b> Destroy every enemy building and builder.
               </div>
               <div class="start-utility-bar">
-                <button class="hud-btn" id="btn-open-unit-studio" type="button">[3D] UNIT ARMORY</button>
-                <a class="hud-btn" id="btn-open-building-diorama" href="usa-buildings-diorama.html" style="text-decoration:none; text-align:center;">[2.5D] BUILDINGS</a>
+                <button class="hud-btn" id="btn-open-unit-studio" type="button">[3D] ARMORY</button>
+                <a class="hud-btn" id="btn-open-building-diorama" href="usa-buildings-diorama.html" style="text-decoration:none; text-align:center;">[CAD] BUILDINGS</a>
                 <button class="hud-btn" id="btn-open-powers-preview" type="button">[PWR] TECH TREE</button>
                 <button class="hud-btn" id="btn-import-save-menu" type="button">[LOAD] .ZHSAVE</button>
-                <button class="hud-btn" id="btn-quick-load-menu" type="button">[F9] QUICKSAVE</button>
-                <button class="hud-btn" id="btn-start-settings" type="button">[CFG] SYS OPTIONS</button>
+                <button class="hud-btn" id="btn-quick-load-menu" type="button">[F9] QUICKLOAD</button>
+                <button class="hud-btn" id="btn-start-settings" type="button">[CFG] OPTIONS</button>
                 <button class="hud-btn" id="btn-auto-sim" type="button" hidden>[SIM] AUTO-PLAY</button>
               </div>
             </div>
@@ -385,8 +412,8 @@
         </div>
         <div class="studio-header-actions">
           <div class="studio-progress-box">
-            <span id="studio-upgrade-progress" class="studio-progress-text">2 / 33 Units Upgraded (HD 3D)</span>
-            <div class="studio-progress-track"><div id="studio-upgrade-bar" class="studio-progress-fill" style="width: 12%;"></div></div>
+            <span id="studio-upgrade-progress" class="studio-progress-text">33 / 33 Units Upgraded (HD 3D)</span>
+            <div class="studio-progress-track"><div id="studio-upgrade-bar" class="studio-progress-fill" style="width: 100%;"></div></div>
           </div>
           <button class="hud-btn studio-deploy-btn" id="btn-studio-test-battlefield" type="button">⚔️ Test Squad on Battlefield</button>
           <button class="hud-btn studio-close-btn" id="btn-close-unit-studio" type="button">✕ Close [U]</button>
@@ -596,6 +623,7 @@
   </div>
 
   <!-- Clean-Room Zero Hour Engine Scripts (Phase 3 SAGE Stack) -->
+  <script src="js/rng.js"></script>
   <script src="js/data.js"></script>
   <script src="js/spatial.js"></script>
   <script src="js/nav.js"></script>

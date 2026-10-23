@@ -967,9 +967,44 @@ window.ZH_SIMULATOR = (function () {
     }
   }
 
+  function isDevModeEnabled() {
+    try {
+      if (typeof window !== 'undefined' && window.ZH_DEV_MODE === true) return true;
+      if (typeof window !== 'undefined' && window.location && typeof window.location.search === 'string') {
+        if (window.location.search.includes('dev=1')) return true;
+      }
+      if (typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function') {
+        if (localStorage.getItem('zh_dev') === '1') return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   function initHUD() {
     if (typeof document === 'undefined') return;
-    if (hudPanelEl) return;
+    const devActive = isDevModeEnabled();
+
+    const topBarAutoSimBtn = document.getElementById('btn-auto-sim');
+    if (topBarAutoSimBtn) {
+      topBarAutoSimBtn.hidden = !devActive;
+      topBarAutoSimBtn.style.display = devActive ? 'inline-flex' : 'none';
+      if (!topBarAutoSimBtn.dataset.simBound) {
+        topBarAutoSimBtn.dataset.simBound = '1';
+        topBarAutoSimBtn.addEventListener('click', () => {
+          if (!activeSimulator) return;
+          activeSimulator.enabled = !activeSimulator.enabled;
+          if (hudPanelEl) {
+            hudPanelEl.style.display = (activeSimulator.enabled || isDevModeEnabled()) ? '' : 'none';
+          }
+          syncHUDPanel();
+        });
+      }
+    }
+
+    if (hudPanelEl) {
+      hudPanelEl.style.display = devActive ? '' : 'none';
+      return;
+    }
 
     const panel = document.getElementById('zh-sim-hud-panel') || document.createElement('div');
     panel.id = 'zh-sim-hud-panel';
@@ -987,8 +1022,9 @@ window.ZH_SIMULATOR = (function () {
       'font-size:11px',
       'color:#e2e8f0',
       'box-shadow:0 8px 24px rgba(0,0,0,0.65)',
-      'backdrop-filter:blur(6px)'
-    ].join(';');
+      'backdrop-filter:blur(6px)',
+      devActive ? '' : 'display:none'
+    ].filter(Boolean).join(';');
 
     panel.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;border-bottom:1px solid rgba(56,189,248,0.25);padding-bottom:5px;gap:6px;">
@@ -1043,16 +1079,6 @@ window.ZH_SIMULATOR = (function () {
       activeSimulator.enabled = !activeSimulator.enabled;
       syncHUDPanel();
     });
-
-    const topBarAutoSimBtn = document.getElementById('btn-auto-sim');
-    if (topBarAutoSimBtn && !topBarAutoSimBtn.dataset.simBound) {
-      topBarAutoSimBtn.dataset.simBound = '1';
-      topBarAutoSimBtn.addEventListener('click', () => {
-        if (!activeSimulator) return;
-        activeSimulator.enabled = !activeSimulator.enabled;
-        syncHUDPanel();
-      });
-    }
 
     const planSelect = document.getElementById('zh-sim-plan-select');
     planSelect.addEventListener('change', e => {

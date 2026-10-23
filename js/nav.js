@@ -155,33 +155,84 @@
 
       const sCell = this.worldToCell(startX, startY);
       const gCellRaw = this.worldToCell(goalX, goalY);
+      const goalWasBlocked = this.isBlocked(gCellRaw.col, gCellRaw.row, locomotor);
       const start = this.findNearestPassable(sCell.col, sCell.row, locomotor, 4);
       const goal = this.findNearestPassable(gCellRaw.col, gCellRaw.row, locomotor, 5);
+      const effectiveGoal = goalWasBlocked ? this.cellToWorld(goal.col, goal.row) : { x: goalX, y: goalY };
 
       if (start.col === goal.col && start.row === goal.row) {
-        return [{ x: goalX, y: goalY }];
+        return [{ x: effectiveGoal.x, y: effectiveGoal.y }];
       }
 
       // Check direct line-of-sight first (fast path)
       if (this.hasLineOfSight(start.col, start.row, goal.col, goal.row, locomotor)) {
-        return [{ x: goalX, y: goalY }];
+        return [{ x: effectiveGoal.x, y: effectiveGoal.y }];
       }
 
       const cols = this.cols;
       const total = cols * this.rows;
-      const gScore = new Float32Array(total);
+      if (!this._gScoreBuf || this._gScoreBuf.length !== total) {
+        this._gScoreBuf = new Float32Array(total);
+        this._cameFromBuf = new Int32Array(total);
+        this._closedBuf = new Uint8Array(total);
+      }
+      const gScore = this._gScoreBuf;
       gScore.fill(Infinity);
-      const cameFrom = new Int32Array(total);
+      const cameFrom = this._cameFromBuf;
       cameFrom.fill(-1);
-      const closed = new Uint8Array(total);
+      const closed = this._closedBuf;
+      closed.fill(0);
 
       const startIdx = start.row * cols + start.col;
       const goalIdx = goal.row * cols + goal.col;
       gScore[startIdx] = 0;
 
-      // Simple binary min-heap on [fScore, idx]
+      // True binary min-heap on [fScore, idx]
       const openIdx = [startIdx];
       const openF = [Math.hypot(goal.col - start.col, goal.row - start.row)];
+
+      const heapPush = (nodeIdx, fVal) => {
+        let i = openIdx.length;
+        openIdx.push(nodeIdx);
+        openF.push(fVal);
+        while (i > 0) {
+          const p = (i - 1) >> 1;
+          if (openF[p] <= fVal) break;
+          openIdx[i] = openIdx[p];
+          openF[i] = openF[p];
+          openIdx[p] = nodeIdx;
+          openF[p] = fVal;
+          i = p;
+        }
+      };
+
+      const heapPop = () => {
+        const topIdx = openIdx[0];
+        const lastIdx = openIdx.pop();
+        const lastF = openF.pop();
+        const n = openIdx.length;
+        if (n > 0) {
+          openIdx[0] = lastIdx;
+          openF[0] = lastF;
+          let i = 0;
+          while (true) {
+            const left = (i << 1) + 1;
+            const right = left + 1;
+            let smallest = i;
+            if (left < n && openF[left] < openF[smallest]) smallest = left;
+            if (right < n && openF[right] < openF[smallest]) smallest = right;
+            if (smallest === i) break;
+            const tmpIdx = openIdx[i];
+            const tmpF = openF[i];
+            openIdx[i] = openIdx[smallest];
+            openF[i] = openF[smallest];
+            openIdx[smallest] = tmpIdx;
+            openF[smallest] = tmpF;
+            i = smallest;
+          }
+        }
+        return topIdx;
+      };
 
       const dirs = [
         [1, 0, 1.0], [-1, 0, 1.0], [0, 1, 1.0], [0, -1, 1.0],
@@ -193,16 +244,7 @@
       let iter = 0;
 
       while (openIdx.length > 0 && iter++ < maxIterations) {
-        // Pop lowest F
-        let minPos = 0;
-        for (let i = 1; i < openF.length; i++) {
-          if (openF[i] < openF[minPos]) minPos = i;
-        }
-        const currIdx = openIdx[minPos];
-        openIdx[minPos] = openIdx[openIdx.length - 1];
-        openF[minPos] = openF[openF.length - 1];
-        openIdx.pop();
-        openF.pop();
+        const currIdx = heapPop();
 
         if (currIdx === goalIdx) {
           bestIdx = goalIdx;
@@ -239,8 +281,7 @@
             cameFrom[nIdx] = currIdx;
             gScore[nIdx] = tentativeG;
             const h = Math.hypot(goal.col - nc, goal.row - nr);
-            openIdx.push(nIdx);
-            openF.push(tentativeG + h * 1.15);
+            heapPush(nIdx, tentativeG + h * 1.15);
           }
         }
       }
@@ -258,7 +299,7 @@
       rawCells.reverse();
 
       if (rawCells.length === 0) {
-        return [{ x: goalX, y: goalY }];
+        return [{ x: effectiveGoal.x, y: effectiveGoal.y }];
       }
 
       // String-pulling path smoothing
@@ -279,8 +320,8 @@
         i = furthest + 1;
       }
 
-      // Replace final waypoint with exact goal coordinates
-      waypoints[waypoints.length - 1] = { x: goalX, y: goalY };
+      // Replace final waypoint with exact goal coordinates (or passable fallback if goal cell was blocked)
+      waypoints[waypoints.length - 1] = { x: effectiveGoal.x, y: effectiveGoal.y };
       return waypoints;
     }
 

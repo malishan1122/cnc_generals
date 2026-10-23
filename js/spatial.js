@@ -24,34 +24,51 @@ window.ZH_SPATIAL = (function () {
   // 1. SpatialHashGrid (2D Uniform Grid for O(k) Spatial Queries)
   // ==========================================================================
   class SpatialHashGrid {
-    constructor(worldSizeOrCellSize = 2600, cellSize = 128) {
+    constructor(worldSizeOrCellSize = 3200, cellSize = 64) {
       if (worldSizeOrCellSize > 256) {
-        this.worldSize = worldSizeOrCellSize;
+        this.worldSize = Math.max(3200, worldSizeOrCellSize);
         this.cellSize = cellSize;
       } else {
-        this.worldSize = 2600;
-        this.cellSize = worldSizeOrCellSize || 128;
+        this.worldSize = 3200;
+        this.cellSize = worldSizeOrCellSize || 64;
       }
+      this.invCellSize = 1 / this.cellSize;
+      this.cols = Math.ceil(this.worldSize / this.cellSize) + 2;
+      this.rows = this.cols;
+      const total = this.cols * this.rows;
+      this._flatCells = new Array(total);
+      for (let i = 0; i < total; i++) {
+        this._flatCells[i] = [];
+      }
+      this._activeCells = [];
       this.cells = new Map();
+      this._queryStamp = 1;
     }
 
     _key(gx, gy) {
-      return `${gx}:${gy}`;
+      return (gx << 16) ^ (gy & 0xffff);
     }
 
     clear() {
-      this.cells.clear();
+      const active = this._activeCells;
+      for (let i = 0; i < active.length; i++) {
+        active[i].length = 0;
+      }
+      active.length = 0;
     }
 
     rebuild(units = [], buildings = [], extra = []) {
       this.clear();
-      for (const u of units) {
+      for (let i = 0; i < units.length; i++) {
+        const u = units[i];
         if (u && u.hp > 0 && !u.garrisonId && !u.garrisonedIn) this.insert(u);
       }
-      for (const b of buildings) {
+      for (let i = 0; i < buildings.length; i++) {
+        const b = buildings[i];
         if (b && b.hp > 0) this.insert(b);
       }
-      for (const e of extra) {
+      for (let i = 0; i < extra.length; i++) {
+        const e = extra[i];
         if (e && e.hp > 0) this.insert(e);
       }
     }
@@ -62,52 +79,77 @@ window.ZH_SPATIAL = (function () {
       }
 
       const r = Math.max(4, entity.radius || 14);
-      const minGx = Math.floor((entity.x - r) / this.cellSize);
-      const maxGx = Math.floor((entity.x + r) / this.cellSize);
-      const minGy = Math.floor((entity.y - r) / this.cellSize);
-      const maxGy = Math.floor((entity.y + r) / this.cellSize);
+      const inv = this.invCellSize;
+      const maxIdx = this.cols - 1;
+      let minGx = Math.floor((entity.x - r) * inv);
+      let maxGx = Math.floor((entity.x + r) * inv);
+      let minGy = Math.floor((entity.y - r) * inv);
+      let maxGy = Math.floor((entity.y + r) * inv);
+      if (minGx < 0) minGx = 0;
+      if (minGy < 0) minGy = 0;
+      if (maxGx > maxIdx) maxGx = maxIdx;
+      if (maxGy > maxIdx) maxGy = maxIdx;
 
-      for (let gx = minGx; gx <= maxGx; gx++) {
-        for (let gy = minGy; gy <= maxGy; gy++) {
-          const key = this._key(gx, gy);
-          let cell = this.cells.get(key);
-          if (!cell) {
-            cell = new Set();
-            this.cells.set(key, cell);
+      const cols = this.cols;
+      const flat = this._flatCells;
+      const active = this._activeCells;
+      for (let gy = minGy; gy <= maxGy; gy++) {
+        const rowOffset = gy * cols;
+        for (let gx = minGx; gx <= maxGx; gx++) {
+          const cell = flat[rowOffset + gx];
+          if (cell.length === 0) active.push(cell);
+          cell.push(entity);
+        }
+      }
+    }
+
+    forEachInRadius(x, y, radius, callback) {
+      const stamp = ++this._queryStamp;
+      const inv = this.invCellSize;
+      const maxIdx = this.cols - 1;
+      let minGx = Math.floor((x - radius) * inv);
+      let maxGx = Math.floor((x + radius) * inv);
+      let minGy = Math.floor((y - radius) * inv);
+      let maxGy = Math.floor((y + radius) * inv);
+      if (minGx < 0) minGx = 0;
+      if (minGy < 0) minGy = 0;
+      if (maxGx > maxIdx) maxGx = maxIdx;
+      if (maxGy > maxIdx) maxGy = maxIdx;
+
+      const cols = this.cols;
+      const flat = this._flatCells;
+      for (let gy = minGy; gy <= maxGy; gy++) {
+        const rowOffset = gy * cols;
+        for (let gx = minGx; gx <= maxGx; gx++) {
+          const cell = flat[rowOffset + gx];
+          const len = cell.length;
+          if (len === 0) continue;
+
+          for (let i = 0; i < len; i++) {
+            const entity = cell[i];
+            if (entity._spatialStamp === stamp) continue;
+            entity._spatialStamp = stamp;
+            if (entity.hp <= 0) continue;
+
+            const dx = entity.x - x;
+            const dy = entity.y - y;
+            const dSq = dx * dx + dy * dy;
+            const totalR = radius + (entity.radius || 0);
+            if (dSq <= totalR * totalR) {
+              if (callback(entity, dSq) === true) return;
+            }
           }
-          cell.add(entity);
         }
       }
     }
 
     queryRadius(x, y, radius, filterFn = null) {
       const results = [];
-      const visited = new Set();
-      const minGx = Math.floor((x - radius) / this.cellSize);
-      const maxGx = Math.floor((x + radius) / this.cellSize);
-      const minGy = Math.floor((y - radius) / this.cellSize);
-      const maxGy = Math.floor((y + radius) / this.cellSize);
-
-      for (let gx = minGx; gx <= maxGx; gx++) {
-        for (let gy = minGy; gy <= maxGy; gy++) {
-          const cell = this.cells.get(this._key(gx, gy));
-          if (!cell) continue;
-
-          for (const entity of cell) {
-            if (visited.has(entity)) continue;
-            visited.add(entity);
-            if (entity.hp <= 0) continue;
-
-            const dSq = distSq(x, y, entity.x, entity.y);
-            const totalR = radius + (entity.radius || 0);
-            if (dSq <= totalR * totalR) {
-              if (!filterFn || filterFn(entity)) {
-                results.push(entity);
-              }
-            }
-          }
+      this.forEachInRadius(x, y, radius, (entity) => {
+        if (!filterFn || filterFn(entity)) {
+          results.push(entity);
         }
-      }
+      });
       return results;
     }
 
@@ -116,18 +158,14 @@ window.ZH_SPATIAL = (function () {
     }
 
     findNearest(x, y, maxRadius, filterFn = null) {
-      const candidates = this.queryRadius(x, y, maxRadius, filterFn);
-      if (candidates.length === 0) return null;
-
       let best = null;
       let bestDistSq = Infinity;
-      for (const ent of candidates) {
-        const dSq = distSq(x, y, ent.x, ent.y);
-        if (dSq < bestDistSq) {
+      this.forEachInRadius(x, y, maxRadius, (ent, dSq) => {
+        if (dSq < bestDistSq && (!filterFn || filterFn(ent))) {
           bestDistSq = dSq;
           best = ent;
         }
-      }
+      });
       return best;
     }
 
@@ -135,6 +173,7 @@ window.ZH_SPATIAL = (function () {
       return this.findNearest(x, y, maxRadius, (ent) => {
         if (ent.team === undefined || ent.team === friendlyTeam || ent.team === -1) return false;
         if (ent.unmanned || ent.garrisonId || ent.garrisonedIn) return false;
+        if ((ent.stealthed || ent.isStealthedNow) && !(ent.detectedTimer > 0) && !(ent.revealedTimer > 0) && !(ent.stealthRevealTimer > 0)) return false;
         const isAir = !!(ent.def && ent.def.isAir);
         if (isAir && !allowAir) return false;
         if (!isAir && !allowGround) return false;
@@ -269,7 +308,7 @@ window.ZH_SPATIAL = (function () {
     if (unit.unmanned) return false;
     if (unit.hp <= 0) return false;
 
-    const profileKey = unit.locomotor || inferLocomotor(unit.def);
+    const profileKey = unit.locomotor || (unit.locomotor = inferLocomotor(unit.def));
     const profile = LOCOMOTOR_PROFILES[profileKey] || LOCOMOTOR_PROFILES.WHEELED;
 
     let wpX = targetX;
@@ -351,28 +390,36 @@ window.ZH_SPATIAL = (function () {
     let sepX = 0;
     let sepY = 0;
 
-    if (spatialGrid) {
+    if (spatialGrid && profile.isAir) {
       const neighborRadius = (unit.radius || 15) * 2.4;
-      const neighbors = spatialGrid.queryRadius(unit.x, unit.y, neighborRadius, (other) => {
-        return (
-          other !== unit &&
-          other.hp > 0 &&
-          other.def &&
-          !other.isBuilding &&
-          !!other.def.isAir === !!profile.isAir
-        );
-      });
-
       const minDist = (unit.radius || 15) * 2.1;
-      for (const other of neighbors) {
-        const dx = unit.x - other.x;
-        const dy = unit.y - other.y;
-        const d = Math.hypot(dx, dy);
-        if (d > 0.001 && d < minDist) {
+      const minDistSq = minDist * minDist;
+      const visitNeighbor = (other, dSqArg) => {
+        if (
+          other === unit ||
+          other.hp <= 0 ||
+          !other.def ||
+          other.isBuilding ||
+          !other.def.isAir
+        ) {
+          return;
+        }
+        const dSq = dSqArg !== undefined ? dSqArg : distSq(other.x, other.y, unit.x, unit.y);
+        if (dSq > 0.000001 && dSq < minDistSq) {
+          const dx = unit.x - other.x;
+          const dy = unit.y - other.y;
+          const d = Math.sqrt(dSq);
           const force = (minDist - d) / minDist;
           sepX += (dx / d) * force;
           sepY += (dy / d) * force;
         }
+      };
+
+      if (typeof spatialGrid.forEachInRadius === 'function') {
+        spatialGrid.forEachInRadius(unit.x, unit.y, neighborRadius, visitNeighbor);
+      } else {
+        const neighbors = spatialGrid.queryRadius(unit.x, unit.y, neighborRadius);
+        for (let i = 0; i < neighbors.length; i++) visitNeighbor(neighbors[i]);
       }
     }
 

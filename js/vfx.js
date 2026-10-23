@@ -27,6 +27,13 @@ window.ZH_VFX = (function () {
 
   function addDecal(engine, type, x, y, radius, angle = 0, duration = 120) {
     ensureContainers(engine);
+    if (type === 'TREAD' && engine.units && engine.units.length > 160 && engine.decals.length >= 60) {
+      return;
+    }
+    if (engine.decals.length >= MAX_DECALS) {
+      engine.decals[0] = engine.decals[engine.decals.length - 1];
+      engine.decals.pop();
+    }
     engine.decals.push({
       type, // 'CRATER' | 'SCORCH' | 'NUKE_CRATER' | 'TREAD'
       x,
@@ -36,9 +43,6 @@ window.ZH_VFX = (function () {
       timer: duration,
       maxTimer: duration
     });
-    if (engine.decals.length > MAX_DECALS) {
-      engine.decals.shift();
-    }
   }
 
   function addTreadMark(engine, u) {
@@ -58,7 +62,8 @@ window.ZH_VFX = (function () {
       const d = engine.decals[i];
       d.timer -= dt;
       if (d.timer <= 0) {
-        engine.decals.splice(i, 1);
+        engine.decals[i] = engine.decals[engine.decals.length - 1];
+        engine.decals.pop();
       }
     }
 
@@ -82,6 +87,8 @@ window.ZH_VFX = (function () {
       }
     }
 
+    const canEmitSmoke = !engine.particles || engine.particles.length < 240;
+
     // Update unit barrel recoil & tread mark stamping
     for (const u of engine.units) {
       if (u.recoilOffset && u.recoilOffset > 0) {
@@ -100,7 +107,7 @@ window.ZH_VFX = (function () {
         u.state === 'RETURN_SUPPLY' ||
         u.state === 'RETURN_CARGO';
       if (isMovingState) {
-        const loco = u.def.locomotor || (u.def.category === 'TANK' ? 'TRACKED' : 'INFANTRY');
+        const loco = u.locomotor || u.def.locomotor || (u.def.category === 'TANK' ? 'TRACKED' : 'INFANTRY');
         if (!isAirOrDrone) {
           u.treadPhase = ((u.treadPhase || 0) + dt * 2.4) % 1;
         }
@@ -113,7 +120,7 @@ window.ZH_VFX = (function () {
         }
       }
       // Emit vehicle damage smoke below 50% HP
-      if (u.hp > 0 && u.hp < u.maxHp * 0.5 && u.def.category !== 'INFANTRY') {
+      if (canEmitSmoke && u.hp > 0 && u.hp < u.maxHp * 0.5 && u.def.category !== 'INFANTRY') {
         if (Math.random() < (u.hp < u.maxHp * 0.25 ? 0.35 : 0.15)) {
           engine.particles.push({
             x: u.x + (Math.random() - 0.5) * u.radius,
@@ -262,11 +269,75 @@ window.ZH_VFX = (function () {
   }
 
   // ==========================================================================
+  // 2b. Phase 1 (6.3) China Tactical Zoom Readability Pass (High-contrast silhouette & role emblem)
+  function renderChinaTacticalReadabilityPass(ctx, u, faction, options) {
+    if (!u || !u.defId || !u.defId.startsWith('CHINA_')) return;
+    if (options && options.isStudio) return;
+    const zoom = (options && options.zoom) || 1;
+    if (zoom > 1.35) return; // Close zoom uses full unassisted 3D CAD detail
+
+    const r = u.radius || 14;
+    ctx.save();
+
+    // 1. High-contrast dark tactical separation base plate so red/olive chassis pop on all 3 biomes
+    ctx.strokeStyle = 'rgba(8, 12, 20, 0.85)';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    if (typeof ctx.ellipse === 'function') {
+      ctx.ellipse(0, 1, r * 1.02, r * 0.78, u.angle || 0, 0, Math.PI * 2);
+    } else {
+      ctx.arc(0, 1, r * 0.9, 0, Math.PI * 2);
+    }
+    ctx.stroke();
+
+    // 2. Crimson & Gold PLA Tactical Rim Accent
+    ctx.strokeStyle = u.unmanned ? '#94a3b8' : '#ef4444';
+    ctx.lineWidth = 1.25;
+    ctx.beginPath();
+    if (typeof ctx.ellipse === 'function') {
+      ctx.ellipse(0, 0, r * 0.94, r * 0.70, u.angle || 0, 0, Math.PI * 2);
+    } else {
+      ctx.arc(0, 0, r * 0.82, 0, Math.PI * 2);
+    }
+    ctx.stroke();
+
+    // 3. Instant 1-Second Role Identifier Silhouette Badge at Tactical Zoom
+    const id = u.defId;
+    ctx.rotate(u.turretAngle !== undefined ? u.turretAngle : (u.angle || 0));
+    if (id.includes('OVERLORD')) {
+      // Twin Gold Heavy Command Stripes on Overlord / Emperor Turret
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillRect(-r * 0.35, -5, r * 0.55, 2.2);
+      ctx.fillRect(-r * 0.35, 2.8, r * 0.55, 2.2);
+    } else if (id.includes('GATTLING')) {
+      // High-visibility Gold Rotary Barrel Tip Marker
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.arc(r * 0.65, 0, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (id.includes('DRAGON') || id.includes('INFERNO')) {
+      // Flame/Napalm Orange Fuel Core Indicator
+      ctx.fillStyle = '#f97316';
+      ctx.beginPath();
+      ctx.arc(-r * 0.22, 0, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (id.includes('NUKE_CANNON')) {
+      // Bright Atomic Hazard Core Ring
+      ctx.strokeStyle = '#a3e635';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // 3. Articulated Multi-Part 2.5D Unit Rig (Chassis + Turret + Recoiling Barrels)
   // ==========================================================================
   function renderArticulatedUnit(ctx, u, faction, options) {
     if ((!options || !options.forceLegacy) && window.ZH_UNIT_MODELS && window.ZH_UNIT_MODELS.renderUnitIfBespoke) {
       if (window.ZH_UNIT_MODELS.renderUnitIfBespoke(ctx, u, faction, options)) {
+        renderChinaTacticalReadabilityPass(ctx, u, faction, options);
         return;
       }
     }
@@ -1077,10 +1148,6 @@ window.ZH_VFX = (function () {
       const rendered3D = window.ZH_UNIT_MODELS.renderBuildingIfBespoke(ctx, b, team, t);
       if (rendered3D) {
         if (b.constructed !== false) {
-          const isDisabled = (b.disabledTimer > 0) || (b.empTimer > 0) || (team && team.isLowPower && !b.def.powerBonus);
-          if (!isDisabled) {
-            renderLigneClaireBuildingSubFX(ctx, b, s, t, col);
-          }
           const hpRatio = b.hp / b.maxHp;
           if (hpRatio < 0.65) {
             const smokeCount = hpRatio < 0.35 ? 3 : 2;

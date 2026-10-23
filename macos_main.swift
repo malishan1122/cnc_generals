@@ -6,7 +6,7 @@ import WebKit
 // macos_main.swift — Phase 4 (SYS-28) Native macOS App Shell & Menu Bar Bridge
 // ============================================================================
 
-class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelegate, WKScriptMessageHandler {
     var window: NSWindow!
     var webView: WKWebView!
 
@@ -21,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             defer: false
         )
         window.title = "Command & Conquer: Generals – Zero Hour (v2.0 macOS Edition)"
+        window.minSize = NSSize(width: 1024, height: 720)
         window.backgroundColor = NSColor(calibratedRed: 0.03, green: 0.04, blue: 0.08, alpha: 1.0)
         window.collectionBehavior = [.fullScreenPrimary]
         window.delegate = self
@@ -28,8 +29,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let config = WKWebViewConfiguration()
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         config.mediaTypesRequiringUserActionForPlayback = []
+        config.userContentController.add(self, name: "zhNativeSave")
 
         webView = WKWebView(frame: window.contentView!.bounds, configuration: config)
+        webView.uiDelegate = self
         webView.autoresizingMask = [.width, .height]
         window.contentView?.addSubview(webView)
 
@@ -135,6 +138,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc func toggleEVA() {
         webView?.evaluateJavaScript("document.getElementById('btn-toggle-voice')?.click();", completionHandler: nil)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        runOpenPanelWith parameters: WKOpenPanelParameters,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping ([URL]?) -> Void
+    ) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.title = "Import Zero Hour Save / Replay (.zhsave / .json)"
+        panel.beginSheetModal(for: window) { response in
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "zhNativeSave",
+              let body = message.body as? [String: String],
+              let filename = body["filename"],
+              let content = body["content"] else { return }
+        let savePanel = NSSavePanel()
+        savePanel.nameFieldStringValue = filename
+        savePanel.canCreateDirectories = true
+        savePanel.title = "Export Zero Hour Tactical Snapshot"
+        savePanel.beginSheetModal(for: window) { response in
+            if response == .OK, let url = savePanel.url {
+                try? content.write(to: url, atomically: true, encoding: .utf8)
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
