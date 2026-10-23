@@ -373,6 +373,71 @@ assert(
   `Builder inside completed building is automatically ejected outside footprint (dist=${builderClearance.toFixed(1)}px) onto a passable cell`
 );
 
+// ----------------------------------------------------------------------------
+// 9. Data-Driven Maps, Perceptive Fog-of-War AI, Event Bus & 3s Translucent Banners
+// ----------------------------------------------------------------------------
+console.log('\n[9/9] Data-Driven Maps, Perceptive Fog-of-War AI, Event Bus & 3s Banners...');
+
+const mapsData = global.ZH_DATA.MAPS;
+const mDesert = mapsData.find(m => m.id === 'TOURNAMENT_DESERT');
+const mCrusade = mapsData.find(m => m.id === 'FINAL_CRUSADE');
+const mDefcon = mapsData.find(m => m.id === 'DEFCON_6');
+assert(
+  mDesert && Array.isArray(mDesert.obstacles) && mDesert.obstacles.length >= 4 &&
+  mCrusade && Array.isArray(mCrusade.obstacles) && mCrusade.obstacles.length >= 4 &&
+  mDefcon && Array.isArray(mDefcon.obstacles) && mDefcon.obstacles.length >= 4,
+  'All 3 maps (TOURNAMENT_DESERT, FINAL_CRUSADE, DEFCON_6) define data-driven obstacles, supplyDocks, techStructures, and garrisonBunkers'
+);
+
+const firstObs = engine.mapDef.obstacles[0];
+const obsBlockedInNav = !engine.navGrid.isPassable(firstObs.x, firstObs.y, false, false);
+const obsRejectsBuild = !engine.canPlaceBuilding('USA_POWER_PLANT', firstObs.x, firstObs.y, 0);
+assert(
+  obsBlockedInNav && obsRejectsBuild,
+  `Map obstacle (${firstObs.label || firstObs.kind} at ${firstObs.x},${firstObs.y}) is rasterized into NavGrid and blocks building placement`
+);
+
+// Perceptive Fog-of-War AI
+engine.aiStrictFogOfWar = true;
+global.ZH_AI.resetTimers();
+const hiddenEnemy = engine.spawnUnit('USA_CRUSADER', 0, 200, 3600);
+const visiblebeforeScout = global.ZH_AI.isEnemyVisibleToAI(engine, hiddenEnemy, 1);
+const aiScoutMig = engine.spawnUnit('CHINA_MIG', 1, 210, 3590);
+global.ZH_AI.updateTeamPerception(engine, 1);
+const visibleDuringScout = global.ZH_AI.isEnemyVisibleToAI(engine, hiddenEnemy, 1);
+aiScoutMig.hp = 0; // Remove direct line of sight; memory should still retain last-seen position briefly
+const visibleFromMemory = global.ZH_AI.isEnemyVisibleToAI(engine, hiddenEnemy, 1);
+engine.aiStrictFogOfWar = false;
+assert(
+  visiblebeforeScout === false && visibleDuringScout === true && visibleFromMemory === true,
+  'Perceptive Fog-of-War AI hides unscouted enemies, detects within LOS, and retains last-seen memory'
+);
+
+// Simulation-to-Presentation Event Bus (P1-05)
+engine.drainEvents();
+engine.spawnBurst(1000, 1000, '#ffaa00', 6);
+engine.spawnFloatingText(1000, 1000, '+$300', '#4ade80');
+engine.addRadarPing(1200, 1200, '#ef4444');
+engine.triggerAlert('TACTICAL EVENT BUS TEST', '#38bdf8');
+const drained = engine.drainEvents();
+const drainedTypes = new Set(drained.map(e => e.type));
+assert(
+  drained.length >= 4 && drainedTypes.has('burst') && drainedTypes.has('floatingText') &&
+  drainedTypes.has('radarPing') && drainedTypes.has('alert') && engine.drainEvents().length === 0,
+  `Simulation Event Bus records and drains ${drained.length} structured events (burst, floatingText, radarPing, alert)`
+);
+
+// Translucent 3-Second Auto-Expiring Banners
+const uiSource = fs.readFileSync(path.join(__dirname, '..', 'js/ui.js'), 'utf8');
+const cssSource = fs.readFileSync(path.join(__dirname, '..', 'css/style.css'), 'utf8');
+assert(
+  uiSource.includes('const BANNER_TTL_MS = 3000;') &&
+  uiSource.includes('pruneExpiredAlerts()') &&
+  cssSource.includes('rgba(9, 14, 26, 0.38)') &&
+  cssSource.includes('rgba(9, 14, 26, 0.42)'),
+  'HUD banners (#tactical-alert, #alert-log, #general-taunt-box) use translucent backgrounds and auto-expire after 3000ms (3 seconds)'
+);
+
 console.log('\n======================================================================');
 console.log(` VERIFICATION SUMMARY: ${passed} PASSED | ${failed} FAILED`);
 console.log('======================================================================');
@@ -380,4 +445,3 @@ console.log('===================================================================
 if (failed > 0) {
   process.exit(1);
 }
-

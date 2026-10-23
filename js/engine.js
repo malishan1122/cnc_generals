@@ -574,8 +574,12 @@ window.ZH_ENGINE = (function () {
 
     setupMapResources() {
       const mapId = (this.mapDef && this.mapDef.id) ? this.mapDef.id : 'TOURNAMENT_DESERT';
-      // 1. Primary & Expansion Supply Docks (home docks stay symmetric; contested/flank docks vary by map)
-      const docks = [
+      this.terrainObstacles = (this.mapDef && Array.isArray(this.mapDef.obstacles))
+        ? this.mapDef.obstacles.map(o => ({ ...o }))
+        : [];
+
+      // 1. Primary & Expansion Supply Docks (read from mapDef.supplyDocks with fallback)
+      const defaultDocks = [
         // Player Primary & Natural Expansion
         { x: 760, y: WORLD_SIZE - 360, amount: 24000 },
         { x: 360, y: WORLD_SIZE - 840, amount: 20000 },
@@ -595,6 +599,9 @@ window.ZH_ENGINE = (function () {
           amount: 22000
         }
       ];
+      const docks = (this.mapDef && Array.isArray(this.mapDef.supplyDocks) && this.mapDef.supplyDocks.length > 0)
+        ? this.mapDef.supplyDocks
+        : defaultDocks;
 
       docks.forEach(d => {
         this.supplyDocks.push({
@@ -607,13 +614,16 @@ window.ZH_ENGINE = (function () {
         });
       });
 
-      // 2. Neutral Capturable Tech Structures (2 Oil Derricks, 1 Tech Hospital, 1 Tech Repair Bay)
-      const techPlacements = [
+      // 2. Neutral Capturable Tech Structures (read from mapDef.techStructures with fallback)
+      const defaultTechPlacements = [
         { defId: 'TECH_OIL_DERRICK', x: 450, y: 450 },
         { defId: 'TECH_OIL_DERRICK', x: WORLD_SIZE - 450, y: WORLD_SIZE - 450 },
         { defId: 'TECH_HOSPITAL', x: WORLD_SIZE / 2 - 420, y: WORLD_SIZE / 2 + 420 },
         { defId: 'TECH_REPAIR_BAY', x: WORLD_SIZE / 2 + 420, y: WORLD_SIZE / 2 - 420 }
       ];
+      const techPlacements = (this.mapDef && Array.isArray(this.mapDef.techStructures) && this.mapDef.techStructures.length > 0)
+        ? this.mapDef.techStructures
+        : defaultTechPlacements;
 
       techPlacements.forEach(tp => {
         const tDef = (ZH_DATA.TECH_BUILDINGS && ZH_DATA.TECH_BUILDINGS[tp.defId]) || {
@@ -642,7 +652,7 @@ window.ZH_ENGINE = (function () {
         });
       });
 
-      // 3. Neutral Civilian Urban Garrison Bunkers (Choke Points around Center & Flanks)
+      // 3. Neutral Civilian Urban Garrison Bunkers (read from mapDef.garrisonBunkers with fallback)
       const bunkerDef = (ZH_DATA.TECH_BUILDINGS && ZH_DATA.TECH_BUILDINGS.CIV_GARRISON_BUNKER) || {
         id: 'CIV_GARRISON_BUNKER',
         name: 'Civilian Urban Garrison',
@@ -655,12 +665,15 @@ window.ZH_ENGINE = (function () {
         rangeBonus: 1.25
       };
 
-      const bunkerCoords = [
+      const defaultBunkerCoords = [
         { x: WORLD_SIZE / 2 - 220, y: WORLD_SIZE / 2 - 220 },
         { x: WORLD_SIZE / 2 + 220, y: WORLD_SIZE / 2 + 220 },
         { x: 980, y: WORLD_SIZE - 980 },
         { x: WORLD_SIZE - 980, y: 980 }
       ];
+      const bunkerCoords = (this.mapDef && Array.isArray(this.mapDef.garrisonBunkers) && this.mapDef.garrisonBunkers.length > 0)
+        ? this.mapDef.garrisonBunkers
+        : defaultBunkerCoords;
 
       bunkerCoords.forEach(bc => {
         const occupants = [];
@@ -1680,6 +1693,12 @@ window.ZH_ENGINE = (function () {
       }
       for (const gar of this.garrisonBunkers) {
         if (dist(x, y, gar.x, gar.y) < (bRad + (gar.radius || 40) + 16)) {
+          return false;
+        }
+      }
+      const obstacles = this.terrainObstacles || (this.mapDef && this.mapDef.obstacles) || [];
+      for (const obs of obstacles) {
+        if (dist(x, y, obs.x, obs.y) < (bRad + (obs.r || 48) + 8)) {
           return false;
         }
       }
@@ -5037,9 +5056,28 @@ window.ZH_ENGINE = (function () {
     }
 
     // ========================================================================
-    // Visual FX Spawners
+    // Simulation-to-Presentation Event Bus & Visual FX Spawners
     // ========================================================================
+    emitEvent(type, payload = {}) {
+      if (!this.events) this.events = [];
+      if (this.events.length >= 256) this.events.shift();
+      this.events.push({
+        type,
+        frame: this.simFrame || 0,
+        time: this.matchTime || 0,
+        ...payload
+      });
+    }
+
+    drainEvents() {
+      if (!this.events || this.events.length === 0) return [];
+      const out = this.events.slice();
+      this.events.length = 0;
+      return out;
+    }
+
     spawnBurst(x, y, color, count = 12) {
+      this.emitEvent('burst', { x, y, color, count });
       if (this.particles.length >= 320) return;
       const limit = Math.min(count, 320 - this.particles.length);
       for (let i = 0; i < limit; i++) {
@@ -5060,6 +5098,7 @@ window.ZH_ENGINE = (function () {
     }
 
     spawnFloatingText(x, y, text, color = '#ffffff') {
+      this.emitEvent('floatingText', { x, y, text, color });
       if (this.floatingTexts.length >= 64) return;
       this.floatingTexts.push({
         x,
@@ -5071,16 +5110,19 @@ window.ZH_ENGINE = (function () {
     }
 
     addRadarPing(x, y, color = '#ef4444') {
+      this.emitEvent('radarPing', { x, y, color });
       this.radarPings.push({ x, y, color, timer: 4.0 });
     }
 
     triggerAlert(msg, color = '#38bdf8') {
+      this.emitEvent('alert', { msg, color });
       if (this.onAlert) this.onAlert(msg, color);
     }
 
     triggerTaunt(generalDef, text) {
+      this.emitEvent('taunt', { generalId: generalDef ? generalDef.id : null, text });
       if (this.onTaunt) this.onTaunt(generalDef, text);
-      if (window.ZH_AUDIO) ZH_AUDIO.speak(text);
+      if (typeof window !== 'undefined' && window.ZH_AUDIO) window.ZH_AUDIO.speak(text);
     }
 
     // ========================================================================
@@ -5450,6 +5492,50 @@ window.ZH_ENGINE = (function () {
         tctx.restore();
       }
 
+      // 6b. Data-Driven Impassable Tactical Obstacles (Canyon Mesas, River Gorges, Glacier Spires)
+      const mapObstacles = (this.mapDef && Array.isArray(this.mapDef.obstacles)) ? this.mapDef.obstacles : [];
+      mapObstacles.forEach((obs, idx) => {
+        const ox = obs.x;
+        const oy = obs.y;
+        const rad = obs.r || 56;
+        const kind = obs.kind || (theme === 'SNOW' ? 'GLACIER' : theme === 'TEMPERATE' ? 'WATER' : 'MESA');
+        tctx.save();
+        tctx.translate(ox, oy);
+        // Drop shadow
+        tctx.fillStyle = 'rgba(15, 23, 42, 0.34)';
+        tctx.beginPath();
+        tctx.arc(6, 8, rad * 1.04, 0, Math.PI * 2);
+        tctx.fill();
+
+        // Outer cliff / bank contour
+        tctx.fillStyle = kind === 'WATER' ? '#1e3a5f' : kind === 'GLACIER' ? '#64748b' : '#78350f';
+        tctx.strokeStyle = 'rgba(15, 23, 42, 0.72)';
+        tctx.lineWidth = 2.5;
+        tctx.beginPath();
+        const sides = 8;
+        for (let s = 0; s < sides; s++) {
+          const ang = (s / sides) * Math.PI * 2 + (idx * 0.35);
+          const jitter = 0.88 + ((s + idx) % 3) * 0.08;
+          const px = Math.cos(ang) * rad * jitter;
+          const py = Math.sin(ang) * rad * jitter;
+          if (s === 0) tctx.moveTo(px, py);
+          else tctx.lineTo(px, py);
+        }
+        tctx.closePath();
+        tctx.fill();
+        tctx.stroke();
+
+        // Inner terrace / crest highlight
+        tctx.fillStyle = kind === 'WATER' ? 'rgba(56, 189, 248, 0.32)' : kind === 'GLACIER' ? '#e2e8f0' : secondary;
+        tctx.strokeStyle = 'rgba(248, 250, 252, 0.28)';
+        tctx.lineWidth = 1.5;
+        tctx.beginPath();
+        tctx.arc(-3, -3, rad * 0.58, 0, Math.PI * 2);
+        tctx.fill();
+        tctx.stroke();
+        tctx.restore();
+      });
+
       // 7. Subtle Tactical Coordinate Grid
       tctx.strokeStyle = this.mapDef.gridColor || 'rgba(15, 23, 42, 0.08)';
       tctx.lineWidth = 1;
@@ -5817,13 +5903,13 @@ window.ZH_ENGINE = (function () {
             ctx.lineWidth = 1.5;
             ctx.strokeRect(b.x - half + 3, b.y - half + 3, (s - 6) * b.buildProgress, s - 6);
           }
-          this.queueLabel(b.x, b.y, `BUILDING ${Math.round(b.buildProgress * 100)}%`, '#fde047', 'rgba(8,14,24,0.85)', 'bold 10px -apple-system, monospace', 2);
+          this.queueLabel(b.x, b.y + half + 12, `BUILDING ${Math.round(b.buildProgress * 100)}%`, '#fde047', 'rgba(8,14,24,0.38)', 'bold 10px -apple-system, monospace', 2);
         } else if (isSel || isHov || this.showAllHealthBars || b.def.isSuperweapon) {
-          this.queueLabel(b.x, b.y, b.def.shortName, '#f8fafc', 'rgba(8,14,24,0.78)', 'bold 10px -apple-system, monospace', isSel ? 3 : 1);
+          this.queueLabel(b.x, b.y + half + 12, b.def.shortName, '#f8fafc', 'rgba(8,14,24,0.38)', 'bold 10px -apple-system, monospace', isSel ? 3 : 1);
         }
 
         if (b.disabledTimer > 0 || b.empTimer > 0) {
-          this.queueLabel(b.x, b.y - 14, '⚡ EMP DISABLED', '#38bdf8', 'rgba(8,14,24,0.9)', 'bold 10px -apple-system, monospace', 4);
+          this.queueLabel(b.x, b.y - 14, '⚡ EMP DISABLED', '#38bdf8', 'rgba(8,14,24,0.45)', 'bold 10px -apple-system, monospace', 4);
         }
 
         // Control Group Badge [#N]

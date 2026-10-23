@@ -248,6 +248,11 @@ window.ZH_AI = (function () {
     1: { think: 0, taunt: 18, wave: 0 }
   };
 
+  const teamMemory = {
+    0: { seenBuildings: {}, seenUnits: {}, lastScoutTick: 0 },
+    1: { seenBuildings: {}, seenUnits: {}, lastScoutTick: 0 }
+  };
+
   let fallbackRngState = 0x20261022;
 
   function rng(engine) {
@@ -265,18 +270,157 @@ window.ZH_AI = (function () {
     waveTimer = 0;
     teamTimers[0] = { think: 0, taunt: 24, wave: 0 };
     teamTimers[1] = { think: 0, taunt: 18, wave: 0 };
+    teamMemory[0] = { seenBuildings: {}, seenUnits: {}, lastScoutTick: 0 };
+    teamMemory[1] = { seenBuildings: {}, seenUnits: {}, lastScoutTick: 0 };
+  }
+
+  function hasDirectLineOfSight(engine, entity, aiTeamId = 1) {
+    if (!engine || !entity) return false;
+    if (entity.def && entity.def.isSuperweapon) return true;
+    const aiTeam = engine.teams && engine.teams[aiTeamId];
+    if (aiTeam && aiTeam.spyDrone && Math.hypot(entity.x - aiTeam.spyDrone.x, entity.y - aiTeam.spyDrone.y) <= (aiTeam.spyDrone.radius || 360)) {
+      return true;
+    }
+    for (const u of (engine.units || [])) {
+      if (u.team !== aiTeamId || u.hp <= 0 || u.garrisonedIn || u.garrisonId) continue;
+      const sight = (u.def && u.def.sight) || 280;
+      const dx = entity.x - u.x;
+      const dy = entity.y - u.y;
+      if (dx * dx + dy * dy <= sight * sight) return true;
+    }
+    for (const b of (engine.buildings || [])) {
+      if (b.team !== aiTeamId || b.hp <= 0) continue;
+      const sight = (b.def && b.def.sight) || 320;
+      const dx = entity.x - b.x;
+      const dy = entity.y - b.y;
+      if (dx * dx + dy * dy <= sight * sight) return true;
+    }
+    return false;
+  }
+
+  function updateTeamPerception(engine, aiTeamId = 1) {
+    if (!engine) return teamMemory[aiTeamId];
+    const mem = teamMemory[aiTeamId] || (teamMemory[aiTeamId] = { seenBuildings: {}, seenUnits: {}, lastScoutTick: 0 });
+    const enemyTeamId = aiTeamId === 1 ? 0 : 1;
+    const tick = engine.simTick || 0;
+    const units = engine.units || [];
+    const buildings = engine.buildings || [];
+
+    // Fast O(N) spatial vision grid (32x32 cells of 120px covers 3840x3840 world)
+    const CELL = 120;
+    const COLS = 32;
+    const cellSight = new Int16Array(COLS * COLS);
+    const visGrid = new Uint8Array(COLS * COLS);
+
+    const aiTeam = engine.teams && engine.teams[aiTeamId];
+    if (aiTeam && aiTeam.spyDrone) {
+      const cx = Math.max(0, Math.min(COLS - 1, (aiTeam.spyDrone.x / CELL) | 0));
+      const cy = Math.max(0, Math.min(COLS - 1, (aiTeam.spyDrone.y / CELL) | 0));
+      const s = aiTeam.spyDrone.radius || 360;
+      const idx = cy * COLS + cx;
+      if (s > cellSight[idx]) cellSight[idx] = s;
+    }
+
+    for (let i = 0; i < buildings.length; i++) {
+      const b = buildings[i];
+      if (b.team !== aiTeamId || b.hp <= 0) continue;
+      const cx = Math.max(0, Math.min(COLS - 1, (b.x / CELL) | 0));
+      const cy = Math.max(0, Math.min(COLS - 1, (b.y / CELL) | 0));
+      const s = (b.def && b.def.sight) || 320;
+      const idx = cy * COLS + cx;
+      if (s > cellSight[idx]) cellSight[idx] = s;
+    }
+
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      if (u.team !== aiTeamId || u.hp <= 0 || u.garrisonedIn || u.garrisonId) continue;
+      const cx = Math.max(0, Math.min(COLS - 1, (u.x / CELL) | 0));
+      const cy = Math.max(0, Math.min(COLS - 1, (u.y / CELL) | 0));
+      const s = (u.def && u.def.sight) || 280;
+      const idx = cy * COLS + cx;
+      if (s > cellSight[idx]) cellSight[idx] = s;
+    }
+
+    for (let cy = 0; cy < COLS; cy++) {
+      for (let cx = 0; cx < COLS; cx++) {
+        const s = cellSight[cy * COLS + cx];
+        if (s <= 0) continue;
+        const r = Math.ceil(s / CELL);
+        const r2 = r * r;
+        const y0 = Math.max(0, cy - r);
+        const y1 = Math.min(COLS - 1, cy + r);
+        const x0 = Math.max(0, cx - r);
+        const x1 = Math.min(COLS - 1, cx + r);
+        for (let ny = y0; ny <= y1; ny++) {
+          const dy = ny - cy;
+          for (let nx = x0; nx <= x1; nx++) {
+            const dx = nx - cx;
+            if (dx * dx + dy * dy <= r2) {
+              visGrid[ny * COLS + nx] = 1;
+            }
+          }
+        }
+      }
+    }
+
+    const useExactCheck = units.length <= 64;
+
+    for (let i = 0; i < buildings.length; i++) {
+      const b = buildings[i];
+      if (b.team !== enemyTeamId || b.hp <= 0) {
+        if (b && mem.seenBuildings[b.id]) delete mem.seenBuildings[b.id];
+        continue;
+      }
+      const cx = Math.max(0, Math.min(COLS - 1, (b.x / CELL) | 0));
+      const cy = Math.max(0, Math.min(COLS - 1, (b.y / CELL) | 0));
+      const seen = (b.def && b.def.isSuperweapon) ||
+        (useExactCheck ? hasDirectLineOfSight(engine, b, aiTeamId) : visGrid[cy * COLS + cx] === 1);
+      if (seen) {
+        mem.seenBuildings[b.id] = { id: b.id, defId: b.defId, x: b.x, y: b.y, lastSeenTick: tick };
+      }
+    }
+
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      if (u.team !== enemyTeamId || u.hp <= 0 || u.garrisonedIn || u.garrisonId) {
+        if (u && mem.seenUnits[u.id]) delete mem.seenUnits[u.id];
+        continue;
+      }
+      if (u.stealthed && (u.detectedTimer || 0) <= 0) continue;
+      const cx = Math.max(0, Math.min(COLS - 1, (u.x / CELL) | 0));
+      const cy = Math.max(0, Math.min(COLS - 1, (u.y / CELL) | 0));
+      const seen = useExactCheck ? hasDirectLineOfSight(engine, u, aiTeamId) : visGrid[cy * COLS + cx] === 1;
+      if (seen) {
+        mem.seenUnits[u.id] = { id: u.id, defId: u.defId, x: u.x, y: u.y, lastSeenTick: tick };
+      }
+    }
+    return mem;
+  }
+
+  function getTeamMemory(aiTeamId = 1) {
+    return teamMemory[aiTeamId] || teamMemory[1];
   }
 
   function isEnemyVisibleToAI(engine, u, aiTeamId = 1) {
     if (!u || u.hp <= 0 || u.garrisonedIn || u.garrisonId) return false;
     if (u.stealthed && (u.detectedTimer || 0) <= 0) return false;
+    if (engine && engine.aiStrictFogOfWar) {
+      if (hasDirectLineOfSight(engine, u, aiTeamId)) return true;
+      const mem = teamMemory[aiTeamId];
+      if (mem) {
+        if (u.isBuilding && mem.seenBuildings[u.id]) return true;
+        const seenU = mem.seenUnits[u.id];
+        if (seenU && ((engine.simTick || 0) - (seenU.lastSeenTick || 0) <= 600)) return true;
+      }
+      return false;
+    }
     return true;
   }
 
   // Phase 4 (SYS-26): Spatial Density & Power-Grid Vulnerability Scanner
   function findBestClusterTarget(engine, enemyTeamId = 0, radius = 260, prioritizePower = false) {
     const aiTeamId = enemyTeamId === 0 ? 1 : 0;
-    const enemyBuildings = engine.buildings.filter(b => b.team === enemyTeamId && b.hp > 0);
+    const enemyBuildings = engine.buildings.filter(b => b.team === enemyTeamId && b.hp > 0 && isEnemyVisibleToAI(engine, b, aiTeamId));
     const enemyUnits = engine.units.filter(u => u.team === enemyTeamId && isEnemyVisibleToAI(engine, u, aiTeamId));
     const enemyTeam = engine.teams[enemyTeamId];
 
@@ -547,6 +691,8 @@ window.ZH_AI = (function () {
     if (tState.think < interval) return;
     tState.think = 0;
     if (teamId === 1) thinkTimer = 0;
+
+    updateTeamPerception(engine, teamId);
 
     // P2-04: EASY, NORMAL, and HARD differ in think interval, scouting, counter-build accuracy,
     // queue depth, flank ratio, and retreat threshold — not in passive cash cheats.
@@ -884,7 +1030,8 @@ window.ZH_AI = (function () {
       thinkTimer,
       tauntTimer,
       waveTimer,
-      teamTimers: JSON.parse(JSON.stringify(teamTimers))
+      teamTimers: JSON.parse(JSON.stringify(teamTimers)),
+      teamMemory: JSON.parse(JSON.stringify(teamMemory))
     };
   }
 
@@ -896,6 +1043,10 @@ window.ZH_AI = (function () {
     if (state.teamTimers) {
       if (state.teamTimers[0]) Object.assign(teamTimers[0], state.teamTimers[0]);
       if (state.teamTimers[1]) Object.assign(teamTimers[1], state.teamTimers[1]);
+    }
+    if (state.teamMemory) {
+      if (state.teamMemory[0]) teamMemory[0] = JSON.parse(JSON.stringify(state.teamMemory[0]));
+      if (state.teamMemory[1]) teamMemory[1] = JSON.parse(JSON.stringify(state.teamMemory[1]));
     }
   }
 
@@ -909,6 +1060,10 @@ window.ZH_AI = (function () {
     findHighValueRaidTarget,
     computeCounterWeights,
     assignSquadRoles,
+    hasDirectLineOfSight,
+    updateTeamPerception,
+    getTeamMemory,
+    isEnemyVisibleToAI,
     serializeState,
     deserializeState
   };

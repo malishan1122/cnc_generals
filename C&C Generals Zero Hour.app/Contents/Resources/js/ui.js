@@ -2190,6 +2190,7 @@
 
   function updateHudLive() {
     if (!engine || !engine.running) return;
+    pruneExpiredAlerts();
     updateTopBarAndTimers();
     updatePowerStrip(false);
     updateControlGroupBar(false);
@@ -4168,31 +4169,111 @@
   // ==========================================================================
   // Alerts, Alert Log, Taunts & Victory/Defeat Handling
   // ==========================================================================
+  const BANNER_TTL_MS = 3000;
   let alertTimeout = null;
+  let nextAlertId = 1;
+
+  function isCommandPromptBanner(text) {
+    if (!text || typeof text !== 'string') return false;
+    return (
+      text.startsWith('PLACING ') ||
+      text.startsWith('ABILITY ') ||
+      text.startsWith('TARGETING ') ||
+      text.startsWith('RALLY POINT')
+    );
+  }
+
+  function pruneExpiredAlerts() {
+    const now = Date.now();
+    let changed = false;
+    for (let i = alertHistory.length - 1; i >= 0; i--) {
+      if (alertHistory[i].expiresAt && now >= alertHistory[i].expiresAt) {
+        alertHistory.splice(i, 1);
+        changed = true;
+      }
+    }
+    if (changed) {
+      renderAlertLog();
+    }
+  }
+
   function showTacticalAlert(msg, color = '#38bdf8', worldPos = null) {
     const banner = document.getElementById('tactical-alert');
-    banner.textContent = msg;
-    banner.style.borderColor = color;
-    banner.style.color = color;
-    banner.classList.remove('hidden');
-    clearTimeout(alertTimeout);
-    alertTimeout = setTimeout(() => banner.classList.add('hidden'), 4500);
+    if (banner) {
+      banner.textContent = msg;
+      banner.style.borderColor = color;
+      banner.style.color = color;
+      banner.classList.remove('hidden');
+      clearTimeout(alertTimeout);
+      alertTimeout = setTimeout(() => banner.classList.add('hidden'), BANNER_TTL_MS);
+      if (alertTimeout && typeof alertTimeout.unref === 'function') {
+        alertTimeout.unref();
+      }
+    }
 
+    // Replace previous command-mode prompt banners instead of stacking multiple placement banners
+    if (isCommandPromptBanner(msg)) {
+      for (let i = alertHistory.length - 1; i >= 0; i--) {
+        if (isCommandPromptBanner(alertHistory[i].msg)) {
+          alertHistory.splice(i, 1);
+        }
+      }
+    }
+
+    const alertId = nextAlertId++;
     const pos = worldPos || (engine && engine.lastAlertPos ? { x: engine.lastAlertPos.x, y: engine.lastAlertPos.y } : null);
     alertHistory.unshift({
+      id: alertId,
       msg,
       color,
       pos,
-      time: engine ? Math.floor(engine.matchTime || 0) : 0
+      time: engine ? Math.floor(engine.matchTime || 0) : 0,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + BANNER_TTL_MS
     });
-    if (alertHistory.length > 4) alertHistory.length = 4;
+    if (alertHistory.length > 3) alertHistory.length = 3;
     renderAlertLog();
+
+    const itemTimer = setTimeout(() => {
+      const idx = alertHistory.findIndex(a => a.id === alertId);
+      if (idx !== -1) {
+        alertHistory.splice(idx, 1);
+        renderAlertLog();
+      }
+    }, BANNER_TTL_MS);
+    if (itemTimer && typeof itemTimer.unref === 'function') {
+      itemTimer.unref();
+    }
+  }
+
+  function pruneExpiredAlerts() {
+    if (!alertHistory || alertHistory.length === 0) return;
+    const now = Date.now();
+    let changed = false;
+    for (let i = alertHistory.length - 1; i >= 0; i--) {
+      const item = alertHistory[i];
+      const expiredByTime = item.expiresAt && now >= item.expiresAt;
+      const expiredByModeExit = isCommandPromptBanner(item.msg) && (!engine || !engine.commandMode) && (now - (item.createdAt || 0) > 250);
+      if (expiredByTime || expiredByModeExit) {
+        alertHistory.splice(i, 1);
+        changed = true;
+      }
+    }
+    if (changed) {
+      renderAlertLog();
+    }
   }
 
   function renderAlertLog() {
     const logEl = document.getElementById('alert-log');
     if (!logEl) return;
     logEl.innerHTML = '';
+    const now = Date.now();
+    for (let i = alertHistory.length - 1; i >= 0; i--) {
+      if (alertHistory[i].expiresAt && now >= alertHistory[i].expiresAt) {
+        alertHistory.splice(i, 1);
+      }
+    }
     alertHistory.forEach(item => {
       const row = document.createElement('div');
       row.className = 'alert-log-item';
@@ -4213,12 +4294,16 @@
   let tauntTimeout = null;
   function showGeneralTaunt(generalDef, text) {
     const box = document.getElementById('general-taunt-box');
+    if (!box) return;
     document.getElementById('taunt-general-name').textContent =
       `${generalDef.badge} ${generalDef.name} (${generalDef.title})`;
     document.getElementById('taunt-general-text').textContent = `"${text}"`;
     box.classList.remove('hidden');
     clearTimeout(tauntTimeout);
-    tauntTimeout = setTimeout(() => box.classList.add('hidden'), 7000);
+    tauntTimeout = setTimeout(() => box.classList.add('hidden'), BANNER_TTL_MS);
+    if (tauntTimeout && typeof tauntTimeout.unref === 'function') {
+      tauntTimeout.unref();
+    }
   }
 
   function renderPostMatchTelemetryGraph(canvasEl) {

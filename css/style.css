@@ -280,50 +280,56 @@ input:focus-visible,
   top: calc(var(--top-bar-h) + 10px);
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(9, 14, 26, 0.94);
-  border: 2px solid var(--accent-cyan);
-  padding: 6px 18px;
+  background: rgba(9, 14, 26, 0.42);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(56, 189, 248, 0.55);
+  padding: 5px 14px;
   border-radius: 6px;
   font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 13px;
-  letter-spacing: 0.6px;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.5px;
   z-index: 25;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28);
+  transition: opacity 0.25s ease;
 }
 
-/* Rolling Tactical Alert Log (Above Minimap) */
+/* Rolling Tactical Alert Log (Above Minimap — Translucent 3s Auto-Expiring Banners) */
 #alert-log {
   position: fixed;
   bottom: calc(var(--cmd-bar-h) + 8px);
   left: 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   z-index: 18;
-  max-width: 310px;
+  max-width: 290px;
   pointer-events: none;
 }
 
 .alert-log-item {
   pointer-events: auto;
-  background: rgba(9, 14, 26, 0.88);
-  border-left: 3px solid var(--accent-cyan);
-  border-top: 1px solid rgba(148, 163, 184, 0.25);
-  border-right: 1px solid rgba(148, 163, 184, 0.25);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
-  padding: 4px 10px;
+  background: rgba(9, 14, 26, 0.38);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border-left: 2px solid var(--accent-cyan);
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  border-right: 1px solid rgba(148, 163, 184, 0.16);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  padding: 3px 9px;
   border-radius: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  color: #f1f5f9;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: rgba(241, 245, 249, 0.92);
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
   transition: opacity 0.25s ease, transform 0.2s ease;
 }
 
 .alert-log-item:hover {
-  background: rgba(30, 58, 138, 0.85);
+  background: rgba(30, 58, 138, 0.52);
 }
 
 /* Right-Edge Unlocked Generals Powers Quick-Cast Strip */
@@ -524,24 +530,19 @@ input:focus-visible,
 
 #general-taunt-box {
   position: fixed;
-  top: calc(var(--top-bar-h) + 52px);
+  top: calc(var(--top-bar-h) + 46px);
   left: 16px;
-  max-width: 410px;
-  background:
-    repeating-linear-gradient(
-      0deg,
-      rgba(56, 189, 248, 0.03) 0px,
-      rgba(56, 189, 248, 0.03) 1px,
-      transparent 1px,
-      transparent 3px
-    ),
-    linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(9, 14, 26, 0.96));
-  border: 1px solid var(--accent-gold);
-  border-left: 5px solid var(--accent-gold);
-  padding: 9px 13px;
+  max-width: 390px;
+  background: rgba(9, 14, 26, 0.44);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(234, 179, 8, 0.55);
+  border-left: 3px solid var(--accent-gold);
+  padding: 7px 11px;
   border-radius: 6px;
   z-index: 19;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.68), inset 0 0 14px rgba(234, 179, 8, 0.08);
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.32);
 }
 
 .taunt-comms-bar {

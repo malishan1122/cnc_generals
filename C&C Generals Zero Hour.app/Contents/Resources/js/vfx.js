@@ -260,11 +260,6 @@ window.ZH_VFX = (function () {
       ctx.fill();
     }
 
-    // Stage badge
-    ctx.fillStyle = '#fde047';
-    ctx.font = 'bold 9px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(`STAGE ${stage}/4 (${Math.round(ratio * 100)}%)`, 0, half + 6);
     ctx.restore();
   }
 

@@ -2798,13 +2798,40 @@ window.ZH_DATA = (function () {
       subtitle: 'Iconic Arid Canyon, Tech Oil Derricks & Central Urban Garrisons',
       tacticalProfile: 'Open central canyon with twin flank ridges and contested urban garrison blocks',
       chokePoints: 2,
-      supplyLayout: '2 Safe Base Depots ($30k ea) • 2 Expansion Depots ($22k ea) • 3 Contested Center Docks ($24k/$19k)',
+      supplyLayout: '2 Safe Base Depots ($24k/$20k) • 2 Flank Depots ($22k ea) • 1 Contested Center Dock ($32k)',
       theme: 'DESERT',
       bgPrimary: '#c2a36b',
       bgSecondary: '#b08f54',
       gridColor: 'rgba(92, 68, 32, 0.16)',
       ridgeColor: '#8d6e3a',
-      roadColor: '#9e8252'
+      roadColor: '#9e8252',
+      obstacles: [
+        { x: 1260, y: 1740, r: 56, kind: 'MESA', label: 'West Canyon Butte' },
+        { x: 1940, y: 1460, r: 56, kind: 'MESA', label: 'East Canyon Butte' },
+        { x: 1080, y: 1120, r: 52, kind: 'RIDGE', label: 'North-West Escarpment' },
+        { x: 2120, y: 2080, r: 52, kind: 'RIDGE', label: 'South-East Escarpment' }
+      ],
+      supplyDocks: [
+        { x: 760, y: 2840, amount: 24000 },
+        { x: 360, y: 2360, amount: 20000 },
+        { x: 2440, y: 360, amount: 24000 },
+        { x: 2840, y: 840, amount: 20000 },
+        { x: 1600, y: 1600, amount: 32000 },
+        { x: 680, y: 680, amount: 22000 },
+        { x: 2520, y: 2520, amount: 22000 }
+      ],
+      techStructures: [
+        { defId: 'TECH_OIL_DERRICK', x: 450, y: 450 },
+        { defId: 'TECH_OIL_DERRICK', x: 2750, y: 2750 },
+        { defId: 'TECH_HOSPITAL', x: 1180, y: 2020 },
+        { defId: 'TECH_REPAIR_BAY', x: 2020, y: 1180 }
+      ],
+      garrisonBunkers: [
+        { x: 1380, y: 1380 },
+        { x: 1820, y: 1820 },
+        { x: 980, y: 2220 },
+        { x: 2220, y: 980 }
+      ]
     },
     {
       id: 'FINAL_CRUSADE',
@@ -2812,13 +2839,40 @@ window.ZH_DATA = (function () {
       subtitle: 'Temperate Valley, Tech Hospital & Central Supply Basin',
       tacticalProfile: 'Split river valley with central bridge crossings, Tech Hospital, and high-ground flanks',
       chokePoints: 3,
-      supplyLayout: '2 Safe Base Depots ($30k ea) • 2 River Flank Depots ($22k ea) • 3 Valley Floor Docks ($24k/$19k)',
+      supplyLayout: '2 Safe Base Depots ($24k/$20k) • 2 River Flank Depots ($22k ea) • 1 Valley Floor Dock ($32k)',
       theme: 'TEMPERATE',
       bgPrimary: '#526f43',
       bgSecondary: '#435d36',
       gridColor: 'rgba(25, 42, 18, 0.18)',
       ridgeColor: '#5b574b',
-      roadColor: '#767164'
+      roadColor: '#767164',
+      obstacles: [
+        { x: 1220, y: 1580, r: 60, kind: 'WATER', label: 'West River Gorge' },
+        { x: 1980, y: 1620, r: 60, kind: 'WATER', label: 'East River Gorge' },
+        { x: 540, y: 1540, r: 56, kind: 'WATER', label: 'Outer West Canal' },
+        { x: 2660, y: 1660, r: 56, kind: 'WATER', label: 'Outer East Canal' }
+      ],
+      supplyDocks: [
+        { x: 760, y: 2840, amount: 24000 },
+        { x: 360, y: 2360, amount: 20000 },
+        { x: 2440, y: 360, amount: 24000 },
+        { x: 2840, y: 840, amount: 20000 },
+        { x: 1600, y: 1600, amount: 32000 },
+        { x: 740, y: 620, amount: 22000 },
+        { x: 2460, y: 2580, amount: 22000 }
+      ],
+      techStructures: [
+        { defId: 'TECH_OIL_DERRICK', x: 480, y: 480 },
+        { defId: 'TECH_OIL_DERRICK', x: 2720, y: 2720 },
+        { defId: 'TECH_HOSPITAL', x: 1160, y: 1980 },
+        { defId: 'TECH_REPAIR_BAY', x: 2040, y: 1220 }
+      ],
+      garrisonBunkers: [
+        { x: 1420, y: 1380 },
+        { x: 1780, y: 1820 },
+        { x: 920, y: 1440 },
+        { x: 2280, y: 1760 }
+      ]
     },
     {
       id: 'DEFCON_6',
@@ -2826,13 +2880,40 @@ window.ZH_DATA = (function () {
       subtitle: 'Frozen Mountain Pass, Tech Repair Bays & Strategic Choke Points',
       tacticalProfile: 'Fortified glacier corridor with narrow artillery passes and central Tech Repair Bay',
       chokePoints: 4,
-      supplyLayout: '2 Safe Base Depots ($30k ea) • 2 Ridge Expansion Depots ($22k ea) • 3 Stronghold Docks ($24k/$19k)',
+      supplyLayout: '2 Safe Base Depots ($24k/$20k) • 2 Ridge Expansion Depots ($24k ea) • 1 Stronghold Dock ($34k)',
       theme: 'SNOW',
       bgPrimary: '#cbd5e1',
       bgSecondary: '#94a3b8',
       gridColor: 'rgba(51, 65, 85, 0.16)',
       ridgeColor: '#64748b',
-      roadColor: '#78879b'
+      roadColor: '#78879b',
+      obstacles: [
+        { x: 1340, y: 1720, r: 58, kind: 'GLACIER', label: 'South Glacier Spire' },
+        { x: 1860, y: 1480, r: 58, kind: 'GLACIER', label: 'North Glacier Spire' },
+        { x: 1140, y: 1160, r: 54, kind: 'GLACIER', label: 'West Ice Massif' },
+        { x: 2060, y: 2040, r: 54, kind: 'GLACIER', label: 'East Ice Massif' }
+      ],
+      supplyDocks: [
+        { x: 760, y: 2840, amount: 24000 },
+        { x: 360, y: 2360, amount: 20000 },
+        { x: 2440, y: 360, amount: 24000 },
+        { x: 2840, y: 840, amount: 20000 },
+        { x: 1600, y: 1600, amount: 34000 },
+        { x: 620, y: 740, amount: 24000 },
+        { x: 2580, y: 2460, amount: 24000 }
+      ],
+      techStructures: [
+        { defId: 'TECH_OIL_DERRICK', x: 460, y: 500 },
+        { defId: 'TECH_OIL_DERRICK', x: 2740, y: 2700 },
+        { defId: 'TECH_REPAIR_BAY', x: 1180, y: 2020 },
+        { defId: 'TECH_HOSPITAL', x: 2020, y: 1180 }
+      ],
+      garrisonBunkers: [
+        { x: 1360, y: 1420 },
+        { x: 1840, y: 1780 },
+        { x: 1020, y: 2180 },
+        { x: 2180, y: 1020 }
+      ]
     }
   ];
 
