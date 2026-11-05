@@ -22,6 +22,7 @@ window.ZH_VFX = (function () {
     if (!engine.decals) engine.decals = [];
     if (!engine.shockwaves) engine.shockwaves = [];
     if (!engine.mushroomClouds) engine.mushroomClouds = [];
+    if (!engine.dynamicLights) engine.dynamicLights = [];
     if (engine.screenFlash === undefined) engine.screenFlash = 0;
   }
 
@@ -84,6 +85,16 @@ window.ZH_VFX = (function () {
       mc.age += dt;
       if (mc.timer <= 0) {
         engine.mushroomClouds.splice(i, 1);
+      }
+    }
+
+    // Update Dynamic Ground Point Lights (Generals Evolution Cinematic Lighting)
+    for (let i = engine.dynamicLights.length - 1; i >= 0; i--) {
+      const dl = engine.dynamicLights[i];
+      dl.timer -= dt;
+      if (dl.timer <= 0) {
+        engine.dynamicLights[i] = engine.dynamicLights[engine.dynamicLights.length - 1];
+        engine.dynamicLights.pop();
       }
     }
 
@@ -267,7 +278,8 @@ window.ZH_VFX = (function () {
   // 2b. Phase 1 (6.3) China Tactical Zoom Readability Pass (High-contrast silhouette & role emblem)
   function renderChinaTacticalReadabilityPass(ctx, u, faction, options) {
     if (!u || !u.defId || !u.defId.startsWith('CHINA_')) return;
-    if (options && options.isStudio) return;
+    if (options && (options.isStudio || options.allowAllUnits)) return;
+    if (u.def && u.def.isAir) return;
     const zoom = (options && options.zoom) || 1;
     if (zoom > 1.35) return; // Close zoom uses full unassisted 3D CAD detail
 
@@ -331,8 +343,8 @@ window.ZH_VFX = (function () {
   // ==========================================================================
   function renderArticulatedUnit(ctx, u, faction, options) {
     if ((!options || !options.forceLegacy) && window.ZH_UNIT_MODELS && window.ZH_UNIT_MODELS.renderUnitIfBespoke) {
+      renderChinaTacticalReadabilityPass(ctx, u, faction, options);
       if (window.ZH_UNIT_MODELS.renderUnitIfBespoke(ctx, u, faction, options)) {
-        renderChinaTacticalReadabilityPass(ctx, u, faction, options);
         return;
       }
     }
@@ -456,11 +468,13 @@ window.ZH_VFX = (function () {
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
-        // Twin afterburner glow
-        ctx.fillStyle = '#38bdf8';
-        ctx.beginPath();
-        ctx.arc(-r * 0.65, 0, 3.5, 0, Math.PI * 2);
-        ctx.fill();
+        // Twin afterburner glow (only when airborne/taking off)
+        if (u.airState !== 'PARKED') {
+          ctx.fillStyle = '#38bdf8';
+          ctx.beginPath();
+          ctx.arc(-r * 0.65, 0, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
     ctx.restore();
@@ -1172,8 +1186,8 @@ window.ZH_VFX = (function () {
     ctx.save();
     ctx.translate(b.x, b.y);
 
-    // 1. Isometric Ligne-Claire ground shadow + warm concrete compound plinth
-    ctx.fillStyle = 'rgba(20, 17, 14, 0.42)';
+    // 1. Isometric Ligne-Claire ground shadow (cool slate-blue per Generals Evolution lighting) + warm concrete compound plinth
+    ctx.fillStyle = 'rgba(12, 20, 38, 0.44)';
     ctx.beginPath();
     ctx.ellipse(5, s * 0.14, s * 0.76, s * 0.40, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -1318,6 +1332,279 @@ window.ZH_VFX = (function () {
     ctx.restore();
   }
 
+  // ==========================================================================
+  // 6. Generals Evolution Cinematic VFX Suite:
+  //    - Emissive 3D/Isometric Red Horde Star Ground Decals
+  //    - Multi-Stage Pyrotechnic Explosions (Flash Ring, Fireball Billow, Oil Smoke, Spark Streaks)
+  //    - Dynamic Ground Light-Bleed Emitters
+  //    - High-Contrast "Teal & Orange" Directional Sunlight & Shadow Grading
+  // ==========================================================================
+  function renderHordeStarDecal(ctx, x, y, radius, gameTime = 0, isNationalism = false) {
+    if (!ctx) return;
+    const outerR = Math.max(14, (radius || 14) * 1.55 + 5);
+    const innerR = outerR * 0.42;
+    const pulse = 0.84 + 0.16 * Math.sin((gameTime || 0) * 5.2);
+
+    ctx.save();
+    ctx.translate(x, y + 3);
+    if (typeof ctx.scale === 'function') {
+      ctx.scale(1, 0.64); // Flat-projected isometric ground plane
+    }
+
+    // 1. Emissive crimson-amber ground aura
+    if (typeof ctx.createRadialGradient === 'function') {
+      const auraR = outerR * (isNationalism ? 1.52 : 1.32);
+      const grad = ctx.createRadialGradient(0, 0, outerR * 0.15, 0, 0, auraR);
+      grad.addColorStop(0, `rgba(239, 68, 68, ${0.46 * pulse})`);
+      grad.addColorStop(0.55, `rgba(220, 38, 38, ${0.24 * pulse})`);
+      grad.addColorStop(1, 'rgba(220, 38, 38, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(0, 0, auraR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 2. Outer Nationalism / Horde ring
+    ctx.strokeStyle = isNationalism
+      ? `rgba(250, 204, 21, ${0.85 * pulse})`
+      : `rgba(239, 68, 68, ${0.72 * pulse})`;
+    ctx.lineWidth = isNationalism ? 2.2 : 1.6;
+    ctx.beginPath();
+    ctx.arc(0, 0, outerR * 1.04, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 3. 5-Pointed Red Star polygon with gold inner trim
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const ang = -Math.PI / 2 + (i * Math.PI) / 5;
+      const rad = i % 2 === 0 ? outerR : innerR;
+      const px = Math.cos(ang) * rad;
+      const py = Math.sin(ang) * rad;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = `rgba(220, 38, 38, ${0.76 * pulse})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(253, 224, 71, ${0.95 * pulse})`;
+    ctx.lineWidth = 1.85;
+    ctx.stroke();
+
+    // 4. Inner hot-gold core star highlight
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const ang = -Math.PI / 2 + (i * Math.PI) / 5;
+      const rad = (i % 2 === 0 ? outerR : innerR) * 0.48;
+      const px = Math.cos(ang) * rad;
+      const py = Math.sin(ang) * rad;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = `rgba(254, 240, 138, ${0.52 * pulse})`;
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function addDynamicLight(engine, x, y, radius = 90, color = '251, 146, 60', intensity = 0.55, duration = 0.42) {
+    if (!engine) return;
+    ensureContainers(engine);
+    if (engine.dynamicLights.length >= 48) {
+      engine.dynamicLights[0] = engine.dynamicLights[engine.dynamicLights.length - 1];
+      engine.dynamicLights.pop();
+    }
+    engine.dynamicLights.push({
+      x,
+      y,
+      radius,
+      color,
+      intensity,
+      timer: duration,
+      maxTimer: duration
+    });
+  }
+
+  function triggerCinematicExplosion(engine, x, y, scale = 1.0, style = 'DEFAULT') {
+    if (!engine || !engine.particles) return;
+    ensureContainers(engine);
+    const rng = () => (typeof engine.cosmeticRandom === 'function' ? engine.cosmeticRandom() : Math.random());
+
+    const isToxin = style === 'TOXIN';
+    const isEMP = style === 'EMP';
+    const coreRGB = isToxin ? '34, 197, 94' : isEMP ? '56, 189, 248' : '251, 146, 60';
+
+    // 1. Dynamic ground light-bleed flash
+    addDynamicLight(engine, x, y, 85 * scale, coreRGB, Math.min(0.88, 0.52 * scale), 0.38 + 0.16 * scale);
+
+    // 2. Persistent scorch mark decal for medium/large blasts
+    if (scale >= 0.75) {
+      addDecal(engine, 'SCORCH', x, y, 22 * scale, rng() * Math.PI * 2, 95);
+    }
+
+    if (engine.particles.length >= 340) return;
+
+    // 3. Stage 1: Instant White-Gold Thermal Flash Ring
+    engine.particles.push({
+      type: 'FLASH_RING',
+      x,
+      y,
+      vx: 0,
+      vy: 0,
+      r: 8 * scale,
+      growRate: 165 * scale,
+      color: isToxin ? '#86efac' : isEMP ? '#7dd3fc' : '#fef08a',
+      timer: 0.22,
+      maxTimer: 0.22
+    });
+
+    // 4. Stage 2: Billowing Orange-Red Fireballs
+    const fireballCount = Math.min(8, Math.max(2, Math.round(4 * scale)));
+    for (let i = 0; i < fireballCount; i++) {
+      if (engine.particles.length >= 340) break;
+      const ang = rng() * Math.PI * 2;
+      const dist = rng() * 14 * scale;
+      const spd = (12 + rng() * 34) * scale;
+      const life = (0.34 + rng() * 0.26) * Math.min(1.4, Math.max(0.8, scale));
+      engine.particles.push({
+        type: 'FIREBALL_BILLOW',
+        x: x + Math.cos(ang) * dist,
+        y: y + Math.sin(ang) * dist,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd - (14 + rng() * 18),
+        drag: 2.8,
+        r: (9 + rng() * 10) * scale,
+        growRate: (22 + rng() * 18) * scale,
+        color: isToxin ? '#22c55e' : isEMP ? '#38bdf8' : (i % 2 === 0 ? '#fb923c' : '#ef4444'),
+        timer: life,
+        maxTimer: life
+      });
+    }
+
+    // 5. Stage 3: Rising Dark Oil-Smoke Plume Columns
+    if (!isEMP) {
+      const smokeCount = Math.min(9, Math.max(2, Math.round(4.5 * scale)));
+      for (let i = 0; i < smokeCount; i++) {
+        if (engine.particles.length >= 340) break;
+        const ang = rng() * Math.PI * 2;
+        const dist = rng() * 16 * scale;
+        const life = (0.75 + rng() * 0.55) * Math.min(1.5, Math.max(0.85, scale));
+        engine.particles.push({
+          type: 'OIL_SMOKE',
+          x: x + Math.cos(ang) * dist,
+          y: y + Math.sin(ang) * dist,
+          vx: Math.cos(ang) * (8 + rng() * 18) * scale,
+          vy: -(22 + rng() * 28) * Math.min(1.3, scale),
+          drag: 1.6,
+          r: (10 + rng() * 11) * scale,
+          growRate: (18 + rng() * 14) * scale,
+          color: isToxin ? '#14532d' : '#18181b',
+          timer: life,
+          maxTimer: life
+        });
+      }
+    }
+
+    // 6. Stage 4: High-Velocity Radial Spark Streaks
+    const sparkCount = Math.min(18, Math.max(5, Math.round(10 * scale)));
+    for (let i = 0; i < sparkCount; i++) {
+      if (engine.particles.length >= 340) break;
+      const ang = rng() * Math.PI * 2;
+      const spd = (85 + rng() * 185) * Math.min(1.35, Math.max(0.75, scale));
+      const life = 0.24 + rng() * 0.28;
+      engine.particles.push({
+        type: 'SPARK_STREAK',
+        x,
+        y,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd - 18,
+        drag: 2.2,
+        r: 1.8 + rng() * 1.6,
+        color: isToxin ? '#86efac' : isEMP ? '#bae6fd' : (i % 3 === 0 ? '#ffffff' : '#fde047'),
+        timer: life,
+        maxTimer: life
+      });
+    }
+  }
+
+  function renderDynamicGroundLighting(ctx, engine) {
+    if (!ctx || !engine || typeof ctx.createRadialGradient !== 'function') return;
+    ensureContainers(engine);
+
+    const drawPool = (x, y, radius, rgb, alpha) => {
+      if (alpha <= 0.01 || radius <= 2) return;
+      if (engine.cam) {
+        if (
+          x + radius < engine.cam.x ||
+          x - radius > engine.cam.x + engine.cam.w ||
+          y + radius < engine.cam.y ||
+          y - radius > engine.cam.y + engine.cam.h
+        ) {
+          return;
+        }
+      }
+      const grad = ctx.createRadialGradient(x, y, radius * 0.08, x, y, radius);
+      grad.addColorStop(0, `rgba(${rgb}, ${Math.min(0.75, alpha)})`);
+      grad.addColorStop(0.5, `rgba(${rgb}, ${Math.min(0.4, alpha * 0.45)})`);
+      grad.addColorStop(1, `rgba(${rgb}, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    ctx.save();
+    // 1. Transient explosion & muzzle flash point lights
+    for (let i = 0; i < engine.dynamicLights.length; i++) {
+      const dl = engine.dynamicLights[i];
+      const tRatio = Math.max(0, Math.min(1, dl.timer / (dl.maxTimer || 0.4)));
+      drawPool(dl.x, dl.y, dl.radius * (1.15 - 0.15 * tRatio), dl.color, dl.intensity * tRatio);
+    }
+
+    // 2. Active Flame / Nuke / Missile Projectile Ground Glow
+    if (engine.projectiles) {
+      for (let i = 0; i < engine.projectiles.length; i++) {
+        const p = engine.projectiles[i];
+        if (p.projType === 'FLAME' || p.projType === 'NUKE_SHELL' || p.projType === 'MISSILE' || p.projType === 'SCUD_MISSILE') {
+          if (engine.isPositionVisible && !engine.isPositionVisible(p.x, p.y)) continue;
+          const rgb = p.projType === 'NUKE_SHELL' ? '251, 146, 60' : '249, 115, 22';
+          drawPool(p.x, p.y, p.projType === 'FLAME' ? 42 : 34, rgb, 0.28);
+        }
+      }
+    }
+
+    // 3. Burning Structures & Heavily Damaged Vehicles Warm Ground Bleed
+    const flicker = 0.82 + 0.18 * Math.sin((engine.gameTime || 0) * 15);
+    if (engine.buildings) {
+      for (let i = 0; i < engine.buildings.length; i++) {
+        const b = engine.buildings[i];
+        if (b.hp > 0 && b.hp < b.maxHp * 0.45) {
+          if (b.team !== 0 && engine.isPositionVisible && !engine.isPositionVisible(b.x, b.y)) continue;
+          drawPool(b.x, b.y, (b.def.size || 72) * 0.85, '249, 115, 22', 0.26 * flicker);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  function renderCinematicAtmospherePass(ctx, engine) {
+    if (!ctx || !engine || !engine.cam || typeof ctx.createLinearGradient !== 'function') return;
+    const cx = engine.cam.x;
+    const cy = engine.cam.y;
+    const cw = engine.cam.w || 1280;
+    const ch = engine.cam.h || 720;
+
+    ctx.save();
+    // High-contrast "Teal & Orange" Generals Evolution directional sunlight & cool slate shadow grade
+    const dirGrad = ctx.createLinearGradient(cx, cy, cx + cw, cy + ch);
+    dirGrad.addColorStop(0, 'rgba(253, 186, 116, 0.09)');   // Warm golden-amber sun key light (top-left)
+    dirGrad.addColorStop(0.48, 'rgba(251, 146, 60, 0.02)'); // Subtle warm mid-transfer
+    dirGrad.addColorStop(1, 'rgba(15, 23, 42, 0.16)');      // Cool slate-blue atmospheric shadow (bottom-right)
+    ctx.fillStyle = dirGrad;
+    ctx.fillRect(cx, cy, cw, ch);
+    ctx.restore();
+  }
+
   return {
     addDecal,
     addTreadMark,
@@ -1328,7 +1615,12 @@ window.ZH_VFX = (function () {
     triggerSuperweaponSpectacle,
     renderSuperweaponSpectacle,
     renderLigneClaireBuilding,
-    renderLigneClaireBuildingGhost
+    renderLigneClaireBuildingGhost,
+    renderHordeStarDecal,
+    addDynamicLight,
+    triggerCinematicExplosion,
+    renderDynamicGroundLighting,
+    renderCinematicAtmospherePass
   };
 })();
 

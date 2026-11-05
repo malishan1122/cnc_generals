@@ -165,6 +165,7 @@ window.ZH_AI = (function () {
       unitWeights: {
         CHINA_NUKE_CANNON: 5,
         CHINA_NUKE_MIG: 5,
+        CHINA_J16: 4,
         CHINA_OVERLORD: 4,
         CHINA_BATTLEMASTER: 4,
         CHINA_DRAGON_TANK: 2,
@@ -585,12 +586,12 @@ window.ZH_AI = (function () {
 
     const antiAirUnits = new Set([
       'USA_AVENGER', 'USA_MISSILE_DEFENDER', 'USA_KING_RAPTOR', 'USA_RAPTOR',
-      'CHINA_GATTLING_TANK', 'CHINA_MINIGUNNER', 'CHINA_ASSAULT_CRAWLER',
+      'CHINA_GATTLING_TANK', 'CHINA_MINIGUNNER', 'CHINA_ASSAULT_CRAWLER', 'CHINA_J16',
       'GLA_QUAD_CANNON', 'GLA_RPG_TROOPER'
     ]);
     const antiArmorUnits = new Set([
       'USA_PALADIN', 'USA_LASER_TANK', 'USA_LASER_CRUSADER', 'USA_COMANCHE', 'USA_MISSILE_DEFENDER',
-      'CHINA_EMPEROR_OVERLORD', 'CHINA_OVERLORD', 'CHINA_TANK_HUNTER', 'CHINA_NUKE_MIG',
+      'CHINA_EMPEROR_OVERLORD', 'CHINA_OVERLORD', 'CHINA_TANK_HUNTER', 'CHINA_NUKE_MIG', 'CHINA_J16',
       'GLA_MARAUDER', 'GLA_RPG_TROOPER', 'GLA_HIJACKER', 'GLA_ROCKET_BUGGY'
     ]);
     const antiInfUnits = new Set([
@@ -599,16 +600,21 @@ window.ZH_AI = (function () {
       'GLA_TOXIN_TRACTOR', 'GLA_QUAD_CANNON', 'GLA_JARMEN_KELL'
     ]);
 
+    const strat = (window.ZH_AI_POLICIES && typeof ZH_AI_POLICIES.getCommanderStrategy === 'function')
+      ? ZH_AI_POLICIES.getCommanderStrategy(generalId)
+      : null;
+    const gain = strat && strat.counterAdaptationGain !== undefined ? strat.counterAdaptationGain : 1.0;
+
     for (const uId of Object.keys(ZH_DATA.UNITS)) {
       if (!baseWeights[uId]) baseWeights[uId] = 1;
       if (airRatio >= 0.25 && antiAirUnits.has(uId)) {
-        baseWeights[uId] = Math.round(baseWeights[uId] * 2.2);
+        baseWeights[uId] = Math.max(1, Math.round(baseWeights[uId] * (1.0 + 1.2 * gain)));
       }
       if (armorRatio >= 0.40 && antiArmorUnits.has(uId)) {
-        baseWeights[uId] = Math.round(baseWeights[uId] * 1.8);
+        baseWeights[uId] = Math.max(1, Math.round(baseWeights[uId] * (1.0 + 0.8 * gain)));
       }
       if (infRatio >= 0.50 && antiInfUnits.has(uId)) {
-        baseWeights[uId] = Math.round(baseWeights[uId] * 1.8);
+        baseWeights[uId] = Math.max(1, Math.round(baseWeights[uId] * (1.0 + 0.8 * gain)));
       }
     }
 
@@ -687,7 +693,7 @@ window.ZH_AI = (function () {
       }
     }
 
-    const interval = isBrutal ? 1.4 : isHard ? 1.6 : isEasy ? 4.4 : 2.6;
+    const interval = isBrutal ? 1.4 : isHard ? 1.6 : isEasy ? 6.5 : 2.6;
     if (tState.think < interval) return;
     tState.think = 0;
     if (teamId === 1) thinkTimer = 0;
@@ -703,10 +709,11 @@ window.ZH_AI = (function () {
 
     const fId = aiTeam.factionId;
     const doctrine = GENERAL_DOCTRINES[aiTeam.generalId] || GENERAL_DOCTRINES.USA_GRANGER;
-    const myBuildings = engine.buildings.filter(b => b.team === teamId && b.hp > 0);
+    const myBuildings = engine.buildings.filter(b => b.hp > 0 && b.team === teamId);
     const myUnits = engine.units.filter(u => u.team === teamId && u.hp > 0 && !(u.garrisonedIn || u.garrisonId));
     const cc = myBuildings.find(b => b.def.isCommandCenter) || myBuildings[0];
     if (!cc) return;
+    const elapsedSec = engine.gameTime || engine.matchTime || 0;
 
     // 1. Ensure AI has at least 1 Builder (Dozer / Worker) and repair damaged structures
     const builderId = fId === 'USA' ? 'USA_DOZER' : fId === 'CHINA' ? 'CHINA_DOZER' : 'GLA_WORKER';
@@ -755,14 +762,19 @@ window.ZH_AI = (function () {
     const countBuilding = (id) => myBuildings.filter(b => b.defId === id).length;
     const desiredBuildOrder = doctrine.buildOrder || getBuildOrderForFaction(fId);
     const dirSign = teamId === 0 ? -1 : 1;
-    if (hasFreeBuilder) {
+    if (hasFreeBuilder && (!isEasy || !unbuiltFoundation)) {
       for (let i = 0; i < desiredBuildOrder.length; i++) {
         const item = desiredBuildOrder[i];
         const bDef = ZH_DATA.BUILDINGS[item.id];
         if (!bDef || !engine.isEntityUnlocked(item.id, teamId)) continue;
-        // Phase 3 (8.3): Easy difficulty does not construct superweapons
-        if (isEasy && bDef.isSuperweapon) continue;
-        if (countBuilding(item.id) < item.count) {
+        // Phase 3 (8.3): Easy difficulty does not construct superweapons or secondary passive-income structures,
+        // delays Tier-3 tech centers until 150s, and caps non-power buildings at 1 copy.
+        if (isEasy) {
+          if (bDef.isSuperweapon || bDef.passiveIncome) continue;
+          if (bDef.grantsTech && elapsedSec < 150) continue;
+        }
+        const maxCountForDiff = (isEasy && !(bDef.power > 0)) ? 1 : item.count;
+        if (countBuilding(item.id) < maxCountForDiff) {
           const slot = BASE_OFFSETS[i % BASE_OFFSETS.length];
           const spot = engine.findValidBuildSpot
             ? engine.findValidBuildSpot(item.id, cc.x, cc.y, i)
@@ -786,12 +798,18 @@ window.ZH_AI = (function () {
     }
 
     // 4. Train Army (with Dynamic Counter-Composition Weighting) & Research Upgrades
-    // Phase 3 (8.3): Easy AI uses base doctrine weights without counter-adaptation and skips tech upgrades; Hard AI prioritizes upgrades at credits > 800
+    // Phase 3 (8.3): Easy AI uses base doctrine weights without counter-adaptation, skips tech upgrades,
+    // caps active combat units to 6, and queues at most 1 unit at a time across its base.
     const counterWeights = isEasy ? (doctrine.unitWeights || {}) : computeCounterWeights(engine, aiTeam.generalId, enemyTeamId);
     const upgradeCreditThreshold = isHard ? 800 : 1200;
     const maxQueueDepth = isHard ? 3 : isEasy ? 1 : 2;
+    const activeCombatCount = myUnits.filter(u => !u.def.isBuilder && !u.def.isHarvester && !u.def.isHacker).length;
+    const anyQueueBusyOnEasy = isEasy && myBuildings.some(mb => mb.queue && mb.queue.length > 0);
+    let easyQueuedThisTick = false;
+
     for (const b of myBuildings) {
       if (!b.constructed || b.queue.length >= maxQueueDepth) continue;
+      if (isEasy && (activeCombatCount >= 6 || anyQueueBusyOnEasy || easyQueuedThisTick)) break;
 
       if (!isEasy && b.def.upgrades && b.def.upgrades.length > 0 && aiTeam.credits > upgradeCreditThreshold) {
         for (const upgId of b.def.upgrades) {
@@ -803,58 +821,69 @@ window.ZH_AI = (function () {
       }
 
       if (b.def.trains && b.def.trains.length > 0) {
-        const candidates = b.def.trains.filter(
+        let candidates = b.def.trains.filter(
           uId => ZH_DATA.UNITS[uId] &&
                  !ZH_DATA.UNITS[uId].isBuilder &&
                  !ZH_DATA.UNITS[uId].isHarvester &&
                  engine.isEntityUnlocked(uId, teamId)
         );
+        if (isEasy && elapsedSec < 150) {
+          const basicCandidates = candidates.filter(uId => {
+            const uDef = ZH_DATA.UNITS[uId];
+            return uDef && !uDef.reqTech && (uDef.cost || 0) <= 1100;
+          });
+          if (basicCandidates.length > 0) candidates = basicCandidates;
+        }
         if (candidates.length > 0) {
           const pick = pickUnitForGeneral(aiTeam.generalId, candidates, counterWeights, engine);
-          engine.queueProduction(b, pick);
-        }
-      }
-    }
-
-    // 5. Tech Building Capture & Civilian Garrisoning Orders
-    const capturers = myUnits.filter(u => u.def.canCapture && u.state === 'IDLE');
-    if (capturers.length > 0 && Array.isArray(engine.techStructures)) {
-      const uncapturedTech = engine.techStructures.filter(t => t.team !== teamId && t.hp > 0);
-      if (uncapturedTech.length > 0) {
-        const capUnit = capturers[0];
-        let bestTech = uncapturedTech[0];
-        let bestDist = Math.hypot(bestTech.x - capUnit.x, bestTech.y - capUnit.y);
-        for (const t of uncapturedTech) {
-          const d = Math.hypot(t.x - capUnit.x, t.y - capUnit.y);
-          if (d < bestDist) {
-            bestDist = d;
-            bestTech = t;
+          if (engine.queueProduction(b, pick)) {
+            easyQueuedThisTick = true;
           }
         }
-        capUnit.state = 'CAPTURE';
-        capUnit.targetEntity = bestTech;
-        capUnit.targetEntityId = bestTech.id;
-        capUnit.targetX = bestTech.x;
-        capUnit.targetY = bestTech.y;
       }
     }
 
-    if (Array.isArray(engine.garrisonBunkers)) {
-      const openBunkers = engine.garrisonBunkers.filter(
-        gb => gb.hp > 0 && (gb.team === -1 || gb.team === teamId) && gb.occupants.length < (gb.maxOccupants || gb.capacity || 6)
-      );
-      if (openBunkers.length > 0) {
-        const idleInf = myUnits.filter(
-          u => u.def.category === 'INFANTRY' && !u.def.isBuilder && !u.def.isHacker && u.state === 'IDLE'
+    // 5. Tech Building Capture & Civilian Garrisoning Orders (Normal & Hard)
+    if (!isEasy) {
+      const capturers = myUnits.filter(u => u.def.canCapture && u.state === 'IDLE');
+      if (capturers.length > 0 && Array.isArray(engine.techStructures)) {
+        const uncapturedTech = engine.techStructures.filter(t => t.team !== teamId && t.hp > 0);
+        if (uncapturedTech.length > 0) {
+          const capUnit = capturers[0];
+          let bestTech = uncapturedTech[0];
+          let bestDist = Math.hypot(bestTech.x - capUnit.x, bestTech.y - capUnit.y);
+          for (const t of uncapturedTech) {
+            const d = Math.hypot(t.x - capUnit.x, t.y - capUnit.y);
+            if (d < bestDist) {
+              bestDist = d;
+              bestTech = t;
+            }
+          }
+          capUnit.state = 'CAPTURE';
+          capUnit.targetEntity = bestTech;
+          capUnit.targetEntityId = bestTech.id;
+          capUnit.targetX = bestTech.x;
+          capUnit.targetY = bestTech.y;
+        }
+      }
+
+      if (Array.isArray(engine.garrisonBunkers)) {
+        const openBunkers = engine.garrisonBunkers.filter(
+          gb => gb.hp > 0 && (gb.team === -1 || gb.team === teamId) && gb.occupants.length < (gb.maxOccupants || gb.capacity || 6)
         );
-        if (idleInf.length > 0 && rng(engine) < 0.45) {
-          const inf = idleInf[0];
-          const bunker = openBunkers[0];
-          inf.state = 'ENTER_GARRISON';
-          inf.targetEntity = bunker;
-          inf.targetEntityId = bunker.id;
-          inf.targetX = bunker.x;
-          inf.targetY = bunker.y;
+        if (openBunkers.length > 0) {
+          const idleInf = myUnits.filter(
+            u => u.def.category === 'INFANTRY' && !u.def.isBuilder && !u.def.isHacker && u.state === 'IDLE'
+          );
+          if (idleInf.length > 0 && rng(engine) < 0.45) {
+            const inf = idleInf[0];
+            const bunker = openBunkers[0];
+            inf.state = 'ENTER_GARRISON';
+            inf.targetEntity = bunker;
+            inf.targetEntityId = bunker.id;
+            inf.targetX = bunker.x;
+            inf.targetY = bunker.y;
+          }
         }
       }
     }
@@ -874,8 +903,8 @@ window.ZH_AI = (function () {
           if (enemyVeh) {
             engine.triggerUnitAbility(u.id, enemyVeh.x, enemyVeh.y, enemyVeh);
           }
-        } else if (abId === 'FLASHBANG' || abId === 'FLAME_WALL' || abId === 'LASER_LOCK') {
-          const nearEnemy = enemyUnits.find(e => Math.hypot(e.x - u.x, e.y - u.y) <= 240);
+        } else if (abId === 'FLASHBANG' || abId === 'FLAME_WALL' || abId === 'LASER_LOCK' || abId === 'EW_JAM_PULSE') {
+          const nearEnemy = enemyUnits.find(e => Math.hypot(e.x - u.x, e.y - u.y) <= 280);
           if (nearEnemy) {
             engine.triggerUnitAbility(u.id, nearEnemy.x, nearEnemy.y, nearEnemy);
           }
@@ -884,10 +913,10 @@ window.ZH_AI = (function () {
     }
 
     // 7. Intelligent Cluster & Power-Grid Combo Engine (Generals Powers + Superweapons)
-    if (aiTeam.generalPoints > 0) {
+    // Cadet Doctrine (EASY): Superweapons & offensive Generals Powers held.
+    if (!isEasy && aiTeam.generalPoints > 0) {
       const powers = ZH_DATA.GENERALS_POWERS[fId] || [];
       for (const p of powers) {
-        if (isEasy && p.rankReq > 1) continue; // Easy AI only unlocks Rank 1 powers
         if (!aiTeam.unlockedPowers.has(p.id) && aiTeam.rank >= p.rankReq) {
           engine.unlockGeneralsPower(teamId, p.id);
           break;
@@ -896,9 +925,9 @@ window.ZH_AI = (function () {
     }
 
     const clusterTarget = findBestClusterTarget(engine, enemyTeamId, 260, !isEasy);
-    const powerMinTime = isHard ? 65 : isEasy ? 150 : 90;
+    const powerMinTime = isHard ? 65 : 90;
 
-    if ((engine.matchTime || 0) >= powerMinTime) {
+    if (!isEasy && elapsedSec >= powerMinTime) {
       for (const pId of aiTeam.unlockedPowers) {
         if ((aiTeam.powerCooldowns[pId] || 0) <= 0) {
           engine.castGeneralsPower(teamId, pId, clusterTarget.x, clusterTarget.y);
@@ -921,6 +950,7 @@ window.ZH_AI = (function () {
     const retreatThreshold = isBrutal ? 0.30 : isHard ? 0.22 : 0;
     if (retreatThreshold > 0) {
       for (const u of combatUnits) {
+        if (u.locomotor === 'AIRCRAFT') continue;
         if (u.hp > 0 && u.hp < u.maxHp * retreatThreshold && Math.hypot(u.x - cc.x, u.y - cc.y) > 260) {
           u.state = 'MOVE';
           u.targetEntity = null;
@@ -930,15 +960,20 @@ window.ZH_AI = (function () {
       }
     }
     const baseWave = doctrine.waveSize || 6;
-    const waveSize = isHard ? Math.max(4, baseWave - 1) : isEasy ? baseWave + 2 : baseWave;
+    const waveSize = isHard ? Math.max(4, baseWave - 1) : isEasy ? Math.min(5, baseWave) : baseWave;
     // Phase 3 (8.3): Easy uses single-lane vanguard push (flankRatio = 0); Hard uses aggressive multi-angle flank raids
     const flankRatio = isEasy ? 0 : isHard ? Math.max(0.45, doctrine.flankRatio || 0.35) : (doctrine.flankRatio || 0.35);
 
     const squads = assignSquadRoles(combatUnits, flankRatio, cc);
+    if (isEasy && squads.vanguard.length > 2 && squads.defenders.length < 2) {
+      while (squads.defenders.length < 2 && squads.vanguard.length > 2) {
+        squads.defenders.push(squads.vanguard.pop());
+      }
+    }
 
     // Base Defense squad maintains GUARD leash around Command Center
     for (const defUnit of squads.defenders) {
-      if (defUnit.state === 'IDLE') {
+      if (defUnit.state === 'IDLE' && defUnit.locomotor !== 'AIRCRAFT') {
         defUnit.state = 'GUARD';
         defUnit.guardX = cc.x + (rng(engine) - 0.5) * 120;
         defUnit.guardY = cc.y + (rng(engine) - 0.5) * 120;
@@ -947,7 +982,16 @@ window.ZH_AI = (function () {
       }
     }
 
-    if (combatUnits.length >= waveSize || tState.wave >= 40) {
+    const minFirstAttackTime = isEasy ? 110 : 55;
+    const waveTimerThreshold = isEasy ? 95 : 55;
+    const minUnitsForTimedWave = isEasy ? 3 : 1;
+    const readyToAttack = isHard
+      ? (combatUnits.length >= waveSize || tState.wave >= 40)
+      : (elapsedSec >= minFirstAttackTime &&
+         combatUnits.length >= minUnitsForTimedWave &&
+         (combatUnits.length >= waveSize || tState.wave >= waveTimerThreshold));
+
+    if (readyToAttack) {
       tState.wave = 0;
       if (teamId === 1) waveTimer = 0;
 
@@ -971,7 +1015,8 @@ window.ZH_AI = (function () {
 
       // Dispatch VANGUARD squad to crush primary cluster target (share one A* corridor per wave)
       let sharedVanguardPath = null;
-      squads.vanguard.forEach((u) => {
+      const vanguardWave = isEasy ? squads.vanguard.slice(0, 3) : squads.vanguard;
+      vanguardWave.forEach((u) => {
         if (u.state === 'IDLE') {
           u.state = 'ATTACK_MOVE';
           const offX = (rng(engine) - 0.5) * 140;

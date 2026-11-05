@@ -265,6 +265,9 @@ class SoftCanvas {
     return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
   }
   setLineDash() {}
+  fillText() {}
+  strokeText() {}
+  measureText(txt) { return { width: String(txt || '').length * 6 }; }
   createLinearGradient() {
     return { _stops: [], addColorStop(t, color) { this._stops.push({ t, color }); } };
   }
@@ -891,6 +894,7 @@ function cmdSync(opts) {
       'renderChinaWheeledModel',
       'renderHelixModel',
       'renderMigModel',
+      'renderJ16Model',
       'renderGlaTankModel',
       'renderGlaWheeledModel'
     ];

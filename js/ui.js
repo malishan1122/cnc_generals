@@ -129,6 +129,7 @@
 
       try {
         handleCameraPan(dt);
+        updateCinematicCamera(dt, now);
         if (engine && engine.running) {
           const simMult = (window.ZH_SIMULATOR && ZH_SIMULATOR.getSpeedMultiplier)
             ? ZH_SIMULATOR.getSpeedMultiplier()
@@ -198,16 +199,22 @@
 
     let topH = 36;
     let bottomH = 184;
-    try {
-      if (typeof getComputedStyle === 'function' && document.documentElement) {
-        const rs = getComputedStyle(document.documentElement);
-        const parsedTop = parseInt(rs.getPropertyValue('--top-bar-h') || rs.getPropertyValue('--hud-top-h'), 10);
-        const parsedBottom = parseInt(rs.getPropertyValue('--cmd-bar-h') || rs.getPropertyValue('--hud-bottom-h'), 10);
-        if (!isNaN(parsedTop) && parsedTop > 0) topH = parsedTop;
-        if (!isNaN(parsedBottom) && parsedBottom > 0) bottomH = parsedBottom;
+    const isCinematic = Boolean(document.body && document.body.classList && document.body.classList.contains('cinematic-mode'));
+    if (isCinematic) {
+      topH = 0;
+      bottomH = 0;
+    } else {
+      try {
+        if (typeof getComputedStyle === 'function' && document.documentElement) {
+          const rs = getComputedStyle(document.documentElement);
+          const parsedTop = parseInt(rs.getPropertyValue('--top-bar-h') || rs.getPropertyValue('--hud-top-h'), 10);
+          const parsedBottom = parseInt(rs.getPropertyValue('--cmd-bar-h') || rs.getPropertyValue('--hud-bottom-h'), 10);
+          if (!isNaN(parsedTop) && parsedTop > 0) topH = parsedTop;
+          if (!isNaN(parsedBottom) && parsedBottom > 0) bottomH = parsedBottom;
+        }
+      } catch (_) {
+        // Fallback to defaults in headless test runner
       }
-    } catch (_) {
-      // Fallback to defaults in headless test runner
     }
 
     const dpr = Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 2);
@@ -380,10 +387,10 @@
   let dossierTauntIndex = 0;
 
   const DIFFICULTY_DOCTRINE_NOTES = {
-    EASY: 'Cadet Doctrine (AI $10,000 vs You $10,000): Single-front waves, 95s first attack, no flank harassment, Superweapons & Powers held.',
+    EASY: 'Cadet Doctrine (AI $8,500 vs You $10,000): Relaxed 6.5s build cadence, 110s first attack, small single-front waves, no flank raids, Superweapons & Powers held.',
     NORMAL: 'Commander Doctrine (AI $10,000 vs You $10,000): Balanced combined-arms squads, 55s first attack, active tech capture & coordinated flanks.',
-    HARD: 'General Doctrine (AI $10,000 vs You $10,000): Relentless 1.4s build cadence, 35s first attack, 2-prong flank strikes, wounded unit retreat micro, Superweapons & Generals Powers.',
-    BRUTAL: 'Supreme General Doctrine (AI $12,500 vs You $10,000): Maximum 1.1s build cadence, 28s first attack, multi-front pincer strikes, retreat micro, and War Economy reserve.'
+    HARD: 'General Doctrine (AI $10,000 vs You $10,000): Relentless 1.6s build cadence, 35s first attack, 2-prong flank strikes, wounded unit retreat micro, Superweapons & Generals Powers.',
+    BRUTAL: 'Supreme General Doctrine (AI $12,500 vs You $10,000): Maximum 1.4s build cadence, 28s first attack, multi-front pincer strikes, retreat micro, and War Economy reserve.'
   };
 
   const MAP_STRATEGIC_NOTES = {
@@ -477,7 +484,7 @@
         if (banner) {
           banner.innerHTML = `
             <span class="comms-wave-bars" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-            <span><strong>[SAT-COMMS // ${aiGen.name.toUpperCase()}]:</strong> "${quote}"</span>
+            <span><strong>${aiGen.name}:</strong> “${quote}”</span>
           `;
         }
         if (window.ZH_AUDIO) {
@@ -743,12 +750,12 @@
             ${getGeneralPortraitSVG(pGen.id)}
           </div>
           <div class="dossier-title-col">
-            <div class="dossier-side-tag">ALLIED COMMAND // ${pMeta.serial}</div>
+            <div class="dossier-side-tag">Allied Command · ${pMeta.serial}</div>
             <div class="dossier-name">${pMeta.callsign}</div>
             <div class="dossier-role" style="color:${pFac.accent}">${pMeta.branch}</div>
           </div>
         </div>
-        <div class="dossier-specialty">DOCTRINE // ${pGen.specialty}</div>
+        <div class="dossier-specialty">Doctrine · ${pGen.specialty}</div>
         <ul class="dossier-perks-list">
           ${pGen.perks.map(p => `<li>${p}</li>`).join('')}
         </ul>
@@ -763,8 +770,8 @@
       aiCard.style.borderLeft = `3px solid ${aiFac.color}`;
       const aiChips = formatModifierChips(aiGen);
       const modeTag = selectedMode === 'CHALLENGE'
-        ? `OPFOR TARGET // STAGE ${(challengeStageIndex % 8) + 1}`
-        : `HOSTILE COMMAND // ${aiMeta.serial}`;
+        ? `Opposing Target · Stage ${(challengeStageIndex % 8) + 1}`
+        : `Opposing Command · ${aiMeta.serial}`;
       aiCard.innerHTML = `
         <div class="dossier-combatant-header">
           <div class="dossier-portrait-box" style="border-color:${aiFac.color}">
@@ -776,7 +783,7 @@
             <div class="dossier-role" style="color:${aiFac.accent}">${aiMeta.branch}</div>
           </div>
         </div>
-        <div class="dossier-specialty">DOCTRINE // ${aiGen.specialty}</div>
+        <div class="dossier-specialty">Doctrine · ${aiGen.specialty}</div>
         <ul class="dossier-perks-list">
           ${aiGen.perks.map(p => `<li>${p}</li>`).join('')}
         </ul>
@@ -795,7 +802,7 @@
       banner.style.borderLeftColor = aiFac.color;
       banner.innerHTML = `
         <span class="comms-wave-bars" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-        <span><strong>[SAT-COMMS // ${aiGen.name.toUpperCase()}]:</strong> "${quote}"</span>
+        <span><strong>${aiGen.name}:</strong> “${quote}”</span>
       `;
     }
   }
@@ -816,6 +823,10 @@
 
       card.className = `general-card ${isSelected ? 'selected' : ''}`;
       card.dataset.generalId = gen.id;
+      card.tabIndex = 0;
+      card.setAttribute('role', 'option');
+      card.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+      card.setAttribute('aria-label', `${gen.name}, ${gen.title}, ${gen.specialty}`);
       card.style.borderLeft = `3.5px solid ${fac.color}`;
       card.innerHTML = `
         <div class="gen-card-top">
@@ -826,7 +837,7 @@
           <div class="gen-id-block">
             <div class="gen-rank-row">
               <span class="gen-stars">${meta.rankStars}</span>
-              ${isSelected ? `<span class="gen-active-stamp">${isPlayer ? 'CMD' : 'OPFOR'}</span>` : ''}
+              ${isSelected ? `<span class="gen-active-stamp">${isPlayer ? 'Active' : 'Target'}</span>` : ''}
             </div>
             <div class="gen-name">${meta.callsign}</div>
             <div class="gen-title" style="color:${fac.accent}">${meta.branch}</div>
@@ -843,7 +854,7 @@
         </ul>
       `;
 
-      card.addEventListener('click', () => {
+      const selectCard = () => {
         if (isPlayer) {
           selectedPlayerGeneralId = gen.id;
           renderGeneralCards('player-general-grid', true);
@@ -858,6 +869,14 @@
         renderMapPreview();
         updateStartMatchupSummary();
         ZH_AUDIO.playSFX('click');
+      };
+
+      card.addEventListener('click', selectCard);
+      card.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          selectCard();
+        }
       });
 
       container.appendChild(card);
@@ -877,7 +896,7 @@
     const stageBadge = document.getElementById('challenge-stage-badge');
     if (stageBadge) {
       const opp = ZH_DATA.GENERALS[currentOpponentId];
-      stageBadge.textContent = `OP-0${activeIdx + 1} / 0${ladder.length} • TARGET: ${opp ? opp.name.toUpperCase() : 'CHALLENGER'}`;
+      stageBadge.textContent = `Stage ${activeIdx + 1} of ${ladder.length} • Target: ${opp ? opp.name : 'Challenger'}`;
     }
 
     wrap.innerHTML = '';
@@ -889,24 +908,27 @@
       const stateClass = idx < activeIdx ? 'defeated'
         : idx === activeIdx ? 'current'
         : 'locked';
-      const statusText = idx < activeIdx ? 'CLEARED'
-        : idx === activeIdx ? 'TARGET'
-        : isFinalBoss ? 'BOSS' : 'LOCKED';
+      const statusText = idx < activeIdx ? 'Cleared'
+        : idx === activeIdx ? 'Target'
+        : isFinalBoss ? 'Boss' : 'Locked';
 
       const step = document.createElement('div');
       step.className = `ladder-step ${stateClass} ${isFinalBoss ? 'boss-node' : ''}`;
-      step.title = `Operation Stage 0${idx + 1}: ${g.name} (${g.title}) — Click to designate target`;
+      step.tabIndex = 0;
+      step.setAttribute('role', 'button');
+      step.setAttribute('aria-current', idx === activeIdx ? 'step' : 'false');
+      step.title = `Stage ${idx + 1}: ${g.name} (${g.title}) — Select target`;
       step.innerHTML = `
         <div class="step-portrait-mini">${getGeneralPortraitSVG(g.id)}</div>
         <div class="step-info-col">
           <div class="step-top-row">
-            <span class="step-num">OP-0${idx + 1}</span>
+            <span class="step-num">Stage ${idx + 1}</span>
             <span class="step-status-tag">${statusText}</span>
           </div>
           <span class="step-name">${meta.callsign}</span>
         </div>
       `;
-      step.addEventListener('click', () => {
+      const selectStep = () => {
         challengeStageIndex = idx;
         renderChallengeLadder();
         renderGeneralCards('ai-general-grid', false);
@@ -915,6 +937,13 @@
         renderMapPreview();
         updateStartMatchupSummary();
         ZH_AUDIO.playSFX('click');
+      };
+      step.addEventListener('click', selectStep);
+      step.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          selectStep();
+        }
       });
       wrap.appendChild(step);
     });
@@ -931,15 +960,19 @@
       const card = document.createElement('div');
       card.className = `visual-map-card ${isSelected ? 'active' : ''}`;
       card.dataset.mapId = m.id;
+      card.tabIndex = 0;
+      card.setAttribute('role', 'option');
+      card.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+      card.setAttribute('aria-label', `${m.name}, ${notes.tag}, ${notes.resources}`);
       card.innerHTML = `
         <div class="vmap-swatch-bar" style="background: linear-gradient(90deg, ${m.bgPrimary}, ${m.ridgeColor || m.bgSecondary}, ${m.bgSecondary})"></div>
         <div class="vmap-title-row">
-          <span class="vmap-name">SEC-0${idx + 1} // ${m.name}</span>
+          <span class="vmap-name">${idx + 1}. ${m.name}</span>
           <span class="vmap-theme-tag">${notes.tag}</span>
         </div>
         <div class="vmap-resources">${notes.resources}</div>
       `;
-      card.addEventListener('click', () => {
+      const selectMap = () => {
         selectedMapId = m.id;
         const mapSel = document.getElementById('map-selector');
         if (mapSel) mapSel.value = m.id;
@@ -947,6 +980,13 @@
         renderMapPreview();
         updateStartMatchupSummary();
         ZH_AUDIO.playSFX('click');
+      };
+      card.addEventListener('click', selectMap);
+      card.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          selectMap();
+        }
       });
       cardsWrap.appendChild(card);
     });
@@ -1282,11 +1322,10 @@
     const aiGen = ZH_DATA.GENERALS[selectedAiGeneralId] || Object.values(ZH_DATA.GENERALS)[1];
     const mapDef = ZH_DATA.MAPS.find(m => m.id === selectedMapId) || ZH_DATA.MAPS[0];
     if (!pGen || !aiGen || !mapDef) return;
-    const pMeta = getGeneralMilitaryMeta(pGen);
-    const aiMeta = getGeneralMilitaryMeta(aiGen);
     const aiCashStr = selectedDifficulty === 'BRUTAL' ? '$12,500' : '$10,000';
+    const diffLabel = selectedDifficulty.charAt(0) + selectedDifficulty.slice(1).toLowerCase();
     summaryEl.textContent =
-      `[${pMeta.serial}] ${pGen.name} ($10,000) VS [${aiMeta.serial}] ${aiGen.name} (${aiCashStr}) // SECTOR: ${mapDef.name} // ROE: ${selectedDifficulty} // VICTORY: DESTROY ALL BUILDINGS & BUILDERS`;
+      `${pGen.name} ($10,000) vs ${aiGen.name} (${aiCashStr}) • ${mapDef.name} • ${diffLabel} Doctrine`;
   }
 
   function startNewMatch() {
@@ -1530,6 +1569,9 @@
       guardBtn.addEventListener('click', () => {
         if (!engine || engine.selectedIds.size === 0) return;
         engine.orderGuardSelected();
+        engine.commandMode = 'GUARD';
+        refreshCommandBar();
+        showTacticalAlert('GUARD [G]: Guarding area — click on map to relocate guard patrol zone.', '#38bdf8');
       });
     }
 
@@ -1542,6 +1584,42 @@
       if (!engine) return;
       engine.orderScatterSelected();
     });
+
+    const cinematicBtn = document.getElementById('btn-cinematic-mode');
+    if (cinematicBtn) {
+      cinematicBtn.addEventListener('click', () => {
+        toggleCinematicMode();
+      });
+    }
+    const cinematicExitBtn = document.getElementById('btn-cinematic-exit');
+    if (cinematicExitBtn) {
+      cinematicExitBtn.addEventListener('click', () => {
+        toggleCinematicMode(false);
+      });
+    }
+    const cinematicParadeBtn = document.getElementById('btn-cinematic-parade');
+    if (cinematicParadeBtn) {
+      cinematicParadeBtn.addEventListener('click', () => {
+        stageChinaParadeAmbushShowcase();
+      });
+    }
+    const cinematicReelBtn = document.getElementById('btn-cinematic-reel-frame');
+    if (cinematicReelBtn) {
+      cinematicReelBtn.addEventListener('click', () => {
+        const mask = document.getElementById('cinematic-reel-mask');
+        if (mask) {
+          const willShow = mask.classList.contains('hidden');
+          mask.classList.toggle('hidden', !willShow);
+          cinematicReelBtn.classList.toggle('active', willShow);
+        }
+      });
+    }
+    const cinematicShotSelect = document.getElementById('cinematic-shot-mode');
+    if (cinematicShotSelect) {
+      cinematicShotSelect.addEventListener('change', () => {
+        cinematicState.shotMode = cinematicShotSelect.value || 'AUTO';
+      });
+    }
   }
 
   function applyLoadedHudTheme() {
@@ -1952,7 +2030,10 @@
     if (selBuildings.length > 0) {
       const b = selBuildings[0];
       const qSig = b.queue.map(q => q.id).join(',');
-      extra += `|b:${b.constructed ? 1 : 0}:${b.overcharged ? 1 : 0}:${b.superweaponReady ? 1 : 0}:${qSig}:${pTeam.tunnelUnits.length}:${b.battlePlan || ''}`;
+      const afCount = ((b.defId === 'USA_AIRFIELD' || b.defId === 'CHINA_AIRFIELD') && engine.getAirfieldAircraftCount)
+        ? `${engine.getAirfieldAircraftCount(b, false)}/${engine.getAirfieldAircraftCount(b, true)}`
+        : '';
+      extra += `|b:${b.constructed ? 1 : 0}:${b.overcharged ? 1 : 0}:${b.superweaponReady ? 1 : 0}:${qSig}:${pTeam.tunnelUnits.length}:${b.battlePlan || ''}:af:${afCount}`;
     }
     if (selBunkers.length > 0) {
       extra += `|g:${selBunkers[0].occupants.length}`;
@@ -2065,8 +2146,12 @@
     const statusText = b.constructed ? 'ONLINE' : `BUILDING (${Math.round((b.buildProgress || 0) * 100)}%)`;
     const powerVal = b.def.power || 0;
     const powerText = powerVal >= 0 ? `+${powerVal}` : `${powerVal}`;
+    const isAirfield = (defId === 'USA_AIRFIELD' || defId === 'CHINA_AIRFIELD') && engine && engine.getAirfieldAircraftCount;
+    const maxJets = (b.def && b.def.maxAircraft) || 4;
+    const activeJets = isAirfield ? engine.getAirfieldAircraftCount(b, false) : 0;
+    const totalReservedJets = isAirfield ? engine.getAirfieldAircraftCount(b, true) : 0;
 
-    const sig = `${b.id}|${defId}|${hpCeil}/${b.maxHp}|${powerText}|${statusText}|${activePresetKey}`;
+    const sig = `${b.id}|${defId}|${hpCeil}/${b.maxHp}|${powerText}|${statusText}|${activePresetKey}|af:${activeJets}/${totalReservedJets}`;
     if (!forceRebuild && inspectorStats.dataset && inspectorStats.dataset.sig === sig) {
       return;
     }
@@ -2083,6 +2168,7 @@
       <span>HP: ${hpCeil}/${b.maxHp}</span>
       <span>Power: ${powerText}</span>
       <span>Status: ${statusText}</span>
+      ${isAirfield ? `<span style="color:${totalReservedJets >= maxJets ? '#f59e0b' : '#38bdf8'}">✈️ Bays: ${activeJets}/${maxJets}${totalReservedJets > activeJets ? ` (+${totalReservedJets - activeJets} Q)` : ''}</span>` : ''}
       ${isDeepCad ? `<button type="button" id="btn-hud-cycle-preset" class="hud-cad-chip" title="Click or press [K] to cycle 5 Architectural 3D Presets">🎨 ${presetLabel} [K]</button>` : ''}
       ${isDeepCad ? `<button type="button" id="btn-hud-open-unit-cad" class="hud-cad-chip hud-cad-chip-accent" title="Open Building in 3D CAD Design Studio [U]">🛠️ 3D Studio</button>` : ''}
     `;
@@ -2481,6 +2567,11 @@
       if (atkMoveBtn) {
         atkMoveBtn.classList.toggle('active', engine.commandMode === 'ATTACK_MOVE');
       }
+      const guardBtnEl = document.getElementById('btn-order-guard');
+      if (guardBtnEl) {
+        const isGuarding = engine.commandMode === 'GUARD' || selectedUnits.some(u => u.team === 0 && u.state === 'GUARD');
+        guardBtnEl.classList.toggle('active', isGuarding);
+      }
     }
 
     renderSelectionSummary(selectedUnits);
@@ -2723,30 +2814,36 @@
 
     // 1. Trainable Units (Phase 3 SYS-20: Cameo queue badges + Shift+Click 5x batch + right-click cancel/refund)
     if (b.def.trains) {
+      const isAirfieldBld = (b.defId === 'USA_AIRFIELD' || b.defId === 'CHINA_AIRFIELD') && engine.getAirfieldAircraftCount;
+      const maxJets = (b.def && b.def.maxAircraft) || 4;
+      const usedJets = isAirfieldBld ? engine.getAirfieldAircraftCount(b, true) : 0;
       b.def.trains.forEach(uId => {
         const uDef = ZH_DATA.UNITS[uId];
         if (!uDef) return;
         if (uDef.generalOnly && uDef.generalOnly !== engine.teams[0].generalId) return;
         const unlocked = engine.isEntityUnlocked(uId, 0);
+        const isJetDef = isAirfieldBld && engine.isFixedWingAircraftDef && engine.isFixedWingAircraftDef(uDef);
+        const airfieldFull = Boolean(isJetDef && usedJets >= maxJets);
         const cost = engine.getModifiedCost(uId, 0);
-        const cantAfford = unlocked && engine.teams[0].credits < cost;
+        const cantAfford = unlocked && !airfieldFull && engine.teams[0].credits < cost;
         const qCount = b.queue.filter(q => q.id === uId).length;
         const progPct = (b.queue[0] && b.queue[0].id === uId)
           ? Math.round((1 - b.queue[0].timer / b.queue[0].totalTime) * 100)
           : 0;
+        const bayInfo = isJetDef ? ` [Bays: ${usedJets}/${maxJets}]` : '';
         createCommandButton(cmdGrid, {
           defId: uId,
           def: uDef,
           hotkey: hotkeys[slotIdx++] || '',
           title: uDef.shortName,
           icon: uDef.icon,
-          cost: `$${cost}`,
+          cost: airfieldFull ? '4/4 FULL' : `$${cost}`,
           costNum: cost,
-          tooltip: `${uDef.name} ($${cost}) — ${uDef.description} [Shift+Click: Queue 5 • Right-Click: Cancel]`,
-          disabled: !unlocked,
+          tooltip: `${uDef.name} ($${cost})${bayInfo} — ${uDef.description} [Shift+Click: Queue 5 • Right-Click: Cancel]`,
+          disabled: !unlocked || airfieldFull,
           prereqLocked: !unlocked,
           cantAfford,
-          lockedText: !unlocked ? 'REQ TECH' : '',
+          lockedText: !unlocked ? 'REQ TECH' : (airfieldFull ? '4/4 FULL' : ''),
           queueCount: qCount,
           progressPct: progPct,
           onClick: (e) => {
@@ -3335,6 +3432,8 @@
         }
         if (engine.commandMode === 'GUARD') {
           engine.orderGuardSelected(wx, wy);
+          engine.spawnBurst(wx, wy, '#38bdf8', 6);
+          pushMoveMarker(wx, wy, '#38bdf8', 'MOVE');
           engine.commandMode = null;
           refreshCommandBar();
           return;
@@ -3463,8 +3562,9 @@
     let bestUnitDist = Infinity;
     for (const u of engine.units) {
       if (u.team !== 0 || u.hp <= 0 || u.garrisonedIn || u.garrisonId) continue;
+      const liftY = u.locomotor === 'AIRCRAFT' ? 12 * (u.flightHeight !== undefined ? u.flightHeight : 1) : 6;
       const dFoot = Math.hypot(u.x - wx, u.y - wy);
-      const dBody = Math.hypot(u.x - wx, (u.y - 6) - wy);
+      const dBody = Math.hypot(u.x - wx, (u.y - liftY) - wy);
       const d = Math.min(dFoot, dBody);
       if (d <= (u.radius || 14) + 14 && d < bestUnitDist) {
         bestUnitDist = d;
@@ -3540,8 +3640,12 @@
     const boxUnits = [];
     for (const u of engine.units) {
       if (u.team !== 0 || u.hp <= 0 || u.garrisonedIn || u.garrisonId) continue;
+      const liftY = u.locomotor === 'AIRCRAFT' ? 12 * (u.flightHeight !== undefined ? u.flightHeight : 1) : 0;
       const r = (u.radius || 14) * 0.65;
-      if (u.x + r >= x0 && u.x - r <= x1 && u.y + r >= y0 && u.y - r <= y1) {
+      if (u.x + r >= x0 && u.x - r <= x1 && (
+        (u.y + r >= y0 && u.y - r <= y1) ||
+        (u.y - liftY + r >= y0 && u.y - liftY - r <= y1)
+      )) {
         boxUnits.push(u);
       }
     }
@@ -3623,8 +3727,11 @@
       return;
     }
 
-    // Clear queued waypoints on fresh un-shifted order
-    selectedUnits.forEach(u => { u.waypoints = []; });
+    // Clear queued waypoints and guard-resume flag on fresh un-shifted order
+    selectedUnits.forEach(u => {
+      u.waypoints = [];
+      u.resumeGuardAfterRearm = false;
+    });
 
     // 0. Check if right-clicked an Unmanned Neutral Vehicle (Jarmen Kell Pilot Snipe re-crew!)
     const unmannedVehicle = engine.units.find(
@@ -3690,9 +3797,41 @@
       }
     }
 
-    // 2. Check if right-clicked an Enemy Unit or Building
+    // 1c. Check if right-clicked a Friendly Airfield (Fixed-wing jets return to base & land on runway!)
+    const clickedAirfield = engine.buildings.find(
+      b => b.team === 0 && b.hp > 0 && !b.underConstruction && b.def && b.def.isAirfield &&
+           Math.hypot(b.x - wx, b.y - wy) <= (b.radius || 52) + 16
+    );
+    if (clickedAirfield && !forceAttackMove) {
+      let anyFixedWing = false;
+      for (const u of selectedUnits) {
+        if (engine.isFixedWingAircraft && engine.isFixedWingAircraft(u)) {
+          if (u.homeAirfieldId !== clickedAirfield.id) {
+            u.homeAirfieldId = null;
+            u.parkingSlot = undefined;
+            engine.assignAirfieldParkingSlot(u, clickedAirfield);
+          }
+          engine.orderAircraftReturnToBase(u);
+          anyFixedWing = true;
+        }
+      }
+      if (anyFixedWing) {
+        engine.spawnBurst(clickedAirfield.x, clickedAirfield.y, '#38bdf8', 8);
+        pushMoveMarker(clickedAirfield.x, clickedAirfield.y, '#38bdf8', 'MOVE');
+        ZH_AUDIO.playSFX('click');
+        return;
+      }
+    }
+
+    // 2. Check if right-clicked an Enemy Unit or Building (including airborne altitude offset for aircraft)
     const enemyTarget =
-      engine.units.find(u => u.team !== 0 && !u.unmanned && !(u.garrisonedIn || u.garrisonId) && Math.hypot(u.x - wx, u.y - wy) <= u.radius + 14) ||
+      engine.units.find(u => {
+        if (u.team === 0 || u.unmanned || u.garrisonedIn || u.garrisonId) return false;
+        const hitPad = (u.def && u.def.isAir) ? 18 : 14;
+        const liftY = u.locomotor === 'AIRCRAFT' ? 12 * (u.flightHeight !== undefined ? u.flightHeight : 1) : 0;
+        return Math.hypot(u.x - wx, u.y - wy) <= u.radius + hitPad ||
+          (liftY > 0 && Math.hypot(u.x - wx, (u.y - liftY) - wy) <= u.radius + hitPad);
+      }) ||
       engine.buildings.find(b => b.team !== 0 && Math.hypot(b.x - wx, b.y - wy) <= b.radius + 12) ||
       (engine.garrisonBunkers || []).find(g => g.team === 1 && g.hp > 0 && Math.hypot(g.x - wx, g.y - wy) <= g.radius + 14);
 
@@ -3928,6 +4067,10 @@
       // 4. Deselect active selection
       // 5. Open #game-menu-modal
       if (e.key === 'Escape') {
+        if (cinematicState.active) {
+          toggleCinematicMode(false);
+          return;
+        }
         if (engine.commandMode) {
           engine.commandMode = null;
           engine.pendingBuildId = null;
@@ -4068,6 +4211,9 @@
       if (selectedUnits.length > 0 && !hasBuilder) {
         if (k === 'G') {
           engine.orderGuardSelected();
+          engine.commandMode = 'GUARD';
+          refreshCommandBar();
+          showTacticalAlert('GUARD [G]: Guarding area — click on map to relocate guard patrol zone.', '#38bdf8');
           return;
         }
         if (k === 'X') {
@@ -4090,6 +4236,12 @@
       const cmdBtn = document.querySelector(`.cmd-card-btn[data-hotkey="${k}"]`);
       if (cmdBtn && !cmdBtn.disabled && !cmdBtn.classList.contains('disabled')) {
         cmdBtn.click();
+        return;
+      }
+
+      // [C]: Toggle Generals Evolution HUD-less Cinematic Camera & Director Mode
+      if (k === 'C' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        toggleCinematicMode();
         return;
       }
 
@@ -4155,14 +4307,23 @@
   }
 
   function issueStopToSelected() {
+    if (engine.commandMode === 'GUARD' || engine.commandMode === 'ATTACK_MOVE') {
+      engine.commandMode = null;
+    }
     for (const u of engine.units) {
       if (engine.selectedIds.has(u.id)) {
-        u.state = 'IDLE';
-        u.path = null;
-        u.waypoints = [];
-        u.targetEntityId = null;
+        u.resumeGuardAfterRearm = false;
+        if (engine.isFixedWingAircraft && engine.isFixedWingAircraft(u) && u.airState !== 'PARKED') {
+          engine.orderAircraftReturnToBase(u, false);
+        } else {
+          u.state = 'IDLE';
+          u.path = null;
+          u.waypoints = [];
+          u.targetEntityId = null;
+        }
       }
     }
+    refreshCommandBar();
     ZH_AUDIO.playSFX('click');
   }
 
@@ -4481,6 +4642,252 @@
     showTacticalAlert(`🛠️ UNIT DESIGN STUDIO: Deployed 3× ${uName} squad (1.45× close zoom)`, '#38bdf8', { x: baseX, y: baseY });
   }
 
+  // ==================== GENERALS EVOLUTION CINEMATIC CAMERA & CHINA 01 PARADE SHOWCASE ====================
+  const cinematicState = {
+    active: false,
+    shotMode: 'AUTO',
+    orbitAngle: 0,
+    savedZoom: 1.0,
+    focalX: 1600,
+    focalY: 1600,
+    paradeUnitIds: [],
+    pyroTimer: 0
+  };
+
+  function toggleCinematicMode(forceState) {
+    const nextState = typeof forceState === 'boolean' ? forceState : !cinematicState.active;
+    cinematicState.active = nextState;
+    if (document.body && document.body.classList) {
+      document.body.classList.toggle('cinematic-mode', nextState);
+    }
+    const bar = document.getElementById('cinematic-director-bar');
+    if (bar) bar.classList.toggle('hidden', !nextState);
+    const mask = document.getElementById('cinematic-reel-mask');
+    if (!nextState && mask) {
+      mask.classList.add('hidden');
+      const reelBtn = document.getElementById('btn-cinematic-reel-frame');
+      if (reelBtn) reelBtn.classList.remove('active');
+    }
+
+    if (engine) {
+      engine.cinematicMode = nextState;
+      if (nextState) {
+        cinematicState.savedZoom = engine.cam.zoom || 1.0;
+        cinematicState.focalX = engine.cam.x + engine.cam.w * 0.5;
+        cinematicState.focalY = engine.cam.y + engine.cam.h * 0.5;
+        engine.cam.zoom = Math.max(1.28, engine.cam.zoom);
+      } else {
+        engine.cam.zoom = cinematicState.savedZoom || 1.0;
+      }
+    }
+    resizeCanvases();
+    if (nextState) {
+      showTacticalAlert('🎬 GENERALS EVOLUTION CINEMATIC MODE [C] — Press "🐉 CHINA 01 Parade Ambush" for live showcase', '#fb923c');
+    }
+    return nextState;
+  }
+
+  function updateCinematicCamera(dt) {
+    if (!cinematicState.active || !engine || !engine.running) return;
+    const mode = cinematicState.shotMode || 'AUTO';
+    if (mode === 'FREE') return;
+
+    // Periodic ambient pyrotechnic shells during active Parade Ambush showcase
+    if (cinematicState.paradeUnitIds.length > 0 && window.ZH_VFX && typeof ZH_VFX.triggerCinematicExplosion === 'function') {
+      cinematicState.pyroTimer -= dt;
+      const aliveParade = cinematicState.paradeUnitIds
+        .map(id => engine.unitById && engine.unitById.get(id))
+        .filter(u => u && u.hp > 0);
+      if (aliveParade.length === 0) {
+        cinematicState.paradeUnitIds = [];
+      } else if (cinematicState.pyroTimer <= 0) {
+        cinematicState.pyroTimer = 1.35;
+        const anchor = aliveParade[Math.floor(Math.random() * aliveParade.length)];
+        const ox = anchor.x + (Math.random() - 0.5) * 210;
+        const oy = anchor.y + (Math.random() - 0.5) * 210;
+        ZH_VFX.triggerCinematicExplosion(engine, ox, oy, 38 + Math.random() * 24, 'CANNON');
+      }
+    }
+
+    cinematicState.orbitAngle += dt * 0.28;
+
+    // Determine primary focal point (Parade column > active combat > player units > map center)
+    let targetX = cinematicState.focalX;
+    let targetY = cinematicState.focalY;
+    let targetZoom = 1.34;
+
+    const aliveParade = cinematicState.paradeUnitIds
+      .map(id => engine.unitById && engine.unitById.get(id))
+      .filter(u => u && u.hp > 0);
+
+    if (aliveParade.length > 0) {
+      let sx = 0;
+      let sy = 0;
+      for (const u of aliveParade) {
+        sx += u.x;
+        sy += u.y;
+      }
+      targetX = sx / aliveParade.length;
+      targetY = sy / aliveParade.length;
+      targetZoom = 1.38 + Math.sin(cinematicState.orbitAngle * 1.4) * 0.08;
+    } else {
+      const combatUnits = engine.units.filter(u => u.hp > 0 && !u.def.isBuilder && !u.def.isCollector);
+      const engaged = combatUnits.filter(u => u.state === 'ATTACK' || u.state === 'ATTACK_MOVE' || u.targetEntityId);
+      const pool = engaged.length > 0 ? engaged : combatUnits;
+      if (pool.length > 0) {
+        const focusUnit = pool[Math.floor((engine.gameTime * 0.22) % pool.length)] || pool[0];
+        targetX = focusUnit.x;
+        targetY = focusUnit.y;
+      }
+    }
+
+    if (mode === 'BOULEVARD_DOLLY') {
+      const sweep = Math.sin(cinematicState.orbitAngle * 0.85) * 160;
+      targetX += sweep;
+      targetY -= sweep;
+      targetZoom = 1.42;
+    } else if (mode === 'ORBITAL_CRANE') {
+      targetX += Math.cos(cinematicState.orbitAngle) * 145;
+      targetY += Math.sin(cinematicState.orbitAngle) * 105;
+      targetZoom = 1.28 + Math.sin(cinematicState.orbitAngle * 0.9) * 0.1;
+    } else if (mode === 'ACTION_TRACK') {
+      targetZoom = 1.46;
+    } else {
+      // AUTO Director Sweep
+      targetX += Math.cos(cinematicState.orbitAngle * 0.9) * 95;
+      targetY += Math.sin(cinematicState.orbitAngle * 0.9) * 70;
+    }
+
+    const lerp = Math.min(1, dt * 3.2);
+    cinematicState.focalX += (targetX - cinematicState.focalX) * lerp;
+    cinematicState.focalY += (targetY - cinematicState.focalY) * lerp;
+
+    engine.cam.zoom += (targetZoom - engine.cam.zoom) * Math.min(1, dt * 2.5);
+    engine.cam.w = (engine.viewW || 1280) / engine.cam.zoom;
+    engine.cam.h = (engine.viewH || 720) / engine.cam.zoom;
+    centerCameraOn(cinematicState.focalX, cinematicState.focalY);
+  }
+
+  function stageChinaParadeAmbushShowcase() {
+    if (!engine || !engine.running) {
+      startNewMatch();
+    }
+    if (!engine) return;
+
+    if (!cinematicState.active) {
+      toggleCinematicMode(true);
+    }
+
+    // Ensure China Red Horde Star & Nationalism visuals are active
+    engine.cinematicParadeHordeStars = true;
+    for (const t of engine.teams) {
+      if (t && t.upgrades) {
+        t.upgrades.add('UPG_NATIONALISM');
+        t.upgrades.add('UPG_SUBLIMINAL');
+      }
+    }
+
+    // Stage along the central Beijing Boulevard diagonal (1480, 1720) -> (1860, 1340)
+    const bx = 1560;
+    const by = 1640;
+    const marchAngle = -Math.PI * 0.25; // Marching NE up the grand boulevard
+    const destX = 1920;
+    const destY = 1280;
+
+    const paradeIds = [];
+    const spawnParadeUnit = (defId, x, y, vet = 1) => {
+      const u = engine.spawnUnit(defId, 0, x, y);
+      if (!u) return null;
+      u.angle = marchAngle;
+      u.turretAngle = marchAngle;
+      u.inHorde = true;
+      u.vetLevel = vet;
+      u.veterancy = vet;
+      if (defId === 'CHINA_OVERLORD') {
+        u.hasSpeakerTower = true;
+        u.hasGattling = true;
+      }
+      u.state = 'ATTACK_MOVE';
+      u.targetX = destX + (x - bx) * 0.5;
+      u.targetY = destY + (y - by) * 0.5;
+      paradeIds.push(u.id);
+      return u;
+    };
+
+    // Lead Echelon: 2 Overlord Heavy Tanks with Speaker Towers & Gattling Cannons
+    spawnParadeUnit('CHINA_OVERLORD', bx - 36, by - 12, 3);
+    spawnParadeUnit('CHINA_OVERLORD', bx + 36, by + 32, 2);
+
+    // Armored Column: 6 Battlemaster Tanks + 2 Gattling Tanks + 2 Dragon Tanks in tight boulevard ranks
+    const armorRanks = [
+      { id: 'CHINA_BATTLEMASTER', dx: -85, dy: 45 },
+      { id: 'CHINA_BATTLEMASTER', dx: -35, dy: 75 },
+      { id: 'CHINA_BATTLEMASTER', dx: 15, dy: 105 },
+      { id: 'CHINA_GATTLING_TANK', dx: -130, dy: 90 },
+      { id: 'CHINA_DRAGON_TANK', dx: -80, dy: 120 },
+      { id: 'CHINA_GATTLING_TANK', dx: -30, dy: 150 },
+      { id: 'CHINA_BATTLEMASTER', dx: -175, dy: 135 },
+      { id: 'CHINA_DRAGON_TANK', dx: -125, dy: 165 },
+      { id: 'CHINA_BATTLEMASTER', dx: -75, dy: 195 }
+    ];
+    for (const r of armorRanks) {
+      spawnParadeUnit(r.id, bx + r.dx, by + r.dy, 1);
+    }
+
+    // Flanking Red Guard & Tank Hunter Parade Phalanx with glowing Red Horde Stars
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 5; col++) {
+        const defId = (row === 2 && col % 2 === 1) ? 'CHINA_TANK_HUNTER' : 'CHINA_RED_GUARD';
+        const ix = bx - 110 - row * 28 + col * 24;
+        const iy = by + 18 + row * 26 + col * 18;
+        spawnParadeUnit(defId, ix, iy, 1);
+      }
+    }
+
+    // GLA Boulevard Ambush Force charging SW into the parade column
+    const ambushSpecs = [
+      { id: 'GLA_SCORPION', x: bx + 180, y: by - 165 },
+      { id: 'GLA_SCORPION', x: bx + 235, y: by - 125 },
+      { id: 'GLA_MARAUDER', x: bx + 215, y: by - 195 },
+      { id: 'GLA_TECHNICAL', x: bx + 135, y: by - 130 },
+      { id: 'GLA_TECHNICAL', x: bx + 170, y: by - 95 },
+      { id: 'GLA_ROCKET_BUGGY', x: bx + 275, y: by - 175 },
+      { id: 'GLA_QUAD_CANNON', x: bx + 255, y: by - 105 },
+      { id: 'GLA_RPG_TROOPER', x: bx + 115, y: by - 155 },
+      { id: 'GLA_RPG_TROOPER', x: bx + 145, y: by - 75 },
+      { id: 'GLA_REBEL', x: bx + 95, y: by - 125 },
+      { id: 'GLA_REBEL', x: bx + 125, y: by - 55 }
+    ];
+    for (const a of ambushSpecs) {
+      const eu = engine.spawnUnit(a.id, 1, a.x, a.y);
+      if (eu) {
+        eu.angle = marchAngle + Math.PI;
+        eu.turretAngle = marchAngle + Math.PI;
+        eu.state = 'ATTACK_MOVE';
+        eu.targetX = bx - 60;
+        eu.targetY = by + 60;
+      }
+    }
+
+    // Immediate opening pyrotechnic GLA Bomb Truck ambush detonation on the boulevard
+    if (window.ZH_VFX && typeof ZH_VFX.triggerCinematicExplosion === 'function') {
+      ZH_VFX.triggerCinematicExplosion(engine, bx + 75, by - 55, 85, 'HEAVY');
+      ZH_VFX.triggerCinematicExplosion(engine, bx + 20, by - 85, 52, 'MISSILE');
+      ZH_VFX.triggerCinematicExplosion(engine, bx + 110, by - 10, 48, 'FLAME');
+    }
+
+    cinematicState.paradeUnitIds = paradeIds;
+    cinematicState.focalX = bx + 25;
+    cinematicState.focalY = by - 15;
+    cinematicState.pyroTimer = 0.9;
+    engine.cam.zoom = 1.38;
+    engine.cam.w = (engine.viewW || 1280) / engine.cam.zoom;
+    engine.cam.h = (engine.viewH || 720) / engine.cam.zoom;
+    centerCameraOn(cinematicState.focalX, cinematicState.focalY);
+
+    showTacticalAlert('🐉 CHINA 01: BEIJING PARADE AMBUSH — Red Horde Stars & GLA Pyrotechnics Engaged!', '#ef4444', { x: bx, y: by });
+  }
+
   window.ZH_UI = {
     init,
     startNewMatch,
@@ -4492,6 +4899,8 @@
     exportSaveFile,
     importSaveFile,
     spawnStudioTestSquad,
+    toggleCinematicMode,
+    stageChinaParadeAmbushShowcase,
     isMatchRunning: () => Boolean(engine && engine.running),
     getEngine: () => engine
   };

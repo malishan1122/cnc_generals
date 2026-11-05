@@ -335,9 +335,19 @@ window.ZH_SPATIAL = (function () {
     const distToFinal = dist(unit.x, unit.y, targetX, targetY);
     const arriveThreshold = profile.isAir ? 18 : 10;
 
+    const effTurnRate = (unit.def && unit.def.turnRateDeg !== undefined)
+      ? (unit.def.turnRateDeg * Math.PI) / 180
+      : profile.turnRate;
+    const effAccel = (unit.def && unit.def.accelFrac !== undefined)
+      ? (unit.speed || 100) * unit.def.accelFrac
+      : profile.accel;
+    const effDecel = (unit.def && unit.def.decelFrac !== undefined)
+      ? (unit.speed || 100) * unit.def.decelFrac
+      : profile.decel;
+
     if (distToFinal <= arriveThreshold && (!pathList || pathList.length === 0)) {
       if (unit.currentSpeed > 0) {
-        unit.currentSpeed = Math.max(0, unit.currentSpeed - profile.decel * dt);
+        unit.currentSpeed = Math.max(0, unit.currentSpeed - effDecel * dt);
       }
       if (unit.currentSpeed <= 4) {
         unit.currentSpeed = 0;
@@ -352,7 +362,7 @@ window.ZH_SPATIAL = (function () {
     while (diff < -Math.PI) diff += Math.PI * 2;
     while (diff > Math.PI) diff -= Math.PI * 2;
 
-    const maxTurn = profile.turnRate * dt;
+    const maxTurn = effTurnRate * dt;
     if (Math.abs(diff) <= maxTurn) {
       unit.angle = desiredAngle;
     } else {
@@ -382,9 +392,9 @@ window.ZH_SPATIAL = (function () {
 
     unit.currentSpeed = unit.currentSpeed || 0;
     if (unit.currentSpeed < targetSpeed) {
-      unit.currentSpeed = Math.min(targetSpeed, unit.currentSpeed + profile.accel * dt);
+      unit.currentSpeed = Math.min(targetSpeed, unit.currentSpeed + effAccel * dt);
     } else if (unit.currentSpeed > targetSpeed) {
-      unit.currentSpeed = Math.max(targetSpeed, unit.currentSpeed - profile.decel * dt);
+      unit.currentSpeed = Math.max(targetSpeed, unit.currentSpeed - effDecel * dt);
     }
 
     let sepX = 0;

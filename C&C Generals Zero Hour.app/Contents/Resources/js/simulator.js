@@ -109,6 +109,7 @@ window.ZH_SIMULATOR = (function () {
         'CHINA_EMPEROR_OVERLORD',
         'CHINA_NUKE_CANNON',
         'CHINA_MIG',
+        'CHINA_J16',
         'CHINA_NUKE_MIG'
       ]
     },

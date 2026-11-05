@@ -1016,7 +1016,7 @@ window.ZH_UNIT_STUDIO = (function () {
         ctx.translate(cx, cy);
         ctx.scale(unitScale, unitScale);
         if (window.ZH_VFX && window.ZH_VFX.renderArticulatedUnit) {
-          window.ZH_VFX.renderArticulatedUnit(ctx, uCell, facCell, { pitchScale: pitch, zScale: zSc });
+          window.ZH_VFX.renderArticulatedUnit(ctx, uCell, facCell, { pitchScale: pitch, zScale: zSc, isStudio: true, zoom: unitScale });
         }
         ctx.restore();
 
@@ -1084,7 +1084,7 @@ window.ZH_UNIT_STUDIO = (function () {
       ctx.translate(w * 0.75, h * 0.55);
       ctx.scale(zoomLevel * 0.85, zoomLevel * 0.85);
       if (window.ZH_VFX && window.ZH_VFX.renderArticulatedUnit) {
-        window.ZH_VFX.renderArticulatedUnit(ctx, u, faction, { pitchScale: pitch, zScale: zSc, allowAllUnits: true });
+        window.ZH_VFX.renderArticulatedUnit(ctx, u, faction, { pitchScale: pitch, zScale: zSc, allowAllUnits: true, isStudio: true, zoom: zoomLevel });
       }
       ctx.restore();
     } else if (viewMode === 'SPLIT_COMPARE') {
@@ -1093,7 +1093,7 @@ window.ZH_UNIT_STUDIO = (function () {
       ctx.translate(w * 0.27, h * 0.55);
       ctx.scale(zoomLevel * 0.82, zoomLevel * 0.82);
       if (window.ZH_VFX && window.ZH_VFX.renderArticulatedUnit) {
-        window.ZH_VFX.renderArticulatedUnit(ctx, u, faction, { forceLegacy: true });
+        window.ZH_VFX.renderArticulatedUnit(ctx, u, faction, { forceLegacy: true, isStudio: true, zoom: zoomLevel });
       }
       ctx.restore();
 
@@ -1118,7 +1118,7 @@ window.ZH_UNIT_STUDIO = (function () {
       ctx.translate(w * 0.73, h * 0.55);
       ctx.scale(zoomLevel * 0.82, zoomLevel * 0.82);
       if (window.ZH_VFX && window.ZH_VFX.renderArticulatedUnit) {
-        window.ZH_VFX.renderArticulatedUnit(ctx, u, faction, { pitchScale: pitch, zScale: zSc, allowAllUnits: true });
+        window.ZH_VFX.renderArticulatedUnit(ctx, u, faction, { pitchScale: pitch, zScale: zSc, allowAllUnits: true, isStudio: true, zoom: zoomLevel });
       }
       ctx.restore();
     } else {
@@ -1144,7 +1144,7 @@ window.ZH_UNIT_STUDIO = (function () {
       ctx.save();
       ctx.scale(zoomLevel, zoomLevel);
       if (window.ZH_VFX && window.ZH_VFX.renderArticulatedUnit) {
-        window.ZH_VFX.renderArticulatedUnit(ctx, u, faction, { pitchScale: pitch, zScale: zSc, allowAllUnits: true });
+        window.ZH_VFX.renderArticulatedUnit(ctx, u, faction, { pitchScale: pitch, zScale: zSc, allowAllUnits: true, isStudio: true, zoom: zoomLevel });
       }
       ctx.restore();
 

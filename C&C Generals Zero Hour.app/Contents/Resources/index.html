@@ -36,6 +36,9 @@
       <a class="hud-btn" id="btn-hud-building-diorama" href="usa-buildings-diorama.html" style="text-decoration:none;" title="Open Interactive Ligne-Claire Military Building Diorama (All 31 USA, China &amp; GLA Structures)">
         🏰 Building Diorama
       </a>
+      <button class="hud-btn" id="btn-cinematic-mode" title="Toggle Generals Evolution HUD-less Cinematic Camera &amp; CHINA 01 Parade Showcase [C]">
+        🎬 Cinematic [C]
+      </button>
       <button class="hud-btn" id="btn-game-menu" title="Open Tactical Game Menu &amp; Settings [ESC]">
         ☰ MENU
       </button>
@@ -45,6 +48,34 @@
   <!-- ==================== BATTLEFIELD VIEWPORT ==================== -->
   <main id="viewport-wrap">
     <canvas id="game-canvas"></canvas>
+
+    <!-- Generals Evolution Cinematic Letterbox, 9:16 Reel Frame & Director Pill -->
+    <div id="cinematic-letterbox-top" aria-hidden="true"></div>
+    <div id="cinematic-letterbox-bottom" aria-hidden="true"></div>
+    <div id="cinematic-reel-mask" class="hidden" aria-hidden="true">
+      <div class="cinematic-reel-frame-box">
+        <span class="cinematic-reel-badge">REEL 9:16 • GENERALS EVOLUTION CINEMATIC</span>
+      </div>
+    </div>
+    <div id="cinematic-director-bar" class="hidden" role="toolbar" aria-label="Cinematic Camera Director">
+      <span class="cinematic-rec-pill"><span class="cinematic-rec-dot"></span>GEN-EVO CAM</span>
+      <select id="cinematic-shot-mode" class="cinematic-select" title="Select Camera Rig Mode">
+        <option value="AUTO">🎥 Auto Director Sweep</option>
+        <option value="BOULEVARD_DOLLY">🛣️ Boulevard Low-Angle Dolly</option>
+        <option value="ORBITAL_CRANE">🚁 Orbital Crane Tracking</option>
+        <option value="ACTION_TRACK">💥 Combat Action Follow</option>
+        <option value="FREE">🕹️ Free Manual Pan/Zoom</option>
+      </select>
+      <button type="button" class="cinematic-btn cinematic-btn-accent" id="btn-cinematic-parade" title="Stage synchronized CHINA 01 Beijing Parade Ambush with Red Horde Stars &amp; GLA Pyrotechnics">
+        🐉 CHINA 01 Parade Ambush
+      </button>
+      <button type="button" class="cinematic-btn" id="btn-cinematic-reel-frame" title="Toggle 9:16 Vertical Instagram Reel Framing Guide">
+        📱 9:16 Reel Frame
+      </button>
+      <button type="button" class="cinematic-btn cinematic-btn-close" id="btn-cinematic-exit" title="Exit Cinematic Camera Mode [C or ESC]">
+        ✕ Exit [C]
+      </button>
+    </div>
 
     <!-- Live Global Superweapon Countdown Timers -->
     <div id="superweapon-timers"></div>
@@ -138,37 +169,43 @@
     <div class="modal-card game-menu-card">
       <div class="modal-header">
         <div>
-          <div class="zh-logo-title">⚙️ Tactical Operations Menu</div>
-          <div class="zh-logo-sub">Snapshot Persistence, Audio Channels, Viewport Controls &amp; Accessibility</div>
+          <div class="zh-kicker-line">TACTICAL COMMAND SETTINGS</div>
+          <div class="zh-logo-title">Tactical Operations &amp; Preferences</div>
+          <div class="zh-logo-sub">Simulation Pace, Mission Snapshots, Audio Channels &amp; Interface Controls</div>
         </div>
-        <button class="hud-btn" id="btn-close-game-menu">✕ RESUME [ESC]</button>
+        <button class="hud-btn" id="btn-close-game-menu" title="Resume Mission (Esc)">Resume <kbd class="menu-kbd">Esc</kbd></button>
       </div>
 
       <div class="game-menu-grid">
         <!-- Column 1: Match & Snapshot Controls -->
         <div class="menu-section-card">
-          <div class="section-label">1. Mission &amp; Snapshot Controls</div>
+          <div class="section-label">Mission &amp; Snapshot Controls</div>
           <div class="menu-btn-stack">
+            <div class="menu-group-caption">Simulation Pace</div>
             <div class="menu-btn-row">
-              <button class="hud-btn" id="btn-pause-game">⏸ PAUSE</button>
+              <button class="hud-btn" id="btn-pause-game">⏸ Pause</button>
               <button class="hud-btn" id="btn-speed" title="Cycle Simulation Speed (1.0x / 1.5x / 2.0x)">⏩ Speed: 1.0×</button>
             </div>
+            <div class="menu-group-caption">Quick Snapshot</div>
             <div class="menu-btn-row">
-              <button class="hud-btn" id="btn-quick-save" title="Quick Save Skirmish State (Shortcut: F5)">💾 Save [F5]</button>
-              <button class="hud-btn" id="btn-quick-load" title="Quick Load Skirmish State (Shortcut: F9)">📂 Load [F9]</button>
+              <button class="hud-btn" id="btn-quick-save" title="Quick Save Skirmish State (Shortcut: F5)">💾 Quick Save <kbd class="menu-kbd">F5</kbd></button>
+              <button class="hud-btn" id="btn-quick-load" title="Quick Load Skirmish State (Shortcut: F9)">📂 Quick Load <kbd class="menu-kbd">F9</kbd></button>
             </div>
+            <div class="menu-group-caption">Archive File (.zhsave)</div>
             <div class="menu-btn-row">
-              <button class="hud-btn" id="btn-export-save" title="Download .zhsave File">⬇️ .zhsave</button>
-              <button class="hud-btn" id="btn-import-save" title="Import .zhsave File">⬆️ Import</button>
+              <button class="hud-btn" id="btn-export-save" title="Export Deterministic .zhsave File">⬇️ Export Save…</button>
+              <button class="hud-btn" id="btn-import-save" title="Import Deterministic .zhsave File">⬆️ Import Save…</button>
               <input type="file" id="zhsave-file-input" accept=".zhsave,.json" style="display:none;" />
             </div>
-            <button class="hud-btn menu-danger-btn" id="btn-main-menu">☰ MENU / ABORT OPERATION</button>
+            <div class="menu-divider" role="separator"></div>
+            <button class="hud-btn menu-danger-btn" id="btn-main-menu">Abort Mission &amp; Return to Command Deck</button>
           </div>
         </div>
 
         <!-- Column 2: Audio Bus & Tactical Preferences -->
         <div class="menu-section-card">
-          <div class="section-label">2. Audio Channels &amp; Interface Settings</div>
+          <div class="section-label">Audio &amp; Interface Preferences</div>
+          <div class="menu-group-caption">Channel Mute</div>
           <div class="menu-btn-row" style="margin-bottom:10px;">
             <button class="hud-btn" id="btn-toggle-sfx">🔊 SFX: ON</button>
             <button class="hud-btn" id="btn-toggle-music" title="Toggle Dynamic Faction Soundtrack [M]">🎵 Music: ON</button>
@@ -181,15 +218,15 @@
               <input type="range" id="vol-master" min="0" max="100" value="80" />
             </label>
             <label class="setting-row">
-              <span>Music Bus</span>
+              <span>Music Soundtrack</span>
               <input type="range" id="vol-music" min="0" max="100" value="50" />
             </label>
             <label class="setting-row">
-              <span>SFX Bus</span>
+              <span>Sound Effects</span>
               <input type="range" id="vol-sfx" min="0" max="100" value="80" />
             </label>
             <label class="setting-row">
-              <span>EVA Voice</span>
+              <span>EVA Announcer</span>
               <input type="range" id="vol-voice" min="0" max="100" value="90" />
             </label>
           </div>
@@ -201,14 +238,14 @@
             </label>
             <label class="setting-check">
               <input type="checkbox" id="opt-health-bars" />
-              <span>Always Show All Health Bars [Alt]</span>
+              <span>Always Show Health Bars <kbd class="menu-kbd">Alt</kbd></span>
             </label>
             <label class="setting-check">
               <input type="checkbox" id="opt-reduced-motion" />
-              <span>Reduced Motion &amp; Screen Shake</span>
+              <span>Reduce Motion &amp; Camera Shake</span>
             </label>
             <label class="setting-row">
-              <span>HUD Scale</span>
+              <span>Interface Scale</span>
               <select id="opt-ui-scale" class="map-select-dropdown">
                 <option value="90">Compact (90%)</option>
                 <option value="100" selected>Standard (100%)</option>
@@ -224,16 +261,16 @@
   <!-- ==================== START / GENERAL SELECTION MODAL ==================== -->
   <div id="start-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-label="Zero Hour Command Setup">
     <div class="modal-card start-modal-card">
-      <!-- Top Hazard & Telemetry Strip -->
+      <!-- Top macOS Window Status Bar -->
       <div class="military-top-telemetry">
         <div class="telemetry-left">
           <span class="defcon-badge">DEFCON 2</span>
-          <span class="telemetry-code">SYS // SAGE-MAC-2.0 // C4ISR DIRECTIVE 09</span>
-          <span class="telemetry-coords">UPLINK: 38°52'15"N 77°03'21"W // PENTAGON SAT-NET</span>
+          <span class="telemetry-code">Tactical Command Center</span>
+          <span class="telemetry-coords">Satellite Uplink Active • Deterministic Lockstep</span>
         </div>
         <div class="telemetry-right">
           <span class="telemetry-status-dot"></span>
-          <span class="telemetry-code">v2.0 Complete macOS Edition • 9 Sub-Generals • Deterministic .zhsave</span>
+          <span class="telemetry-code">macOS Clean-Room Edition • 9 Commanders</span>
         </div>
       </div>
 
@@ -248,24 +285,28 @@
             </svg>
           </div>
           <div class="zh-title-stack">
-            <div class="zh-kicker-line">GLOBAL SATELLITE COMMAND // OPERATION ZERO HOUR</div>
-            <div class="zh-logo-title">COMMAND &amp; CONQUER: GENERALS <span class="zh-title-accent">// ZERO HOUR</span></div>
-            <div class="zh-logo-sub">TACTICAL WAR ROOM &amp; SUB-COMMANDER DEPLOYMENT TERMINAL</div>
+            <div class="zh-kicker-line">COMMAND &amp; CONQUER: GENERALS</div>
+            <div class="zh-logo-title">Zero Hour <span class="zh-title-accent">Command Deck</span></div>
+            <div class="zh-logo-sub">Select your Commanding General, theater sector, and combat doctrine</div>
           </div>
         </div>
-        <div class="mode-tabs" id="mode-tabs">
-          <button class="mode-tab-btn active" data-mode="CHALLENGE">
-            <span class="tab-code">[OP-01]</span> GENERALS' CHALLENGE
-          </button>
-          <button class="mode-tab-btn" data-mode="SKIRMISH">
-            <span class="tab-code">[OP-02]</span> CUSTOM SKIRMISH
-          </button>
-          <button class="mode-tab-btn studio-tab-highlight" id="btn-open-unit-studio-top" type="button">
-            <span class="tab-code">[LAB-3D]</span> UNIT ARMORY STUDIO
-          </button>
-          <a class="mode-tab-btn studio-tab-highlight" id="btn-open-building-diorama-top" href="usa-buildings-diorama.html" style="text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
-            <span class="tab-code">[BLD-2.5D]</span> 🏰 BUILDING DIORAMA (31)
-          </a>
+        <div class="mode-tabs" id="mode-tabs" role="toolbar" aria-label="Game Mode and Inspection Tools">
+          <div class="segmented-mode-group" role="group" aria-label="Operation Mode">
+            <button class="mode-tab-btn active" data-mode="CHALLENGE" type="button">
+              Generals' Challenge
+            </button>
+            <button class="mode-tab-btn" data-mode="SKIRMISH" type="button">
+              Custom Skirmish
+            </button>
+          </div>
+          <div class="header-studio-cluster" role="group" aria-label="3D Inspection Tools">
+            <button class="mode-tab-btn studio-tab-highlight" id="btn-open-unit-studio-top" type="button" title="Inspect 3D Unit Models &amp; Voice Responses">
+              Unit Armory
+            </button>
+            <a class="mode-tab-btn studio-tab-highlight" id="btn-open-building-diorama-top" href="usa-buildings-diorama.html" title="Open Interactive 3D Building Diorama">
+              Building Diorama (31)
+            </a>
+          </div>
         </div>
       </div>
 
@@ -273,32 +314,32 @@
         <!-- LEFT COLUMN: Commander Rosters & Challenge Gauntlet Progression -->
         <div class="deck-col deck-col-rosters">
           <div class="section-header-bar">
-            <div class="section-label"><span class="sec-idx">01 //</span> SELECT COMMANDING GENERAL</div>
+            <div class="section-label"><span class="sec-idx">1</span> Commanding General</div>
             <div class="faction-legend-strip">
-              <span class="faction-pill usa">USA STRATCOM</span>
-              <span class="faction-pill china">PLA HIGH CMD</span>
-              <span class="faction-pill gla">GLA NETWORK</span>
-              <button class="deck-mini-btn" id="btn-random-player-gen" type="button" title="Assign Random Commanding General">[RND] ASSIGN</button>
+              <span class="faction-pill usa">USA</span>
+              <span class="faction-pill china">China</span>
+              <span class="faction-pill gla">GLA</span>
+              <button class="deck-mini-btn" id="btn-random-player-gen" type="button" title="Select a random Commanding General">Randomize</button>
             </div>
           </div>
-          <div id="player-general-grid" class="general-grid"></div>
+          <div id="player-general-grid" class="general-grid" role="listbox" aria-label="Commanding General Roster"></div>
 
           <!-- Generals' Challenge Gauntlet Ladder -->
           <div id="challenge-section" class="deck-subpanel">
             <div class="section-header-bar">
-              <div class="section-label"><span class="sec-idx">02 //</span> GENERALS' CHALLENGE TARGET MATRIX</div>
-              <span id="challenge-stage-badge" class="deck-status-pill">STAGE 1 / 8 • ACTIVE TARGET</span>
+              <div class="section-label"><span class="sec-idx">2</span> Challenge Campaign Ladder</div>
+              <span id="challenge-stage-badge" class="deck-status-pill">Stage 1 of 8 • Active Target</span>
             </div>
-            <div id="challenge-ladder-preview"></div>
+            <div id="challenge-ladder-preview" role="list" aria-label="Challenge Campaign Stages"></div>
           </div>
 
           <!-- Skirmish Opponent Picker -->
           <div id="ai-general-picker-wrap" class="deck-subpanel" style="display:none;">
             <div class="section-header-bar">
-              <div class="section-label"><span class="sec-idx">02 //</span> DESIGNATE OPPOSING COMMANDER</div>
-              <button class="deck-mini-btn" id="btn-random-ai-gen" type="button" title="Assign Random Opposing General">[RND] OPPONENT</button>
+              <div class="section-label"><span class="sec-idx">2</span> Opposing Commander</div>
+              <button class="deck-mini-btn" id="btn-random-ai-gen" type="button" title="Select a random Opposing Commander">Randomize Opponent</button>
             </div>
-            <div id="ai-general-grid" class="general-grid"></div>
+            <div id="ai-general-grid" class="general-grid" role="listbox" aria-label="Opposing Commander Roster"></div>
           </div>
         </div>
 
@@ -307,8 +348,8 @@
           <!-- Commander VS Dossier Panel -->
           <div id="commander-vs-dossier" class="commander-vs-dossier">
             <div class="section-header-bar dossier-top-bar">
-              <div class="section-label"><span class="sec-idx">INTEL //</span> COMBATANT DOSSIER &amp; DOCTRINE SPECS</div>
-              <button class="deck-mini-btn" id="btn-dossier-taunt" type="button" title="Audition opponent General satellite transmission">[COMMS] AUDIO INTERCEPT</button>
+              <div class="section-label"><span class="sec-idx">Intel</span> Matchup Dossier &amp; Doctrine</div>
+              <button class="deck-mini-btn" id="btn-dossier-taunt" type="button" title="Play opposing commander transmission">🔊 Play Taunt</button>
             </div>
             <div id="dossier-matchup-strip" class="dossier-matchup-strip">
               <div id="dossier-player-card" class="dossier-combatant-card player-side"></div>
@@ -323,12 +364,12 @@
 
           <!-- Step 3: Theater Map Preview & AI Doctrine -->
           <div class="section-header-bar">
-            <div class="section-label"><span class="sec-idx">03 //</span> THEATER RECONNAISSANCE &amp; ROE</div>
-            <span id="theater-telemetry-pill" class="deck-status-pill">7 SUPPLY • 4 TECH • 4 GARRISONS</span>
+            <div class="section-label"><span class="sec-idx">3</span> Theater of Operations &amp; Rules of Engagement</div>
+            <span id="theater-telemetry-pill" class="deck-status-pill">7 Supply • 4 Tech • 4 Garrisons</span>
           </div>
 
           <!-- Clickable Visual Theater Map Cards -->
-          <div id="visual-map-cards" class="visual-map-cards"></div>
+          <div id="visual-map-cards" class="visual-map-cards" role="listbox" aria-label="Theater Sectors"></div>
 
           <div class="theater-config-grid">
             <div id="map-preview-card" class="map-preview-card">
@@ -338,40 +379,40 @@
               </div>
               <div class="map-preview-details">
                 <div class="map-selector-row">
-                  <label for="map-selector" class="map-selector-label">SECTOR:</label>
+                  <label for="map-selector" class="map-selector-label">Theater</label>
                   <select id="map-selector" class="map-select-dropdown"></select>
                 </div>
                 <div id="map-preview-meta" class="map-preview-meta">Select a theater sector to inspect tactical topography, oil derricks, and urban bunkers.</div>
                 <div class="map-legend-pills">
-                  <span class="map-legend-item"><i class="legend-dot hq-p"></i>ALLIED HQ</span>
-                  <span class="map-legend-item"><i class="legend-dot hq-ai"></i>HOSTILE HQ</span>
-                  <span class="map-legend-item"><i class="legend-dot supply"></i>7 SUPPLY ($166K)</span>
-                  <span class="map-legend-item"><i class="legend-dot tech"></i>4 TECH / 4 BUNKERS</span>
+                  <span class="map-legend-item"><i class="legend-dot hq-p"></i>Allied HQ</span>
+                  <span class="map-legend-item"><i class="legend-dot hq-ai"></i>Hostile HQ</span>
+                  <span class="map-legend-item"><i class="legend-dot supply"></i>7 Supply ($166K)</span>
+                  <span class="map-legend-item"><i class="legend-dot tech"></i>4 Tech / 4 Bunkers</span>
                 </div>
               </div>
             </div>
 
             <div class="doctrine-card">
-              <div class="doctrine-header-label">OPFOR THREAT LEVEL, STARTING CREDITS &amp; ROE:</div>
-              <div id="difficulty-pills" class="difficulty-pills">
-                <button class="diff-btn" data-diff="EASY">CADET [AI $8.5K]</button>
-                <button class="diff-btn active" data-diff="NORMAL">COMMANDER [AI $10.5K]</button>
-                <button class="diff-btn" data-diff="HARD">GENERAL [AI $14.0K]</button>
+              <div class="doctrine-header-label">AI Threat Level &amp; Starting Credits</div>
+              <div id="difficulty-pills" class="difficulty-pills" role="group" aria-label="AI Difficulty">
+                <button class="diff-btn" data-diff="EASY" type="button">Cadet · $8.5K</button>
+                <button class="diff-btn active" data-diff="NORMAL" type="button">Commander · $10K</button>
+                <button class="diff-btn" data-diff="HARD" type="button">General · $10K</button>
               </div>
               <div id="difficulty-intel-desc" class="difficulty-intel-desc">
-                Commander Doctrine (AI $10,500 vs You $10,000): Balanced combined-arms squads, 55s first attack, active tech capture &amp; coordinated flanks.
+                Commander Doctrine (AI $10,000 vs You $10,000): Balanced combined-arms squads, 55s first attack, active tech capture &amp; coordinated flanks.
               </div>
               <div id="victory-rule-banner" class="victory-rule-banner">
-                🏆 <b>Victory Rule:</b> Destroy every enemy building and builder.
+                🏆 <b>Victory Condition:</b> Destroy every enemy building and builder.
               </div>
-              <div class="start-utility-bar">
-                <button class="hud-btn" id="btn-open-unit-studio" type="button">[3D] ARMORY</button>
-                <a class="hud-btn" id="btn-open-building-diorama" href="usa-buildings-diorama.html" style="text-decoration:none; text-align:center;">[CAD] BUILDINGS</a>
-                <button class="hud-btn" id="btn-open-powers-preview" type="button">[PWR] TECH TREE</button>
-                <button class="hud-btn" id="btn-import-save-menu" type="button">[LOAD] .ZHSAVE</button>
-                <button class="hud-btn" id="btn-quick-load-menu" type="button">[F9] QUICKLOAD</button>
-                <button class="hud-btn" id="btn-start-settings" type="button">[CFG] OPTIONS</button>
-                <button class="hud-btn" id="btn-auto-sim" type="button" hidden>[SIM] AUTO-PLAY</button>
+              <div class="start-utility-bar" role="toolbar" aria-label="Mission Utilities">
+                <button class="hud-btn utility-hidden-dup" id="btn-open-unit-studio" type="button" hidden>Unit Armory</button>
+                <a class="hud-btn utility-hidden-dup" id="btn-open-building-diorama" href="usa-buildings-diorama.html" hidden>Buildings</a>
+                <button class="hud-btn" id="btn-open-powers-preview" type="button">⚡ Powers Tree</button>
+                <button class="hud-btn" id="btn-import-save-menu" type="button">⬆️ Load Save…</button>
+                <button class="hud-btn" id="btn-quick-load-menu" type="button">📂 Quick Load (F9)</button>
+                <button class="hud-btn" id="btn-start-settings" type="button">⚙️ Settings</button>
+                <button class="hud-btn" id="btn-auto-sim" type="button" hidden>Auto-Sim</button>
               </div>
             </div>
           </div>
@@ -382,12 +423,12 @@
       <div class="match-settings-row start-launch-footer">
         <div class="launch-summary-wrap">
           <span class="launch-ready-beacon" aria-hidden="true"></span>
-          <div class="launch-order-prefix">OP-ORDER //</div>
+          <div class="launch-order-prefix">Deployment</div>
           <div id="start-matchup-summary" class="start-matchup-summary">Ready to deploy to Theater of Operations</div>
         </div>
         <button class="launch-btn" id="btn-launch-operation">
-          <span class="launch-hazard-strip" aria-hidden="true"></span>
-          <span class="launch-btn-text">DEPLOY TO THEATER ▶</span>
+          <span class="launch-btn-text">Deploy to Theater</span>
+          <span class="launch-btn-arrow" aria-hidden="true">→</span>
         </button>
       </div>
     </div>
@@ -591,18 +632,19 @@
 
   <!-- ==================== GENERALS POWERS TREE MODAL ==================== -->
   <div id="powers-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-label="Generals Secret Powers">
-    <div class="modal-card" style="max-width: 780px;">
+    <div class="modal-card powers-modal-card" style="max-width: 820px;">
       <div class="modal-header">
         <div>
-          <div class="zh-logo-title">⚡ Generals Secret Powers</div>
+          <div class="zh-kicker-line">TACTICAL DOCTRINE AUTHORIZATION</div>
+          <div class="zh-logo-title">Generals Secret Powers</div>
           <div id="powers-modal-subtitle" class="zh-logo-sub">Spend Generals Points earned in combat to authorize tactical support powers.</div>
         </div>
-        <button class="hud-btn" id="btn-close-powers">✕ CLOSE [ESC]</button>
+        <button class="hud-btn" id="btn-close-powers" title="Close Powers Tree (Esc)">Close <kbd class="menu-kbd">Esc</kbd></button>
       </div>
       <div class="powers-rank-headers">
-        <div class="powers-rank-col-header">★ RANK 1 DOCTRINE</div>
-        <div class="powers-rank-col-header">★★ RANK 3 DOCTRINE</div>
-        <div class="powers-rank-col-header">★★★ RANK 5 SUPREME</div>
+        <div class="powers-rank-col-header">★ Rank 1 Doctrine</div>
+        <div class="powers-rank-col-header">★★ Rank 3 Doctrine</div>
+        <div class="powers-rank-col-header">★★★ Rank 5 Supreme</div>
       </div>
       <div id="powers-grid" class="powers-list"></div>
     </div>
@@ -610,14 +652,15 @@
 
   <!-- ==================== VICTORY / DEFEAT MODAL ==================== -->
   <div id="victory-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-label="After-Action Report">
-    <div class="modal-card" style="max-width: 640px; text-align: center;">
-      <div id="victory-title" class="zh-logo-title" style="font-size: 28px; margin-bottom: 8px;">VICTORY</div>
+    <div class="modal-card victory-modal-card" style="max-width: 660px; text-align: center;">
+      <div class="zh-kicker-line" style="margin-bottom: 4px;">AFTER-ACTION DEBRIEFING</div>
+      <div id="victory-title" class="zh-logo-title" style="font-size: 28px; margin-bottom: 6px;">VICTORY</div>
       <p id="victory-subtitle" style="color: #cbd5e1; font-size: 14px; margin-bottom: 14px;"></p>
       <div id="gameover-stats" class="gameover-stats"></div>
-      <div style="display: flex; justify-content: center; gap: 12px; margin-top: 16px;">
-        <button class="launch-btn" id="btn-next-challenge">CONTINUE ▶</button>
-        <button class="hud-btn" id="btn-rematch">🔄 REMATCH</button>
-        <button class="hud-btn" id="btn-victory-main-menu">☰ MAIN MENU</button>
+      <div class="victory-actions-row">
+        <button class="launch-btn" id="btn-next-challenge">Next Operation →</button>
+        <button class="hud-btn" id="btn-rematch">🔄 Rematch</button>
+        <button class="hud-btn" id="btn-victory-main-menu">Command Deck</button>
       </div>
     </div>
   </div>
@@ -632,6 +675,7 @@
   <script src="js/audio.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/ai.js"></script>
+  <script src="js/ai_policies.js"></script>
   <script src="js/simulator.js"></script>
   <script src="js/unit_studio.js"></script>
   <script src="js/ui.js"></script>

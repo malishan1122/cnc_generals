@@ -340,6 +340,7 @@ window.ZH_ENGINE = (function () {
       const baseY = 440;
       const team = this.teams[aiTeamId];
       if (!team) return;
+      const isEasy = this.difficulty === 'EASY';
 
       // Give Challenge AI an extra reactor/power plant if power-based so forward turrets stay online
       if (team.factionId === 'USA') {
@@ -352,59 +353,73 @@ window.ZH_ENGINE = (function () {
         case 'USA_GRANGER':
           this.spawnBuilding('USA_AIRFIELD', aiTeamId, baseX - 220, baseY - 40, true);
           this.spawnBuilding('USA_PATRIOT', aiTeamId, baseX - 240, baseY + 190, true);
-          this.spawnUnit('USA_COMANCHE', aiTeamId, baseX - 180, baseY + 140);
+          if (!isEasy) this.spawnUnit('USA_COMANCHE', aiTeamId, baseX - 180, baseY + 140);
           break;
         case 'CHINA_KWAI':
           this.spawnBuilding('CHINA_WAR_FACTORY', aiTeamId, baseX - 230, baseY + 40, true);
           this.spawnBuilding('CHINA_GATTLING_CANNON', aiTeamId, baseX - 250, baseY + 210, true);
-          this.spawnUnit('CHINA_BATTLEMASTER', aiTeamId, baseX - 200, baseY + 150);
+          if (!isEasy) this.spawnUnit('CHINA_BATTLEMASTER', aiTeamId, baseX - 200, baseY + 150);
           break;
         case 'GLA_THRAX':
           this.spawnBuilding('GLA_BARRACKS', aiTeamId, baseX - 190, baseY - 60, true);
           this.spawnBuilding('GLA_TUNNEL_NETWORK', aiTeamId, baseX - 240, baseY + 190, true);
-          this.spawnBuilding('GLA_STINGER_SITE', aiTeamId, baseX - 120, baseY + 240, true);
-          this.spawnUnit('GLA_TOXIN_TRACTOR', aiTeamId, baseX - 200, baseY + 160);
+          if (!isEasy) {
+            this.spawnBuilding('GLA_STINGER_SITE', aiTeamId, baseX - 120, baseY + 240, true);
+            this.spawnUnit('GLA_TOXIN_TRACTOR', aiTeamId, baseX - 200, baseY + 160);
+          }
           break;
         case 'USA_TOWNES':
           this.spawnBuilding('USA_PATRIOT', aiTeamId, baseX - 250, baseY + 180, true);
-          this.spawnBuilding('USA_PATRIOT', aiTeamId, baseX - 110, baseY + 250, true);
-          this.spawnUnit('USA_LASER_CRUSADER', aiTeamId, baseX - 190, baseY + 150);
+          if (!isEasy) {
+            this.spawnBuilding('USA_PATRIOT', aiTeamId, baseX - 110, baseY + 250, true);
+            this.spawnUnit('USA_LASER_CRUSADER', aiTeamId, baseX - 190, baseY + 150);
+          }
           break;
         case 'CHINA_SHIN_FAI':
           this.spawnBuilding('CHINA_BUNKER', aiTeamId, baseX - 250, baseY + 190, true);
-          this.spawnBuilding('CHINA_GATTLING_CANNON', aiTeamId, baseX - 110, baseY + 250, true);
-          this.spawnUnit('CHINA_MINIGUNNER', aiTeamId, baseX - 210, baseY + 160);
-          this.spawnUnit('CHINA_TANK_HUNTER', aiTeamId, baseX - 180, baseY + 170);
+          if (!isEasy) {
+            this.spawnBuilding('CHINA_GATTLING_CANNON', aiTeamId, baseX - 110, baseY + 250, true);
+            this.spawnUnit('CHINA_MINIGUNNER', aiTeamId, baseX - 210, baseY + 160);
+            this.spawnUnit('CHINA_TANK_HUNTER', aiTeamId, baseX - 180, baseY + 170);
+          }
           break;
         case 'GLA_KASSAD':
           this.spawnBuilding('GLA_BARRACKS', aiTeamId, baseX - 190, baseY - 60, true);
           this.spawnBuilding('GLA_TUNNEL_NETWORK', aiTeamId, baseX - 250, baseY + 190, true);
-          this.spawnBuilding('GLA_STINGER_SITE', aiTeamId, baseX - 110, baseY + 250, true);
-          this.spawnUnit('GLA_QUAD_CANNON', aiTeamId, baseX - 200, baseY + 160);
+          if (!isEasy) {
+            this.spawnBuilding('GLA_STINGER_SITE', aiTeamId, baseX - 110, baseY + 250, true);
+            this.spawnUnit('GLA_QUAD_CANNON', aiTeamId, baseX - 200, baseY + 160);
+          }
           break;
         case 'CHINA_TAO':
-          this.spawnBuilding('CHINA_PROPAGANDA_CENTER', aiTeamId, baseX + 160, baseY + 140, true);
+          if (!isEasy) this.spawnBuilding('CHINA_PROPAGANDA_CENTER', aiTeamId, baseX + 160, baseY + 140, true);
           this.spawnBuilding('CHINA_GATTLING_CANNON', aiTeamId, baseX - 240, baseY + 190, true);
-          this.spawnUnit('CHINA_NUKE_CANNON', aiTeamId, baseX - 210, baseY + 160);
+          if (!isEasy) this.spawnUnit('CHINA_NUKE_CANNON', aiTeamId, baseX - 210, baseY + 160);
           break;
         case 'GLA_JUHZIZ':
-          this.spawnBuilding('GLA_PALACE', aiTeamId, baseX + 150, baseY + 140, true);
+          if (!isEasy) this.spawnBuilding('GLA_PALACE', aiTeamId, baseX + 150, baseY + 140, true);
           this.spawnBuilding('GLA_TUNNEL_NETWORK', aiTeamId, baseX - 240, baseY + 190, true);
-          this.spawnBuilding('GLA_STINGER_SITE', aiTeamId, baseX - 110, baseY + 250, true);
-          this.spawnUnit('GLA_SCUD_LAUNCHER', aiTeamId, baseX - 200, baseY + 160);
+          if (!isEasy) {
+            this.spawnBuilding('GLA_STINGER_SITE', aiTeamId, baseX - 110, baseY + 250, true);
+            this.spawnUnit('GLA_SCUD_LAUNCHER', aiTeamId, baseX - 200, baseY + 160);
+          }
           break;
         case 'USA_ALEXANDER':
         default:
-          this.spawnBuilding('USA_STRATEGY_CENTER', aiTeamId, baseX + 150, baseY + 140, true);
+          if (!isEasy) this.spawnBuilding('USA_STRATEGY_CENTER', aiTeamId, baseX + 150, baseY + 140, true);
           this.spawnBuilding('USA_PATRIOT', aiTeamId, baseX - 250, baseY + 180, true);
-          this.spawnBuilding('USA_PATRIOT', aiTeamId, baseX - 110, baseY + 250, true);
-          this.spawnUnit('USA_AURORA_ALPHA', aiTeamId, baseX - 190, baseY + 150);
+          if (!isEasy) {
+            this.spawnBuilding('USA_PATRIOT', aiTeamId, baseX - 110, baseY + 250, true);
+            this.spawnUnit('USA_AURORA_ALPHA', aiTeamId, baseX - 190, baseY + 150);
+          }
           break;
       }
     }
 
     updateChallengeScriptedTwist() {
-      if (this.mode !== 'CHALLENGE' || this.challengeTwistTriggered || this.gameTime < 75) return;
+      const isEasy = this.difficulty === 'EASY';
+      const twistMinTime = isEasy ? 165 : 75;
+      if (this.mode !== 'CHALLENGE' || this.challengeTwistTriggered || this.gameTime < twistMinTime) return;
       const aiTeam = this.teams[1];
       if (!aiTeam) return;
       this.challengeTwistTriggered = true;
@@ -424,45 +439,49 @@ window.ZH_ENGINE = (function () {
         case 'USA_GRANGER':
           alertText = '⚡ CHALLENGE TWIST: Gen. Granger scrambling King Raptor & Comanche Strike Wing!';
           tauntText = 'Clear the skies! My King Raptors own this airspace!';
-          wave.push(this.spawnUnit('USA_KING_RAPTOR', 1, spawnX, spawnY));
+          if (!isEasy) wave.push(this.spawnUnit('USA_KING_RAPTOR', 1, spawnX, spawnY));
           wave.push(this.spawnUnit('USA_COMANCHE', 1, spawnX - 40, spawnY + 40));
-          wave.push(this.spawnUnit('USA_COMANCHE', 1, spawnX + 40, spawnY - 40));
+          if (!isEasy) wave.push(this.spawnUnit('USA_COMANCHE', 1, spawnX + 40, spawnY - 40));
           break;
         case 'CHINA_KWAI':
           alertText = '⚡ CHALLENGE TWIST: Gen. Kwai deploying Veteran Emperor Overlord Spearhead!';
           tauntText = 'My Emperor Overlord column will flatten your perimeter!';
-          wave.push(this.spawnUnit('CHINA_EMPEROR_OVERLORD', 1, spawnX, spawnY));
+          if (!isEasy) wave.push(this.spawnUnit('CHINA_EMPEROR_OVERLORD', 1, spawnX, spawnY));
           wave.push(this.spawnUnit('CHINA_BATTLEMASTER', 1, spawnX - 50, spawnY + 30));
-          wave.push(this.spawnUnit('CHINA_GATTLING_TANK', 1, spawnX + 30, spawnY + 50));
+          if (!isEasy) wave.push(this.spawnUnit('CHINA_GATTLING_TANK', 1, spawnX + 30, spawnY + 50));
           break;
         case 'GLA_THRAX':
           alertText = '⚡ CHALLENGE TWIST: Dr. Thrax unleashing Anthrax Beta & Toxin Ambush!';
           tauntText = 'Breathe deeply, General! My fresh batch of Anthrax Beta is ready!';
-          aiTeam.upgrades.add('UPG_ANTHRAX_BETA');
+          if (!isEasy) aiTeam.upgrades.add('UPG_ANTHRAX_BETA');
           wave.push(this.spawnUnit('GLA_TOXIN_TRACTOR', 1, spawnX, spawnY));
-          wave.push(this.spawnUnit('GLA_MARAUDER', 1, spawnX - 45, spawnY + 35));
-          wave.push(this.spawnUnit('GLA_RPG_TROOPER', 1, spawnX + 35, spawnY - 35));
+          if (!isEasy) {
+            wave.push(this.spawnUnit('GLA_MARAUDER', 1, spawnX - 45, spawnY + 35));
+            wave.push(this.spawnUnit('GLA_RPG_TROOPER', 1, spawnX + 35, spawnY - 35));
+          }
           break;
         case 'USA_TOWNES':
           alertText = '⚡ CHALLENGE TWIST: Gen. Townes deploying Laser Crusader & Avenger Task Force!';
           tauntText = 'Focusing high-energy laser lenses on your command grid!';
           wave.push(this.spawnUnit('USA_LASER_CRUSADER', 1, spawnX, spawnY));
-          wave.push(this.spawnUnit('USA_LASER_CRUSADER', 1, spawnX - 45, spawnY + 35));
-          wave.push(this.spawnUnit('USA_AVENGER', 1, spawnX + 35, spawnY - 35));
+          if (!isEasy) {
+            wave.push(this.spawnUnit('USA_LASER_CRUSADER', 1, spawnX - 45, spawnY + 35));
+            wave.push(this.spawnUnit('USA_AVENGER', 1, spawnX + 35, spawnY - 35));
+          }
           break;
         case 'CHINA_SHIN_FAI':
           alertText = '⚡ CHALLENGE TWIST: Gen. Shin Fai launching Assault Troop Crawler & Minigunner Wave!';
           tauntText = 'Infantry wave advancing! Overrun their defenses!';
-          wave.push(this.spawnUnit('CHINA_ASSAULT_CRAWLER', 1, spawnX, spawnY));
+          if (!isEasy) wave.push(this.spawnUnit('CHINA_ASSAULT_CRAWLER', 1, spawnX, spawnY));
           wave.push(this.spawnUnit('CHINA_MINIGUNNER', 1, spawnX - 40, spawnY + 30));
-          wave.push(this.spawnUnit('CHINA_TANK_HUNTER', 1, spawnX + 30, spawnY - 40));
+          if (!isEasy) wave.push(this.spawnUnit('CHINA_TANK_HUNTER', 1, spawnX + 30, spawnY - 40));
           break;
         case 'GLA_KASSAD':
           alertText = '⚡ CHALLENGE TWIST: Prince Kassad activating GPS Scrambler Stealth Raid!';
           tauntText = 'You cannot fight what your radar cannot see!';
-          wave.push(this.spawnUnit('GLA_HIJACKER', 1, spawnX, spawnY));
+          if (!isEasy) wave.push(this.spawnUnit('GLA_HIJACKER', 1, spawnX, spawnY));
           wave.push(this.spawnUnit('GLA_QUAD_CANNON', 1, spawnX - 45, spawnY + 35));
-          wave.push(this.spawnUnit('GLA_ROCKET_BUGGY', 1, spawnX + 35, spawnY - 35));
+          if (!isEasy) wave.push(this.spawnUnit('GLA_ROCKET_BUGGY', 1, spawnX + 35, spawnY - 35));
           for (const u of wave) {
             if (u) {
               u.stealthed = true;
@@ -473,30 +492,32 @@ window.ZH_ENGINE = (function () {
         case 'CHINA_TAO':
           alertText = '⚡ CHALLENGE TWIST: Gen. Tao rolling out Neutron-Loaded Nuke Cannon & Overlord!';
           tauntText = 'Glow in the dark, General! Tactical nuclear artillery deployed!';
-          aiTeam.upgrades.add('UPG_ISOTOPE_STABILITY');
-          wave.push(this.spawnUnit('CHINA_NUKE_CANNON', 1, spawnX, spawnY));
-          wave.push(this.spawnUnit('CHINA_OVERLORD', 1, spawnX - 55, spawnY + 45));
+          if (!isEasy) aiTeam.upgrades.add('UPG_ISOTOPE_STABILITY');
+          if (!isEasy) wave.push(this.spawnUnit('CHINA_NUKE_CANNON', 1, spawnX, spawnY));
+          wave.push(this.spawnUnit(isEasy ? 'CHINA_BATTLEMASTER' : 'CHINA_OVERLORD', 1, spawnX - 55, spawnY + 45));
           break;
         case 'GLA_JUHZIZ':
           alertText = '⚡ CHALLENGE TWIST: Gen. Juhziz dispatching High-Explosive Bomb Truck & Scud Convoy!';
           tauntText = 'Listen for the rumble of my Scud launchers and Bomb Trucks!';
-          wave.push(this.spawnUnit('GLA_BOMB_TRUCK', 1, spawnX, spawnY));
-          wave.push(this.spawnUnit('GLA_SCUD_LAUNCHER', 1, spawnX - 45, spawnY + 45));
+          if (!isEasy) {
+            wave.push(this.spawnUnit('GLA_BOMB_TRUCK', 1, spawnX, spawnY));
+            wave.push(this.spawnUnit('GLA_SCUD_LAUNCHER', 1, spawnX - 45, spawnY + 45));
+          }
           wave.push(this.spawnUnit('GLA_QUAD_CANNON', 1, spawnX + 45, spawnY - 45));
           break;
         case 'USA_ALEXANDER':
         default:
           alertText = '⚡ CHALLENGE TWIST: Gen. Alexander launching Aurora Alpha & Paladin Strike Group!';
           tauntText = 'Supersonic Aurora Alphas are inbound on your coordinates!';
-          wave.push(this.spawnUnit('USA_AURORA_ALPHA', 1, spawnX, spawnY));
+          if (!isEasy) wave.push(this.spawnUnit('USA_AURORA_ALPHA', 1, spawnX, spawnY));
           wave.push(this.spawnUnit('USA_PALADIN', 1, spawnX - 45, spawnY + 45));
-          wave.push(this.spawnUnit('USA_TOMAHAWK', 1, spawnX + 45, spawnY - 45));
+          if (!isEasy) wave.push(this.spawnUnit('USA_TOMAHAWK', 1, spawnX + 45, spawnY - 45));
           break;
       }
 
       for (const u of wave) {
         if (!u) continue;
-        u.vetLevel = Math.max(u.vetLevel || 0, 1);
+        if (!isEasy) u.vetLevel = Math.max(u.vetLevel || 0, 1);
         u.state = 'ATTACK_MOVE';
         u.targetX = targetX;
         u.targetY = targetY;
@@ -529,8 +550,8 @@ window.ZH_ENGINE = (function () {
 
     createTeam(id, generalDef, isAI) {
       const factionDef = ZH_DATA.FACTIONS[generalDef.faction];
-      const startCash = (isAI && this.difficulty === 'BRUTAL')
-        ? 12500
+      const startCash = isAI
+        ? (this.difficulty === 'BRUTAL' ? 12500 : this.difficulty === 'EASY' ? 8500 : factionDef.startingCredits)
         : factionDef.startingCredits;
 
       return {
@@ -888,6 +909,18 @@ window.ZH_ENGINE = (function () {
         if (uDef.isHero && this.isHeroActiveOrQueued(itemId, building.team)) {
           return { ok: false, code: 'HERO_LIMIT_REACHED', reason: 'Only one Hero / Commando unit may be active or queued!' };
         }
+        if ((building.defId === 'USA_AIRFIELD' || building.defId === 'CHINA_AIRFIELD') && this.isFixedWingAircraftDef(uDef)) {
+          const maxSlots = (building.def && building.def.maxAircraft) || 4;
+          const usedSlots = this.getAirfieldAircraftCount(building, true);
+          const neededSlots = uDef.spawnCount || 1;
+          if (usedSlots + neededSlots > maxSlots) {
+            return {
+              ok: false,
+              code: 'AIRFIELD_FULL',
+              reason: `Airfield at maximum capacity (${maxSlots}/${maxSlots} aircraft)!`
+            };
+          }
+        }
         return { ok: true, type: 'UNIT', def: uDef };
       }
       if (upgDef) {
@@ -1210,6 +1243,11 @@ window.ZH_ENGINE = (function () {
         maxAmmo: def.maxAmmo || 0,
         reloadTimer: 0,
         reloadingAtAirfieldId: null,
+        homeAirfieldId: null,
+        parkingSlot: -1,
+        airState: (def.isAir && !def.isHelicopter && !def.isHarvester && locomotor === 'AIRCRAFT') ? 'AIRBORNE' : null,
+        flightHeight: def.isAir ? 1.0 : 0,
+        takeoffTimer: 0,
         supersonicReturn: false,
         hasSpeakerTower: Boolean(def.isPropagandaCarrier && defId !== 'CHINA_OVERLORD'),
         hasGatlingCannon: false,
@@ -1465,6 +1503,30 @@ window.ZH_ENGINE = (function () {
           u.attackCooldown = 0;
           this.spawnFloatingText(u.x, u.y - 18, '🎯 LASER LOCK SALVO!', '#38bdf8');
           this.spawnBurst(u.x, u.y, '#38bdf8', 10);
+          if (window.ZH_AUDIO) ZH_AUDIO.playSFX('laser');
+          return true;
+        }
+
+        case 'EW_JAM_PULSE': {
+          u.abilityCooldown = abDef.cooldown || 22;
+          const cx = targetEntity ? targetEntity.x : (targetX || (u.x + Math.cos(u.angle || 0) * 140));
+          const cy = targetEntity ? targetEntity.y : (targetY || (u.y + Math.sin(u.angle || 0) * 140));
+          const pulseRadius = abDef.radius || 145;
+          this.applyEMP(cx, cy, pulseRadius, 6.0, u.team);
+          this.dealAreaDamage(cx, cy, pulseRadius, 95, 'AP', u.team, u);
+          this.spawnBurst(cx, cy, '#38bdf8', 24);
+          this.spawnBurst(cx, cy, '#a5f3fc', 14);
+          this.beams.push({
+            x1: u.x,
+            y1: u.y - (u.altitude || 46),
+            x2: cx,
+            y2: cy,
+            color: '#38bdf8',
+            width: 3.5,
+            timer: 0.36,
+            maxTimer: 0.36
+          });
+          this.spawnFloatingText(cx, cy - 22, '⚡ J-16D SEAD EW PULSE!', '#38bdf8');
           if (window.ZH_AUDIO) ZH_AUDIO.playSFX('laser');
           return true;
         }
@@ -1952,18 +2014,39 @@ window.ZH_ENGINE = (function () {
 
     // Phase 3 Tactical Stances & Control Groups (SYS-19 & SYS-20)
     orderGuardSelected(wx, wy) {
-      let count = 0;
-      for (const u of this.units) {
-        if (u.team === 0 && this.selectedIds.has(u.id) && u.hp > 0 && !u.unmanned) {
-          u.state = 'GUARD';
-          u.guardX = wx !== undefined ? wx : u.x;
-          u.guardY = wy !== undefined ? wy : u.y;
-          u.targetX = u.guardX;
-          u.targetY = u.guardY;
-          u.targetEntityId = null;
-          u.waypoints = [];
-          count++;
+      const selected = this.units.filter(
+        u => u.team === 0 && this.selectedIds.has(u.id) && u.hp > 0 && !u.unmanned
+      );
+      const jets = selected.filter(u => this.isFixedWingAircraft(u));
+      let sharedJetX = wx;
+      let sharedJetY = wy;
+      if ((sharedJetX === undefined || sharedJetY === undefined) && jets.length > 0) {
+        let sumX = 0;
+        let sumY = 0;
+        for (const j of jets) {
+          const af = j.airState === 'PARKED' && j.homeAirfieldId
+            ? this.buildings.find(b => b.id === j.homeAirfieldId && b.hp > 0)
+            : null;
+          sumX += af ? af.x : j.x;
+          sumY += af ? af.y : j.y;
         }
+        sharedJetX = sumX / jets.length;
+        sharedJetY = sumY / jets.length;
+      }
+
+      let count = 0;
+      for (const u of selected) {
+        const isJet = this.isFixedWingAircraft(u);
+        u.state = 'GUARD';
+        u.guardX = wx !== undefined ? wx : (isJet ? sharedJetX : u.x);
+        u.guardY = wy !== undefined ? wy : (isJet ? sharedJetY : u.y);
+        u.resumeGuardAfterRearm = isJet;
+        u.targetX = u.guardX;
+        u.targetY = u.guardY;
+        u.targetEntityId = null;
+        u.targetEntity = null;
+        u.waypoints = [];
+        count++;
       }
       if (count > 0 && window.ZH_AUDIO) ZH_AUDIO.playSFX('click');
       if (this.onStateChange) this.onStateChange();
@@ -2652,6 +2735,7 @@ window.ZH_ENGINE = (function () {
             if (cmd.append && Array.isArray(u.waypoints)) {
               if (u.state === 'IDLE') {
                 u.state = state;
+                u.resumeGuardAfterRearm = false;
                 u.targetEntityId = null;
                 this.assignUnitPath(u, destX, destY);
               } else {
@@ -2659,6 +2743,7 @@ window.ZH_ENGINE = (function () {
               }
             } else {
               u.state = state;
+              u.resumeGuardAfterRearm = false;
               u.targetEntityId = null;
               u.waypoints = [];
               this.assignUnitPath(u, destX, destY);
@@ -2668,11 +2753,30 @@ window.ZH_ENGINE = (function () {
         }
         case 'GUARD': {
           const units = getCmdUnits().filter(u => !u.unmanned);
+          const jets = units.filter(u => this.isFixedWingAircraft(u));
+          let sharedJetX = cmd.x;
+          let sharedJetY = cmd.y;
+          if ((sharedJetX === undefined || sharedJetY === undefined) && jets.length > 0) {
+            let sumX = 0;
+            let sumY = 0;
+            for (const j of jets) {
+              const af = j.airState === 'PARKED' && j.homeAirfieldId
+                ? this.buildings.find(b => b.id === j.homeAirfieldId && b.hp > 0)
+                : null;
+              sumX += af ? af.x : j.x;
+              sumY += af ? af.y : j.y;
+            }
+            sharedJetX = sumX / jets.length;
+            sharedJetY = sumY / jets.length;
+          }
           for (const u of units) {
+            const isJet = this.isFixedWingAircraft(u);
             u.state = 'GUARD';
-            u.guardX = cmd.x !== undefined ? cmd.x : u.x;
-            u.guardY = cmd.y !== undefined ? cmd.y : u.y;
+            u.guardX = cmd.x !== undefined ? cmd.x : (isJet ? sharedJetX : u.x);
+            u.guardY = cmd.y !== undefined ? cmd.y : (isJet ? sharedJetY : u.y);
+            u.resumeGuardAfterRearm = isJet;
             u.targetEntityId = null;
+            u.targetEntity = null;
             u.waypoints = [];
             this.assignUnitPath(u, u.guardX, u.guardY);
           }
@@ -2682,6 +2786,7 @@ window.ZH_ENGINE = (function () {
           const units = getCmdUnits().filter(u => !u.unmanned && u.def.dmg > 0);
           for (const u of units) {
             u.state = 'FORCE_FIRE';
+            u.resumeGuardAfterRearm = false;
             u.targetX = cmd.x;
             u.targetY = cmd.y;
             u.targetEntityId = null;
@@ -2693,6 +2798,7 @@ window.ZH_ENGINE = (function () {
           const units = getCmdUnits().filter(u => !u.unmanned);
           for (const u of units) {
             u.state = 'ATTACK';
+            u.resumeGuardAfterRearm = false;
             u.targetEntityId = cmd.targetId;
             u.waypoints = [];
           }
@@ -3449,6 +3555,16 @@ window.ZH_ENGINE = (function () {
             b.queue.shift();
             if (item.type === 'UNIT') {
               const uDef = ZH_DATA.UNITS[item.id];
+              const isAirfieldJet = (b.defId === 'USA_AIRFIELD' || b.defId === 'CHINA_AIRFIELD') && this.isFixedWingAircraftDef(uDef);
+              const maxSlots = (b.def && b.def.maxAircraft) || 4;
+              if (isAirfieldJet && this.getAirfieldAircraftCount(b, false) >= maxSlots) {
+                const refund = this.getModifiedCost(item.id, b.team);
+                team.credits += refund;
+                if (b.team === 0) {
+                  this.triggerAlert(`Airfield at maximum capacity (${maxSlots}/${maxSlots}) — refunded $${refund}.`, '#f59e0b');
+                }
+                continue;
+              }
               const count = (uDef && uDef.spawnCount) ? uDef.spawnCount : 1;
               const uRad = (uDef && uDef.radius) || 14;
               const exitAng = angleBetween(b.x, b.y, b.rallyX, b.rallyY);
@@ -3461,7 +3577,25 @@ window.ZH_ENGINE = (function () {
                 if (spawned) {
                   spawned.angle = exitAng;
                   spawned.turretAngle = exitAng;
-                  if (spawned.def.isHarvester && !spawned.def.isBuilder) {
+                  if (this.isFixedWingAircraft(spawned)) {
+                    const assignment = this.assignAirfieldParkingSlot(spawned, b);
+                    if (assignment && assignment.slot) {
+                      spawned.x = assignment.slot.x;
+                      spawned.y = assignment.slot.y;
+                      spawned.angle = assignment.slot.angle;
+                      spawned.turretAngle = assignment.slot.angle;
+                    } else {
+                      spawned.x = b.x;
+                      spawned.y = b.y;
+                    }
+                    spawned.airState = 'PARKED';
+                    spawned.flightHeight = 0;
+                    spawned.currentSpeed = 0;
+                    spawned.bankAngle = 0;
+                    spawned.state = 'IDLE';
+                    spawned.targetX = spawned.x;
+                    spawned.targetY = spawned.y;
+                  } else if (spawned.def.isHarvester && !spawned.def.isBuilder) {
                     this.assignNearestSupplyDock(spawned);
                   } else {
                     const rx = clamp(b.rallyX + (c - (count - 1) * 0.5) * 22 + (this.simRandom() - 0.5) * 18, 40, WORLD_SIZE - 40);
@@ -3853,13 +3987,351 @@ window.ZH_ENGINE = (function () {
       }
     }
 
-    stepUnitStateMachine(u, dt) {
-      // 0. AIRCRAFT AMMO REARMING LOOP (Raptor, King Raptor, Aurora, MiG)
-      if (u.maxAmmo > 0 && u.ammo <= 0 && u.state !== 'REARM_AIRCRAFT') {
-        u.state = 'REARM_AIRCRAFT';
-        u.supersonicReturn = Boolean(u.def.supersonicSpeedBoost);
+    isFixedWingAircraftDef(uDef) {
+      return Boolean(uDef && uDef.isAir && !uDef.isHelicopter && !uDef.isHarvester && uDef.locomotor === 'AIRCRAFT');
+    }
+
+    isFixedWingAircraft(u) {
+      return Boolean(u && this.isFixedWingAircraftDef(u.def) && u.locomotor === 'AIRCRAFT');
+    }
+
+    getAirfieldQueuedAircraftCount(airfield) {
+      if (!airfield || !Array.isArray(airfield.queue)) return 0;
+      let queued = 0;
+      for (const q of airfield.queue) {
+        if (q && q.type === 'UNIT') {
+          const qDef = ZH_DATA.UNITS[q.id];
+          if (this.isFixedWingAircraftDef(qDef)) {
+            queued += qDef.spawnCount || 1;
+          }
+        }
       }
+      return queued;
+    }
+
+    getAirfieldAircraftCount(airfield, includeQueued = true) {
+      if (!airfield || airfield.hp <= 0) return 0;
+      // Ensure any living fixed-wing aircraft on this team without a valid alive home airfield is bound if a slot is open
+      const teamAirfieldIds = new Set(
+        this.buildings
+          .filter(b => b.team === airfield.team && b.constructed && b.hp > 0 && (b.defId === 'USA_AIRFIELD' || b.defId === 'CHINA_AIRFIELD'))
+          .map(b => b.id)
+      );
+      for (const u of this.units) {
+        if (u.hp > 0 && u.team === airfield.team && this.isFixedWingAircraft(u)) {
+          if (!u.homeAirfieldId || !teamAirfieldIds.has(u.homeAirfieldId) || u.parkingSlot === undefined || u.parkingSlot < 0 || u.parkingSlot >= 4) {
+            this.assignAirfieldParkingSlot(u);
+          }
+        }
+      }
+      let active = 0;
+      for (const u of this.units) {
+        if (u.hp > 0 && u.team === airfield.team && this.isFixedWingAircraft(u) && u.homeAirfieldId === airfield.id) {
+          active++;
+        }
+      }
+      if (!includeQueued) return active;
+      return active + this.getAirfieldQueuedAircraftCount(airfield);
+    }
+
+    getAirfieldRunwayGeometry(airfield) {
+      if (!airfield) return null;
+      const s = (airfield.def && airfield.def.size) || 118;
+      const isChina = airfield.defId === 'CHINA_AIRFIELD';
+      const yaw = isChina ? 0.68 : 0.24;
+      const cosY = Math.cos(yaw);
+      const sinY = Math.sin(yaw);
+      const pitchScale = 0.64;
+      const zScale = 0.78;
+      const R = s * 0.44 * 1.22;
+      const zPad = 0.042 * R;
+      const proj = (lx, ly, lz = zPad) => ({
+        x: airfield.x + (lx * cosY - ly * sinY),
+        y: airfield.y + (lx * sinY + ly * cosY) * pitchScale - lz * zScale
+      });
+      const dirAngle = (ux, uy) => Math.atan2(
+        (ux * sinY + uy * cosY) * pitchScale,
+        ux * cosY - uy * sinY
+      );
+      const angX = dirAngle(1, 0);
+      const angNegX = dirAngle(-1, 0);
+      const angY = dirAngle(0, 1);
+      if (isChina) {
+        const rawPads = [
+          { cx: -0.46 * R, cy: -0.06 * R, ang: angX },
+          { cx: -0.46 * R, cy:  0.46 * R, ang: angX },
+          { cx:  0.18 * R, cy: -0.02 * R, ang: angY },
+          { cx:  0.18 * R, cy:  0.48 * R, ang: angY }
+        ];
+        const slots = rawPads.map(p => {
+          const pt = proj(p.cx, p.cy, zPad);
+          return { x: pt.x, y: pt.y, angle: p.ang };
+        });
+        return {
+          slots,
+          runwayStart: proj(-1.26 * R, 0.80 * R, zPad),
+          runwayEnd: proj(1.24 * R, 0.80 * R, zPad),
+          takeoffClimbPoint: proj(1.85 * R, 0.80 * R, zPad),
+          runwayAngle: angX
+        };
+      }
+      // USA_AIRFIELD:
+      // Slots 0 & 1 sit on the left & right launch lanes in front of the Twin-Bay Hangar, pointed straight down the dual-lane runway (+Y)
+      // Slots 2 & 3 sit in front of the Twin Quonset Open Jet Shelters on the right apron wing, pointed toward the central turnaround (-X)
+      const rawPads = [
+        { cx: -0.66 * R, cy: -0.14 * R, ang: angY },
+        { cx: -0.24 * R, cy: -0.14 * R, ang: angY },
+        { cx:  0.44 * R, cy: -0.21 * R, ang: angNegX },
+        { cx:  0.44 * R, cy:  0.19 * R, ang: angNegX }
+      ];
+      const slots = rawPads.map(p => {
+        const pt = proj(p.cx, p.cy, zPad);
+        return { x: pt.x, y: pt.y, angle: p.ang };
+      });
+      return {
+        slots,
+        runwayStart: proj(-0.45 * R, 1.42 * R, zPad),
+        runwayEnd: proj(-0.45 * R, -0.14 * R, zPad),
+        takeoffClimbPoint: proj(-0.45 * R, 2.05 * R, zPad),
+        runwayAngle: angY
+      };
+    }
+
+    assignAirfieldParkingSlot(u, preferredAirfield = null) {
+      if (!u) return null;
+      const airfields = this.buildings.filter(
+        b => b.team === u.team && b.constructed && b.hp > 0 && (b.defId === 'USA_AIRFIELD' || b.defId === 'CHINA_AIRFIELD')
+      );
+      if (airfields.length === 0) {
+        u.homeAirfieldId = null;
+        u.parkingSlot = -1;
+        return null;
+      }
+
+      // Check if existing assignment is still valid and unoccupied by another living jet
+      if (u.homeAirfieldId && u.parkingSlot >= 0 && u.parkingSlot < 4) {
+        const currentAf = airfields.find(b => b.id === u.homeAirfieldId);
+        if (currentAf) {
+          const conflict = this.units.some(
+            other => other.id !== u.id && other.hp > 0 && other.homeAirfieldId === currentAf.id && other.parkingSlot === u.parkingSlot
+          );
+          if (!conflict) {
+            const geom = this.getAirfieldRunwayGeometry(currentAf);
+            return { airfield: currentAf, slot: geom.slots[u.parkingSlot], geom };
+          }
+        }
+      }
+
+      // Order candidate airfields: preferredAirfield first, then nearest
+      const ordered = airfields.slice().sort((a, b) => {
+        if (preferredAirfield && a.id === preferredAirfield.id) return -1;
+        if (preferredAirfield && b.id === preferredAirfield.id) return 1;
+        return dist(u.x, u.y, a.x, a.y) - dist(u.x, u.y, b.x, b.y);
+      });
+
+      // Pass 1: Prefer airfields where active + queued fixed-wing planes < 4 (or preferredAirfield itself)
+      for (const af of ordered) {
+        const maxSlots = (af.def && af.def.maxAircraft) || 4;
+        const activeOnAf = this.units.filter(
+          other => other.id !== u.id && other.hp > 0 && this.isFixedWingAircraft(other) && other.homeAirfieldId === af.id
+        ).length;
+        if (activeOnAf >= maxSlots) continue;
+        const queuedOnAf = (preferredAirfield && preferredAirfield.id === af.id) ? 0 : this.getAirfieldQueuedAircraftCount(af);
+        if (activeOnAf + queuedOnAf >= maxSlots) continue;
+        for (let slotIdx = 0; slotIdx < maxSlots; slotIdx++) {
+          const taken = this.units.some(
+            other => other.id !== u.id && other.hp > 0 && other.homeAirfieldId === af.id && other.parkingSlot === slotIdx
+          );
+          if (!taken) {
+            u.homeAirfieldId = af.id;
+            u.parkingSlot = slotIdx;
+            const geom = this.getAirfieldRunwayGeometry(af);
+            return { airfield: af, slot: geom.slots[slotIdx], geom };
+          }
+        }
+      }
+
+      // Pass 2: Any airfield with an open physical slot (< 4 active planes)
+      for (const af of ordered) {
+        const maxSlots = (af.def && af.def.maxAircraft) || 4;
+        const activeOnAf = this.units.filter(
+          other => other.id !== u.id && other.hp > 0 && this.isFixedWingAircraft(other) && other.homeAirfieldId === af.id
+        ).length;
+        if (activeOnAf >= maxSlots) continue;
+        for (let slotIdx = 0; slotIdx < maxSlots; slotIdx++) {
+          const taken = this.units.some(
+            other => other.id !== u.id && other.hp > 0 && other.homeAirfieldId === af.id && other.parkingSlot === slotIdx
+          );
+          if (!taken) {
+            u.homeAirfieldId = af.id;
+            u.parkingSlot = slotIdx;
+            const geom = this.getAirfieldRunwayGeometry(af);
+            return { airfield: af, slot: geom.slots[slotIdx], geom };
+          }
+        }
+      }
+
+      // Strict 4-plane limit per airfield: never stack a 5th aircraft onto an occupied bay
+      u.homeAirfieldId = null;
+      u.parkingSlot = -1;
+      return null;
+    }
+
+    orderAircraftReturnToBase(u, preserveGuard = false) {
+      if (!u) return;
+      u.resumeGuardAfterRearm = Boolean(preserveGuard && u.guardX !== undefined && u.guardY !== undefined);
+      u.state = 'REARM_AIRCRAFT';
+      u.targetEntityId = null;
+      u.targetEntity = null;
+      u.waypoints = [];
+      u.path = null;
+      u.supersonicReturn = Boolean(u.def && u.def.supersonicSpeedBoost);
+      if (this.isFixedWingAircraft(u)) {
+        if (u.airState !== 'PARKED' && u.airState !== 'LANDING') {
+          u.airState = 'RTB_APPROACH';
+        }
+      }
+    }
+
+    stepUnitStateMachine(u, dt) {
+      const isJet = this.isFixedWingAircraft(u);
+
+      // 0. AIRCRAFT AMMO REARMING & SORTIE / RUNWAY LANDING LIFECYCLE (Raptor, King Raptor, Aurora, MiG)
+      if (u.maxAmmo > 0 && u.ammo <= 0 && u.state !== 'REARM_AIRCRAFT') {
+        if (isJet) {
+          this.orderAircraftReturnToBase(u, u.state === 'GUARD');
+        } else {
+          u.resumeGuardAfterRearm = Boolean(u.state === 'GUARD' && u.guardX !== undefined && u.guardY !== undefined);
+          u.state = 'REARM_AIRCRAFT';
+          u.supersonicReturn = Boolean(u.def.supersonicSpeedBoost);
+        }
+      }
+
+      if (isJet && u.state === 'IDLE') {
+        const assign = this.assignAirfieldParkingSlot(u);
+        if (u.airState === 'PARKED') {
+          if (assign && assign.slot) {
+            u.x = assign.slot.x;
+            u.y = assign.slot.y;
+            u.angle = assign.slot.angle;
+            u.turretAngle = assign.slot.angle;
+            u.currentSpeed = 0;
+            u.bankAngle = 0;
+            u.flightHeight = 0;
+            if (u.hp < u.maxHp) {
+              u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.08 * dt);
+            }
+            if (u.ammo < u.maxAmmo) {
+              u.reloadTimer = (u.reloadTimer || 0) + dt;
+              if (u.reloadTimer >= (u.def.reloadTime || 3.5)) {
+                u.ammo = u.maxAmmo;
+                u.reloadTimer = 0;
+                if (u.selected) {
+                  this.spawnFloatingText(u.x, u.y - 16, 'REARMED!', '#38bdf8');
+                }
+              }
+            }
+            return;
+          } else {
+            u.airState = 'AIRBORNE';
+            u.flightHeight = 1.0;
+          }
+        } else if (assign) {
+          // Airborne fixed-wing aircraft finished its order/sortie -> return to airfield and land on the runway
+          this.orderAircraftReturnToBase(u, false);
+        }
+      }
+
+      if (isJet && u.state !== 'IDLE' && u.state !== 'REARM_AIRCRAFT') {
+        if (u.airState === 'PARKED' || u.airState === 'LANDING' || u.airState === 'RTB_APPROACH') {
+          u.airState = 'TAKEOFF';
+          u.takeoffTimer = 0;
+        }
+        if (u.airState === 'TAKEOFF') {
+          u.takeoffTimer = (u.takeoffTimer || 0) + dt;
+          u.flightHeight = Math.min(1.0, u.takeoffTimer / 0.55);
+          const assign = this.assignAirfieldParkingSlot(u);
+          if (assign && assign.geom && u.takeoffTimer < 0.55) {
+            this.moveUnitToward(u, assign.geom.takeoffClimbPoint.x, assign.geom.takeoffClimbPoint.y, dt * 1.15);
+            return;
+          }
+          u.airState = 'AIRBORNE';
+          u.flightHeight = 1.0;
+        } else {
+          u.airState = 'AIRBORNE';
+          u.flightHeight = 1.0;
+        }
+      }
+
       if (u.state === 'REARM_AIRCRAFT') {
+        const nextPostRearmState = (u.resumeGuardAfterRearm && u.guardX !== undefined && u.guardY !== undefined)
+          ? 'GUARD'
+          : 'IDLE';
+        if (isJet) {
+          const assign = this.assignAirfieldParkingSlot(u);
+          if (assign && assign.slot && assign.geom) {
+            if (!u.airState || u.airState === 'AIRBORNE' || u.airState === 'TAKEOFF') {
+              u.airState = 'RTB_APPROACH';
+            }
+            if (u.airState === 'RTB_APPROACH') {
+              u.flightHeight = Math.max(0.75, u.flightHeight !== undefined ? u.flightHeight : 1.0);
+              const dStart = dist(u.x, u.y, assign.geom.runwayStart.x, assign.geom.runwayStart.y);
+              const dSlot = dist(u.x, u.y, assign.slot.x, assign.slot.y);
+              if (dStart <= 46 || dSlot <= 28) {
+                u.airState = 'LANDING';
+              } else {
+                this.moveUnitToward(u, assign.geom.runwayStart.x, assign.geom.runwayStart.y, dt);
+                return;
+              }
+            }
+            if (u.airState === 'LANDING') {
+              const dSlot = dist(u.x, u.y, assign.slot.x, assign.slot.y);
+              u.flightHeight = clamp(dSlot / 95, 0.0, 0.85);
+              if (dSlot > 15) {
+                this.moveUnitToward(u, assign.slot.x, assign.slot.y, dt * 0.88);
+                return;
+              }
+              u.x = assign.slot.x;
+              u.y = assign.slot.y;
+              u.angle = assign.slot.angle;
+              u.turretAngle = assign.slot.angle;
+              u.currentSpeed = 0;
+              u.bankAngle = 0;
+              u.flightHeight = 0;
+              u.airState = 'PARKED';
+            }
+            if (u.airState === 'PARKED') {
+              u.x = assign.slot.x;
+              u.y = assign.slot.y;
+              u.angle = assign.slot.angle;
+              u.turretAngle = assign.slot.angle;
+              u.currentSpeed = 0;
+              u.bankAngle = 0;
+              u.flightHeight = 0;
+              if (u.hp < u.maxHp) {
+                u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.08 * dt);
+              }
+              if (u.ammo < u.maxAmmo) {
+                u.reloadTimer = (u.reloadTimer || 0) + dt;
+                if (u.reloadTimer >= (u.def.reloadTime || 3.5)) {
+                  u.ammo = u.maxAmmo;
+                  u.reloadTimer = 0;
+                  u.supersonicReturn = false;
+                  u.state = nextPostRearmState;
+                  if (u.selected) {
+                    this.spawnFloatingText(u.x, u.y - 16, 'REARMED!', '#38bdf8');
+                  }
+                }
+              } else {
+                u.reloadTimer = 0;
+                u.supersonicReturn = false;
+                u.state = nextPostRearmState;
+              }
+              return;
+            }
+          }
+        }
+
         const airfield = this.buildings.find(
           b => b.team === u.team && b.constructed && b.hp > 0 && (b.defId === 'USA_AIRFIELD' || b.defId === 'CHINA_AIRFIELD')
         ) || this.buildings.find(b => b.team === u.team && b.constructed && b.hp > 0 && b.def.isCommandCenter);
@@ -3869,7 +4341,7 @@ window.ZH_ENGINE = (function () {
             u.ammo = u.maxAmmo;
             u.reloadTimer = 0;
             u.supersonicReturn = false;
-            u.state = 'IDLE';
+            u.state = nextPostRearmState;
           }
           return;
         }
@@ -3882,7 +4354,7 @@ window.ZH_ENGINE = (function () {
             u.ammo = u.maxAmmo;
             u.reloadTimer = 0;
             u.supersonicReturn = false;
-            u.state = 'IDLE';
+            u.state = nextPostRearmState;
             this.spawnFloatingText(u.x, u.y - 16, 'REARMED!', '#38bdf8');
           }
         }
@@ -4125,12 +4597,25 @@ window.ZH_ENGINE = (function () {
         return;
       }
 
+      // 8b. DECLARATIVE UNIT MICRO-BRAIN (Kiting, Hit-and-Run, Crush, Hazard Dodge, Auto-Ability)
+      if (window.ZH_AI_POLICIES && typeof ZH_AI_POLICIES.stepUnitMicroBrain === 'function') {
+        if (ZH_AI_POLICIES.stepUnitMicroBrain(this, u, dt)) {
+          return;
+        }
+      }
+
       // 9. SPECIFIC TARGET ATTACK
       if (u.state === 'ATTACK' && u.def.weapon) {
         const target = this.findEntityById(u.targetEntityId);
-        if (!target || target.hp <= 0 || (target.isGarrisonBunker && target.occupants.length === 0)) {
+        if (
+          !target ||
+          target.hp <= 0 ||
+          (target.isGarrisonBunker && target.occupants.length === 0) ||
+          (target.isUnit && target.def && target.def.isAir && target.airState !== 'PARKED' && !u.def.weapon.antiAir)
+        ) {
           u.state = 'IDLE';
           u.targetEntityId = null;
+          if (isJet) this.orderAircraftReturnToBase(u);
           return;
         }
         const wRange = this.getEffectiveWeaponRange(u);
@@ -4138,7 +4623,14 @@ window.ZH_ENGINE = (function () {
         if (d > wRange) {
           this.moveUnitToward(u, target.x, target.y, dt);
         } else {
-          u.turretAngle = angleBetween(u.x, u.y, target.x, target.y);
+          const aimAng = angleBetween(u.x, u.y, target.x, target.y);
+          u.turretAngle = aimAng;
+          if (isJet) {
+            u.angle = aimAng;
+            if (d > 32) {
+              this.moveUnitToward(u, target.x, target.y, dt * 0.85);
+            }
+          }
           if (u.attackCooldown <= 0) {
             this.fireWeapon(u, target, u.def.weapon);
             u.attackCooldown = u.def.weapon.cooldown;
@@ -4153,6 +4645,7 @@ window.ZH_ENGINE = (function () {
         if (u.targetEntityId && (!target || target.hp <= 0)) {
           u.state = 'IDLE';
           u.targetEntityId = null;
+          if (isJet) this.orderAircraftReturnToBase(u);
           return;
         }
         const tx = target ? target.x : u.targetX;
@@ -4162,7 +4655,14 @@ window.ZH_ENGINE = (function () {
         if (d > wRange) {
           this.moveUnitToward(u, tx, ty, dt);
         } else {
-          u.turretAngle = angleBetween(u.x, u.y, tx, ty);
+          const aimAng = angleBetween(u.x, u.y, tx, ty);
+          u.turretAngle = aimAng;
+          if (isJet) {
+            u.angle = aimAng;
+            if (d > 32) {
+              this.moveUnitToward(u, tx, ty, dt * 0.85);
+            }
+          }
           if (u.attackCooldown <= 0) {
             const fireTarget = target || { id: 0, x: tx, y: ty, hp: 100, radius: 0 };
             this.fireWeapon(u, fireTarget, u.def.weapon);
@@ -4172,28 +4672,36 @@ window.ZH_ENGINE = (function () {
         return;
       }
 
-      // 9c. PHASE 3 GUARD STANCE (220px Area Leash around guardX, guardY)
+      // 9c. PHASE 3 GUARD STANCE (220px Area Leash around guardX, guardY; Fixed-Wing Planes Orbit in Circular Formation)
       if (u.state === 'GUARD') {
         const gx = u.guardX !== undefined ? u.guardX : u.x;
         const gy = u.guardY !== undefined ? u.guardY : u.y;
+        const guardLeash = isJet ? 350 : 260;
         if (u.def.weapon) {
           u.scanCooldown = Math.max(0, (u.scanCooldown || 0) - dt);
           const wRange = this.getEffectiveWeaponRange(u);
-          const scanRange = Math.max(220, wRange + 50);
+          const scanRange = Math.max(isJet ? 320 : 220, wRange + 50);
           let enemy = null;
           if (u.targetEntity && u.targetEntity.hp > 0 && u.targetEntity.team !== u.team && !u.targetEntity.unmanned &&
-              dist(gx, gy, u.targetEntity.x, u.targetEntity.y) <= 260) {
+              dist(gx, gy, u.targetEntity.x, u.targetEntity.y) <= guardLeash) {
             enemy = u.targetEntity;
           } else if (u.scanCooldown <= 0) {
             enemy = this.findBestTarget(u, scanRange, u.def.weapon.antiAir);
             u.targetEntity = enemy || null;
             u.scanCooldown = 0.12 + ((u.id & 7) * 0.02);
           }
-          if (enemy && dist(gx, gy, enemy.x, enemy.y) <= 260) {
+          if (enemy && dist(gx, gy, enemy.x, enemy.y) <= guardLeash) {
             u.targetEntityId = enemy.id;
             const d = dist(u.x, u.y, enemy.x, enemy.y) - (enemy.radius || 0);
             if (d <= wRange) {
-              u.turretAngle = angleBetween(u.x, u.y, enemy.x, enemy.y);
+              const aimAng = angleBetween(u.x, u.y, enemy.x, enemy.y);
+              u.turretAngle = aimAng;
+              if (isJet) {
+                u.angle = aimAng;
+                const passX = clamp(enemy.x + Math.cos(aimAng) * 90, 40, WORLD_SIZE - 40);
+                const passY = clamp(enemy.y + Math.sin(aimAng) * 90, 40, WORLD_SIZE - 40);
+                this.moveUnitToward(u, passX, passY, dt * 0.92);
+              }
               if (u.attackCooldown <= 0) {
                 this.fireWeapon(u, enemy, u.def.weapon);
                 u.attackCooldown = u.def.weapon.cooldown;
@@ -4203,6 +4711,69 @@ window.ZH_ENGINE = (function () {
             }
             return;
           }
+        }
+        if (isJet) {
+          // Fixed-wing aircraft in GUARD mode circle continuously in a synchronized formation over the guarded area
+          const squad = [];
+          let sumGx = 0;
+          let sumGy = 0;
+          for (const o of this.units) {
+            if (o.hp > 0 && !o.dead && o.team === u.team && o.state === 'GUARD' && this.isFixedWingAircraft(o)) {
+              const ox = o.guardX !== undefined ? o.guardX : o.x;
+              const oy = o.guardY !== undefined ? o.guardY : o.y;
+              if (dist(gx, gy, ox, oy) <= 180) {
+                squad.push(o);
+                sumGx += ox;
+                sumGy += oy;
+              }
+            }
+          }
+          if (squad.length === 0) {
+            squad.push(u);
+            sumGx = gx;
+            sumGy = gy;
+          }
+          squad.sort((a, b) => a.id - b.id);
+          const count = squad.length;
+          const idx = Math.max(0, squad.indexOf(u));
+          const orbitR = 122 + Math.max(0, count - 4) * 12;
+          const cx = clamp(sumGx / count, orbitR + 30, WORLD_SIZE - orbitR - 30);
+          const cy = clamp(sumGy / count, orbitR + 30, WORLD_SIZE - orbitR - 30);
+          const curDist = dist(cx, cy, u.x, u.y);
+          const curAngle = Math.atan2(u.y - cy, u.x - cx);
+          const baseOmega = ((u.speed || 220) * 0.85) / orbitR;
+          const leader = squad[0];
+          const leaderDist = dist(cx, cy, leader.x, leader.y);
+          const leaderAngle = leaderDist <= orbitR + 95
+            ? Math.atan2(leader.y - cy, leader.x - cx)
+            : ((this.matchTime || 0) * baseOmega);
+          const desiredSlotAngle = leaderAngle - (idx / count) * Math.PI * 2;
+
+          if (curDist > orbitR + 95) {
+            // Fly from airfield or current position to entry point on the formation orbit circle
+            const entryAngle = ((this.matchTime || 0) * baseOmega) - (idx / count) * Math.PI * 2;
+            const entryX = clamp(cx + Math.cos(entryAngle) * orbitR, 40, WORLD_SIZE - 40);
+            const entryY = clamp(cy + Math.sin(entryAngle) * orbitR, 40, WORLD_SIZE - 40);
+            this.moveUnitToward(u, entryX, entryY, dt);
+          } else {
+            let phaseErr = desiredSlotAngle - curAngle;
+            while (phaseErr < -Math.PI) phaseErr += Math.PI * 2;
+            while (phaseErr > Math.PI) phaseErr -= Math.PI * 2;
+            const lookaheadArc = idx === 0
+              ? 0.65
+              : clamp(0.65 + phaseErr * 0.35, 0.42, 0.95);
+            const speedMod = idx === 0
+              ? 1.0
+              : clamp(1.0 + phaseErr * 0.22, 0.84, 1.20);
+            const targetAngle = curAngle + lookaheadArc;
+            const orbitTargetX = clamp(cx + Math.cos(targetAngle) * orbitR, 40, WORLD_SIZE - 40);
+            const orbitTargetY = clamp(cy + Math.sin(targetAngle) * orbitR, 40, WORLD_SIZE - 40);
+            u.path = null;
+            this.moveUnitToward(u, orbitTargetX, orbitTargetY, dt * speedMod);
+            u.bankAngle = u.bankingAngle || 0.32;
+            u.turretAngle = u.angle;
+          }
+          return;
         }
         if (dist(u.x, u.y, gx, gy) > 18) {
           this.moveUnitToward(u, gx, gy, dt);
@@ -4229,7 +4800,14 @@ window.ZH_ENGINE = (function () {
         if (enemy) {
           const d = dist(u.x, u.y, enemy.x, enemy.y) - (enemy.radius || 0);
           if (d <= wRange) {
-            u.turretAngle = angleBetween(u.x, u.y, enemy.x, enemy.y);
+            const aimAng = angleBetween(u.x, u.y, enemy.x, enemy.y);
+            u.turretAngle = aimAng;
+            if (isJet) {
+              u.angle = aimAng;
+              if (d > 32) {
+                this.moveUnitToward(u, enemy.x, enemy.y, dt * 0.85);
+              }
+            }
             if (u.attackCooldown <= 0) {
               this.fireWeapon(u, enemy, u.def.weapon);
               u.attackCooldown = u.def.weapon.cooldown;
@@ -4252,6 +4830,9 @@ window.ZH_ENGINE = (function () {
           } else {
             u.state = 'IDLE';
             u.currentSpeed = 0;
+            if (isJet) {
+              this.orderAircraftReturnToBase(u);
+            }
           }
         } else {
           this.moveUnitToward(u, u.targetX, u.targetY, dt);
@@ -4317,6 +4898,9 @@ window.ZH_ENGINE = (function () {
     findBestTarget(attacker, maxRange, canHitAir) {
       let best = null;
       let bestScore = Infinity;
+      const hasPolicyScorer = Boolean(
+        attacker.isUnit && window.ZH_AI_POLICIES && typeof ZH_AI_POLICIES.evaluateTargetEffectiveDistance === 'function'
+      );
 
       const evaluateCandidate = (ent, dSqArg) => {
         if (ent.isUnit) {
@@ -4327,9 +4911,14 @@ window.ZH_ENGINE = (function () {
           const rawD = dSqArg !== undefined ? Math.sqrt(dSqArg) : dist(attacker.x, attacker.y, ent.x, ent.y);
           if (ent.stealthed && !(ent.detectedTimer > 0) && rawD > 95) return false;
           const d = rawD - ent.radius;
-          if (d <= maxRange && d < bestScore) {
-            bestScore = d;
-            best = ent;
+          if (d <= maxRange) {
+            const score = hasPolicyScorer
+              ? ZH_AI_POLICIES.evaluateTargetEffectiveDistance(attacker, ent, d, maxRange)
+              : d;
+            if (score < bestScore) {
+              bestScore = score;
+              best = ent;
+            }
           }
         } else if (ent.isBuilding) {
           if (ent.team === attacker.team || ent.hp <= 0) return false;
@@ -4337,9 +4926,14 @@ window.ZH_ENGINE = (function () {
           if (dSqArg !== undefined && dSqArg > maxEffR * maxEffR) return false;
           const rawD = dSqArg !== undefined ? Math.sqrt(dSqArg) : dist(attacker.x, attacker.y, ent.x, ent.y);
           const d = rawD - ent.radius;
-          if (d <= maxRange && d + 25 < bestScore) {
-            bestScore = d + 25;
-            best = ent;
+          if (d <= maxRange) {
+            const score = hasPolicyScorer
+              ? ZH_AI_POLICIES.evaluateTargetEffectiveDistance(attacker, ent, d, maxRange)
+              : d + 25;
+            if (score < bestScore) {
+              bestScore = score;
+              best = ent;
+            }
           }
         }
         return false;
@@ -4393,8 +4987,7 @@ window.ZH_ENGINE = (function () {
       if (attacker.isUnit && attacker.maxAmmo > 0) {
         attacker.ammo = Math.max(0, (attacker.ammo || 0) - 1);
         if (attacker.ammo <= 0) {
-          attacker.state = 'REARM_AIRCRAFT';
-          attacker.supersonicReturn = Boolean(attacker.def && attacker.def.supersonicSpeedBoost);
+          this.orderAircraftReturnToBase(attacker);
         }
       }
 
@@ -4403,6 +4996,10 @@ window.ZH_ENGINE = (function () {
         const dmg = Math.round(wDef.damage * (mod.explosiveDamageMult || 1.0));
         this.dealAreaDamage(attacker.x, attacker.y, wDef.splash || 65, dmg, wDef.damageType, attacker.team, attacker);
         this.spawnBurst(attacker.x, attacker.y, '#f97316', 28);
+        if (window.ZH_VFX && ZH_VFX.triggerCinematicExplosion) {
+          ZH_VFX.triggerCinematicExplosion(this, attacker.x, attacker.y, 1.55, 'BUILDING');
+        }
+        this.cam.shake = Math.max(this.cam.shake || 0, 10);
         if (window.ZH_AUDIO) ZH_AUDIO.playSFX('explosion', attacker.x, attacker.y, this.cam);
         attacker.hp = 0;
         return;
@@ -4496,6 +5093,10 @@ window.ZH_ENGINE = (function () {
 
       this.projectiles.push(proj);
 
+      if (window.ZH_VFX && ZH_VFX.addDynamicLight && (wDef.projType === 'SHELL' || wDef.projType === 'NUKE_SHELL' || wDef.projType === 'MISSILE' || wDef.projType === 'FLAME')) {
+        ZH_VFX.addDynamicLight(this, attacker.x, attacker.y, 44, '253, 224, 71', 0.36, 0.18);
+      }
+
       if (window.ZH_AUDIO) {
         if (wDef.projType === 'MISSILE' || wDef.projType === 'SCUD_MISSILE') {
           ZH_AUDIO.playSFX('missile', attacker.x, attacker.y, this.cam);
@@ -4522,7 +5123,21 @@ window.ZH_ENGINE = (function () {
         const step = p.speed * dt;
         if (d <= step + 8) {
           const attacker = this.findEntityById(p.attackerId);
-          if (p.splash > 0) {
+          const isAirTarget = Boolean(liveTarget && liveTarget.hp > 0 && liveTarget.isUnit && liveTarget.def && liveTarget.def.isAir);
+          if (isAirTarget) {
+            // Direct air-to-air / SAM missile lock hit on fast-moving aircraft
+            this.applyDamageToTarget(liveTarget, p.damage, p.damageType, p.team, attacker);
+            if (p.splash > 0 && p.weaponDef && p.weaponDef.antiAir) {
+              for (const u of this.units) {
+                if (u.id === liveTarget.id || u.team === p.team || u.hp <= 0 || !u.def.isAir) continue;
+                const ad = dist(p.tx, p.ty, u.x, u.y);
+                if (ad <= p.splash + u.radius) {
+                  const falloff = Math.max(0.35, 1 - ad / (p.splash + u.radius + 20));
+                  this.applyDamageToTarget(u, p.damage * falloff, p.damageType, p.team, attacker);
+                }
+              }
+            }
+          } else if (p.splash > 0) {
             this.dealAreaDamage(p.tx, p.ty, p.splash, p.damage, p.damageType, p.team, attacker);
           } else if (liveTarget && liveTarget.hp > 0) {
             this.applyDamageToTarget(liveTarget, p.damage, p.damageType, p.team, attacker);
@@ -4551,6 +5166,11 @@ window.ZH_ENGINE = (function () {
             : p.projType === 'NUKE_SHELL' ? '#fb923c'
             : '#fde047';
           this.spawnBurst(p.tx, p.ty, burstCol, p.splash > 30 ? 14 : 5);
+          if (window.ZH_VFX && ZH_VFX.triggerCinematicExplosion && (p.splash >= 18 || p.projType === 'SHELL' || p.projType === 'NUKE_SHELL' || p.projType === 'MISSILE' || p.projType === 'SCUD_MISSILE')) {
+            const expScale = p.projType === 'NUKE_SHELL' || p.projType === 'SCUD_MISSILE' ? 1.35 : Math.max(0.55, Math.min(1.2, (p.splash || 24) / 42));
+            const expStyle = p.projType === 'TOXIN' ? 'TOXIN' : p.isEMP ? 'EMP' : 'DEFAULT';
+            ZH_VFX.triggerCinematicExplosion(this, p.tx, p.ty, expScale, expStyle);
+          }
           this.projectiles.splice(i, 1);
         } else {
           const ang = angleBetween(p.x, p.y, p.tx, p.ty);
@@ -4574,10 +5194,14 @@ window.ZH_ENGINE = (function () {
         ZH_VFX.addDecal(this, decalType, x, y, Math.min(95, radius * 0.45), 0, 120);
       }
 
+      const canHitAirborne = damageType === 'SUPERWEAPON' ||
+        Boolean(attacker && attacker.def && attacker.def.weapon && attacker.def.weapon.antiAir);
+
       if (this.spatialGrid && typeof this.spatialGrid.forEachInRadius === 'function') {
         this.spatialGrid.forEachInRadius(x, y, radius, (ent, dSq) => {
           if (ent.isUnit) {
             if (ent.team === sourceTeam || ent.hp <= 0 || ent.garrisonedIn || ent.garrisonId || ent.transportedIn) return;
+            if (ent.def && ent.def.isAir && ent.airState !== 'PARKED' && !canHitAirborne) return;
             const maxR = radius + ent.radius;
             if (dSq <= maxR * maxR) {
               const d = Math.sqrt(dSq);
@@ -4597,6 +5221,7 @@ window.ZH_ENGINE = (function () {
       } else {
         for (const u of this.units) {
           if (u.team === sourceTeam || u.hp <= 0 || u.garrisonedIn || u.garrisonId || u.transportedIn) continue;
+          if (u.def && u.def.isAir && u.airState !== 'PARKED' && !canHitAirborne) continue;
           const d = dist(x, y, u.x, u.y);
           if (d <= radius + u.radius) {
             const falloff = Math.max(0.35, 1 - d / (radius + u.radius + 20));
@@ -4735,6 +5360,9 @@ window.ZH_ENGINE = (function () {
     destroyUnit(u, index) {
       this.selectedIds.delete(u.id);
       this.spawnBurst(u.x, u.y, '#f97316', u.def.category === 'TANK' ? 18 : 8);
+      if (window.ZH_VFX && ZH_VFX.triggerCinematicExplosion && u.def.category !== 'INFANTRY') {
+        ZH_VFX.triggerCinematicExplosion(this, u.x, u.y, u.def.category === 'TANK' ? 1.15 : 0.85, 'VEHICLE');
+      }
       if (window.ZH_AUDIO) ZH_AUDIO.playSFX('explosion');
 
       // Eject surviving transport passengers at 50% HP around the wreck
@@ -4777,6 +5405,9 @@ window.ZH_ENGINE = (function () {
     destroyBuilding(b, index) {
       this.selectedIds.delete(b.id);
       this.spawnBurst(b.x, b.y, '#f97316', 32);
+      if (window.ZH_VFX && ZH_VFX.triggerCinematicExplosion) {
+        ZH_VFX.triggerCinematicExplosion(this, b.x, b.y, 1.85, 'BUILDING');
+      }
       if (window.ZH_AUDIO) ZH_AUDIO.playSFX('explosion');
       this.cam.shake = Math.max(this.cam.shake, 12);
 
@@ -4878,6 +5509,14 @@ window.ZH_ENGINE = (function () {
         if (pt.vx !== undefined) {
           pt.x += pt.vx * dt;
           pt.y += pt.vy * dt;
+          if (pt.drag) {
+            const damp = Math.max(0, 1 - pt.drag * dt);
+            pt.vx *= damp;
+            pt.vy *= damp;
+          }
+        }
+        if (pt.growRate) {
+          pt.r += pt.growRate * dt;
         }
         if (pt.timer <= 0) {
           const lastIdx = this.particles.length - 1;
@@ -5165,6 +5804,11 @@ window.ZH_ENGINE = (function () {
       // 2. Environmental Hazards (Anthrax Toxin Pools, Napalm & Radiation)
       this.renderHazards(ctx);
 
+      // 2b. Generals Evolution Dynamic Ground Light-Bleed (Fires, Explosions, Muzzle Flashes)
+      if (window.ZH_VFX && ZH_VFX.renderDynamicGroundLighting) {
+        ZH_VFX.renderDynamicGroundLighting(ctx, this);
+      }
+
       // 3. Supply Docks, Neutral Tech Structures & Civilian Garrison Bunkers
       this.renderMapResources(ctx);
 
@@ -5192,6 +5836,11 @@ window.ZH_ENGINE = (function () {
 
       // 9. Fog of War Shroud
       this.renderFogOfWar(ctx);
+
+      // 9b. High-Contrast "Teal & Orange" Directional Sunlight & Cool Shadow Grading
+      if (window.ZH_VFX && ZH_VFX.renderCinematicAtmospherePass) {
+        ZH_VFX.renderCinematicAtmospherePass(ctx, this);
+      }
 
       // 10. Placement Ghost / Power Targeting Reticle
       this.renderCommandOverlay(ctx);
@@ -5332,16 +5981,16 @@ window.ZH_ENGINE = (function () {
 
       const primary = this.mapDef.bgPrimary || '#d4a359';
       const secondary = this.mapDef.bgSecondary || '#b8863e';
-      const roadColor = this.mapDef.roadColor || '#8c6d46';
+      const roadColor = this.mapDef.roadColor || '#1e2430';
 
-      // 1. Base Biome Fill + Sun-Lit Top-Left to Bottom-Right Gradient
+      // 1. Base Biome Fill + Sun-Lit Top-Left to Bottom-Right Gradient (Teal & Orange Grade)
       tctx.fillStyle = primary;
       tctx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
 
       const sunGrad = tctx.createLinearGradient(0, 0, WORLD_SIZE, WORLD_SIZE);
-      sunGrad.addColorStop(0, 'rgba(255, 250, 230, 0.12)');
+      sunGrad.addColorStop(0, 'rgba(255, 237, 200, 0.16)');
       sunGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0)');
-      sunGrad.addColorStop(1, 'rgba(15, 23, 42, 0.16)');
+      sunGrad.addColorStop(1, 'rgba(12, 20, 38, 0.22)');
       tctx.fillStyle = sunGrad;
       tctx.fillRect(0, 0, WORLD_SIZE, WORLD_SIZE);
 
@@ -5413,37 +6062,105 @@ window.ZH_ENGINE = (function () {
         }
       }
 
-      // 4. Strategic Tarmac Highway Network (Curbed edges + dashed median markings)
+      // 4. Generals Evolution Wet-Specular Boulevard & Tarmac Highway Network
+      //    (Concrete sidewalks/curbs, dark specular asphalt, double-yellow centerline, white lane markers & streetlamps)
       const drawHighway = (x1, y1, x2, y2, width) => {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+
         tctx.save();
         tctx.lineCap = 'round';
-        // Curb / shoulder
-        tctx.strokeStyle = 'rgba(15, 23, 42, 0.38)';
-        tctx.lineWidth = width + 10;
+        // Outer shadow gutter
+        tctx.strokeStyle = 'rgba(12, 20, 38, 0.55)';
+        tctx.lineWidth = width + 18;
         tctx.beginPath();
         tctx.moveTo(x1, y1);
         tctx.lineTo(x2, y2);
         tctx.stroke();
-        // Asphalt / road surface
-        tctx.strokeStyle = roadColor;
+
+        // Concrete boulevard sidewalk / curb apron
+        tctx.strokeStyle = '#94a3b8';
+        tctx.lineWidth = width + 12;
+        tctx.beginPath();
+        tctx.moveTo(x1, y1);
+        tctx.lineTo(x2, y2);
+        tctx.stroke();
+
+        // Wet-specular dark slate asphalt core
+        tctx.strokeStyle = '#1c2431';
         tctx.lineWidth = width;
         tctx.beginPath();
         tctx.moveTo(x1, y1);
         tctx.lineTo(x2, y2);
         tctx.stroke();
-        // Center dashed tactical lane stripe
-        tctx.strokeStyle = 'rgba(254, 240, 138, 0.36)';
-        tctx.lineWidth = 2.5;
-        tctx.setLineDash([18, 16]);
+
+        // Specular sun-sheen reflection strip along centerline
+        tctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+        tctx.lineWidth = width * 0.42;
         tctx.beginPath();
         tctx.moveTo(x1, y1);
         tctx.lineTo(x2, y2);
         tctx.stroke();
+
+        // Outer white dashed multi-lane dividers
+        tctx.strokeStyle = 'rgba(241, 245, 249, 0.45)';
+        tctx.lineWidth = 1.6;
+        tctx.setLineDash([16, 18]);
+        for (const side of [-1, 1]) {
+          const off = side * (width * 0.26);
+          tctx.beginPath();
+          tctx.moveTo(x1 + nx * off, y1 + ny * off);
+          tctx.lineTo(x2 + nx * off, y2 + ny * off);
+          tctx.stroke();
+        }
+
+        // Crisp double-yellow Beijing Boulevard median stripe
+        tctx.setLineDash([]);
+        tctx.strokeStyle = 'rgba(234, 179, 8, 0.78)';
+        tctx.lineWidth = 1.8;
+        for (const side of [-2.2, 2.2]) {
+          tctx.beginPath();
+          tctx.moveTo(x1 + nx * side, y1 + ny * side);
+          tctx.lineTo(x2 + nx * side, y2 + ny * side);
+          tctx.stroke();
+        }
+
+        // Boulevard Streetlamp Posts + Cool Slate-Blue Cast Shadows + Warm Sodium Light Pools
+        const lampStep = 220;
+        const curbDist = width * 0.5 + 8;
+        for (let d = 180; d < len - 180; d += lampStep) {
+          const bx = x1 + (dx / len) * d;
+          const by = y1 + (dy / len) * d;
+          for (const side of [-1, 1]) {
+            const lx = bx + nx * curbDist * side;
+            const ly = by + ny * curbDist * side;
+            // Warm sodium ground pool on wet asphalt
+            tctx.fillStyle = 'rgba(253, 224, 71, 0.08)';
+            tctx.beginPath();
+            tctx.arc(lx - nx * 12 * side, ly - ny * 12 * side, 26, 0, Math.PI * 2);
+            tctx.fill();
+            // Long cool slate-blue cast shadow (top-left sun -> bottom-right shadow)
+            tctx.strokeStyle = 'rgba(12, 20, 38, 0.42)';
+            tctx.lineWidth = 2.2;
+            tctx.beginPath();
+            tctx.moveTo(lx, ly);
+            tctx.lineTo(lx + 14, ly + 11);
+            tctx.stroke();
+            // Lamp post base & luminaire head
+            tctx.fillStyle = '#cbd5e1';
+            tctx.beginPath();
+            tctx.arc(lx, ly, 2.6, 0, Math.PI * 2);
+            tctx.fill();
+          }
+        }
         tctx.restore();
       };
 
-      drawHighway(220, WORLD_SIZE - 220, WORLD_SIZE - 220, 220, 74);
-      drawHighway(380, 380, WORLD_SIZE - 380, WORLD_SIZE - 380, 52);
+      drawHighway(220, WORLD_SIZE - 220, WORLD_SIZE - 220, 220, 78);
+      drawHighway(380, 380, WORLD_SIZE - 380, WORLD_SIZE - 380, 56);
 
       // 5. Central Tactical Plaza / Command Basin
       tctx.save();
@@ -5958,13 +6675,19 @@ window.ZH_ENGINE = (function () {
           ctx.globalAlpha = u.team === 0 ? 0.55 : 0.48;
         }
 
-        // China Horde Bonus Star Indicator
-        if (u.inHorde) {
-          ctx.strokeStyle = '#fde047';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(u.x, u.y, r + 6, 0, Math.PI * 2);
-          ctx.stroke();
+        // China Horde Bonus Star Indicator (Generals Evolution Emissive Red 5-Pointed Ground Star Decal)
+        const showParadeStar = Boolean(this.cinematicParadeHordeStars && team && team.factionId === 'CHINA' && !airPass && !u.def.isBuilder && !u.def.isCollector);
+        if (u.inHorde || showParadeStar) {
+          const hasNationalism = Boolean(team && team.upgrades && team.upgrades.has('UPG_NATIONALISM'));
+          if (window.ZH_VFX && typeof ZH_VFX.renderHordeStarDecal === 'function') {
+            ZH_VFX.renderHordeStarDecal(ctx, u.x, u.y, r, this.gameTime, hasNationalism || showParadeStar);
+          } else {
+            ctx.strokeStyle = '#fde047';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(u.x, u.y, r + 6, 0, Math.PI * 2);
+            ctx.stroke();
+          }
         }
 
         // Overlord Propaganda Aura
@@ -6026,12 +6749,23 @@ window.ZH_ENGINE = (function () {
           }
 
           if (isSel && u.state === 'GUARD') {
+            const gx = u.guardX !== undefined ? u.guardX : u.x;
+            const gy = u.guardY !== undefined ? u.guardY : u.y;
+            const isJetUnit = this.isFixedWingAircraft(u);
+            const guardRingR = isJetUnit ? 122 : 65;
             ctx.save();
-            ctx.setLineDash([4, 4]);
-            ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+            ctx.setLineDash(isJetUnit ? [7, 5] : [4, 4]);
+            ctx.strokeStyle = isJetUnit ? 'rgba(56, 189, 248, 0.52)' : 'rgba(56, 189, 248, 0.45)';
+            ctx.lineWidth = isJetUnit ? 1.5 : 1.0;
             ctx.beginPath();
-            ctx.arc(u.guardX || u.x, u.guardY || u.y, 65, 0, Math.PI * 2);
+            ctx.arc(gx, gy, guardRingR, 0, Math.PI * 2);
             ctx.stroke();
+            if (isJetUnit) {
+              ctx.setLineDash([]);
+              ctx.beginPath();
+              ctx.arc(gx, gy, 5, 0, Math.PI * 2);
+              ctx.stroke();
+            }
             ctx.restore();
           }
 
@@ -6051,18 +6785,20 @@ window.ZH_ENGINE = (function () {
           }
         }
 
-        // Air Shadow
-        if (airPass) {
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.32)';
+        // Air Shadow & Flight Altitude Lift
+        const fh = u.flightHeight !== undefined ? u.flightHeight : (airPass ? 1.0 : 0.0);
+        const liftY = u.locomotor === 'AIRCRAFT' ? Math.round(12 * fh) : 0;
+        if (airPass && fh > 0.04) {
+          ctx.fillStyle = `rgba(0, 0, 0, ${(0.14 + 0.18 * fh).toFixed(2)})`;
           ctx.beginPath();
-          ctx.arc(u.x + 12, u.y + 16, r * 0.85, 0, Math.PI * 2);
+          ctx.arc(u.x + 2 + 10 * fh, u.y + 2 + 14 * fh, r * (0.68 + 0.17 * fh), 0, Math.PI * 2);
           ctx.fill();
         }
 
         // Phase 3 Articulated Multi-Part 2.5D Unit Rig (Chassis + Turret + Recoiling Barrels)
         if (window.ZH_VFX && ZH_VFX.renderArticulatedUnit && team) {
           ctx.save();
-          ctx.translate(u.x, u.y);
+          ctx.translate(u.x, u.y - liftY);
           ZH_VFX.renderArticulatedUnit(ctx, u, team.faction, {
             zoom: (this.cam && this.cam.zoom) || 1,
             selected: isSel,
@@ -6071,7 +6807,7 @@ window.ZH_ENGINE = (function () {
           ctx.restore();
         } else {
           ctx.save();
-          ctx.translate(u.x, u.y);
+          ctx.translate(u.x, u.y - liftY);
           ctx.rotate(u.angle);
           ctx.fillStyle = col;
           ctx.beginPath();
@@ -6085,41 +6821,46 @@ window.ZH_ENGINE = (function () {
         // Smart Health Bar, Veterancy Chevrons, Control Group, Salvage & Unmanned Badges
         const showHp = this.showAllHealthBars || u.hp < u.maxHp || isSel || isHov;
         if (showHp) {
-          this.drawHealthBar(ctx, u.x, u.y - r - 9, r * 2.1, u.hp, u.maxHp, false);
+          this.drawHealthBar(ctx, u.x, u.y - liftY - r - 9, r * 2.1, u.hp, u.maxHp, false);
         }
 
         if (u.controlGroup !== null && u.controlGroup !== undefined) {
           ctx.fillStyle = '#38bdf8';
           ctx.font = 'bold 9px monospace';
           ctx.textAlign = 'right';
-          ctx.fillText(`#${u.controlGroup}`, u.x - r - 3, u.y + 3);
+          ctx.fillText(`#${u.controlGroup}`, u.x - r - 3, u.y - liftY + 3);
         }
 
         if (u.unmanned) {
-          this.queueLabel(u.x, u.y - r - 14, '[UNMANNED]', '#fde047', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 3);
+          this.queueLabel(u.x, u.y - liftY - r - 14, '[UNMANNED]', '#fde047', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 3);
         } else if (u.disabledTimer > 0 || u.empTimer > 0) {
-          this.queueLabel(u.x, u.y - r - 14, '⚡ EMP', '#38bdf8', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 3);
+          this.queueLabel(u.x, u.y - liftY - r - 14, '⚡ EMP', '#38bdf8', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 3);
         } else if (u.passengers && u.passengers.length > 0) {
-          this.queueLabel(u.x, u.y - r - 14, `[${u.passengers.length}/${u.def.transportCapacity}]`, '#22c55e', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 3);
-        } else if (u.maxAmmo > 0 && (isSel || isHov || u.state === 'RELOAD_AIRFIELD')) {
-          const ammoLabel = u.state === 'RELOAD_AIRFIELD' ? `REARM ${u.ammo}/${u.maxAmmo}` : `AMMO ${u.ammo}/${u.maxAmmo}`;
-          this.queueLabel(u.x, u.y - r - 14, ammoLabel, '#38bdf8', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 2);
+          this.queueLabel(u.x, u.y - liftY - r - 14, `[${u.passengers.length}/${u.def.transportCapacity}]`, '#22c55e', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 3);
+        } else if (u.maxAmmo > 0 && (isSel || isHov)) {
+          const isRearming = u.state === 'RELOAD_AIRFIELD' || (u.airState === 'PARKED' && u.ammo < u.maxAmmo);
+          const ammoLabel = isRearming
+            ? `REARM ${u.ammo}/${u.maxAmmo}`
+            : u.state === 'REARM_AIRCRAFT'
+              ? `RTB ${u.ammo}/${u.maxAmmo}`
+              : `AMMO ${u.ammo}/${u.maxAmmo}`;
+          this.queueLabel(u.x, u.y - liftY - r - 14, ammoLabel, '#38bdf8', 'rgba(8,14,24,0.85)', 'bold 9px -apple-system, monospace', 2);
         } else if (u.state === 'GUARD') {
           ctx.fillStyle = '#38bdf8';
           ctx.font = 'bold 8px monospace';
           ctx.textAlign = 'center';
-          ctx.fillText('🛡️ GUARD', u.x, u.y - r - 12);
+          ctx.fillText('🛡️ GUARD', u.x, u.y - liftY - r - 12);
         } else if (u.vetLevel > 0) {
           ctx.fillStyle = '#fde047';
           ctx.font = 'bold 10px sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText('★'.repeat(u.vetLevel), u.x, u.y - r - 12);
+          ctx.fillText('★'.repeat(u.vetLevel), u.x, u.y - liftY - r - 12);
         }
         if (u.salvageTier > 0) {
           ctx.fillStyle = '#38bdf8';
           ctx.font = 'bold 9px monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(`S${u.salvageTier}`, u.x + r + 6, u.y + 3);
+          ctx.fillText(`S${u.salvageTier}`, u.x + r + 6, u.y - liftY + 3);
         }
       }
     }
@@ -6200,7 +6941,7 @@ window.ZH_ENGINE = (function () {
         ctx.restore();
       }
 
-      // Lasers & Sparks
+      // Lasers, Pyrotechnic Fireballs, Oil Smoke & Radial Spark Showers
       for (const pt of this.particles) {
         ctx.save();
         const alpha = clamp(pt.timer / (pt.maxTimer || 0.5), 0, 1);
@@ -6212,6 +6953,48 @@ window.ZH_ENGINE = (function () {
           ctx.moveTo(pt.x1, pt.y1);
           ctx.lineTo(pt.x2, pt.y2);
           ctx.stroke();
+        } else if (pt.type === 'FLASH_RING') {
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.strokeStyle = pt.color || '#fef08a';
+          ctx.lineWidth = Math.max(1.5, 4.5 * alpha);
+          ctx.beginPath();
+          if (typeof ctx.ellipse === 'function') {
+            ctx.ellipse(pt.x, pt.y, pt.r, pt.r * 0.65, 0, 0, Math.PI * 2);
+          } else {
+            ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2);
+          }
+          ctx.stroke();
+        } else if (pt.type === 'FIREBALL_BILLOW' && typeof ctx.createRadialGradient === 'function') {
+          ctx.globalCompositeOperation = 'lighter';
+          const r = Math.max(2, pt.r || 8);
+          const fg = ctx.createRadialGradient(pt.x, pt.y, r * 0.1, pt.x, pt.y, r);
+          fg.addColorStop(0, pt.coreColor || '#fffbeb');
+          fg.addColorStop(0.45, pt.color || '#f97316');
+          fg.addColorStop(1, 'rgba(153, 27, 27, 0)');
+          ctx.fillStyle = fg;
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (pt.type === 'OIL_SMOKE') {
+          ctx.globalAlpha = alpha * 0.68;
+          ctx.fillStyle = pt.color || '#1e293b';
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, Math.max(2, pt.r || 10), 0, Math.PI * 2);
+          ctx.fill();
+        } else if (pt.type === 'SPARK_STREAK') {
+          ctx.globalCompositeOperation = 'lighter';
+          const tailX = pt.x - (pt.vx || 0) * 0.032;
+          const tailY = pt.y - (pt.vy || 0) * 0.032;
+          ctx.strokeStyle = pt.color || '#fb923c';
+          ctx.lineWidth = Math.max(1.2, pt.r || 2);
+          ctx.beginPath();
+          ctx.moveTo(tailX, tailY);
+          ctx.lineTo(pt.x, pt.y);
+          ctx.stroke();
+          ctx.fillStyle = pt.coreColor || '#fffbeb';
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, Math.max(1, (pt.r || 2) * 0.65), 0, Math.PI * 2);
+          ctx.fill();
         } else {
           ctx.fillStyle = pt.color;
           ctx.beginPath();
@@ -6498,6 +7281,7 @@ window.ZH_ENGINE = (function () {
         targetY: u.targetY,
         guardX: u.guardX,
         guardY: u.guardY,
+        resumeGuardAfterRearm: Boolean(u.resumeGuardAfterRearm),
         targetEntityId: u.targetEntity ? u.targetEntity.id : (u.targetEntityId || null),
         buildTargetId: u.buildTargetId || null,
         supplyDockId: u.supplyDockId || null,

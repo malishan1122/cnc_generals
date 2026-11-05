@@ -432,12 +432,13 @@ window.ZH_DATA = (function () {
       buildTime: 12,
       hp: 1600,
       power: -2,
-      size: 84,
+      size: 118,
       sight: 260,
+      maxAircraft: 4,
       trains: ['USA_RAPTOR', 'USA_KING_RAPTOR', 'USA_COMANCHE', 'USA_COMBAT_CHINOOK', 'USA_AURORA', 'USA_AURORA_ALPHA'],
       upgrades: ['UPG_ROCKET_PODS'],
       voiceSelect: 'Airfield flight deck cleared.',
-      description: 'Produces Raptors, King Raptors (Granger), Comanches, Combat Chinooks (Granger), and Aurora Bombers.'
+      description: 'Produces Raptors, King Raptors (Granger), Comanches, Combat Chinooks (Granger), and Aurora Bombers (Max 4 Fixed-Wing Jets).'
     },
     USA_STRATEGY_CENTER: {
       id: 'USA_STRATEGY_CENTER',
@@ -612,12 +613,13 @@ window.ZH_DATA = (function () {
       buildTime: 12,
       hp: 1650,
       power: -2,
-      size: 84,
+      size: 118,
       sight: 260,
-      trains: ['CHINA_MIG', 'CHINA_NUKE_MIG', 'CHINA_HELIX'],
+      maxAircraft: 4,
+      trains: ['CHINA_MIG', 'CHINA_J16', 'CHINA_NUKE_MIG', 'CHINA_HELIX'],
       upgrades: [],
       voiceSelect: 'PLA Airfield ready for sorties.',
-      description: 'Deploys Napalm MiG-1.44 Tactical Fighters, Gen. Tao\'s Tactical Nuke MiGs, and Heavy Helix Gunships.'
+      description: 'Deploys Napalm MiG-1.44 Tactical Fighters, J-16 Qianlong Multirole Strike Fighters, Gen. Tao\'s Tactical Nuke MiGs, and Heavy Helix Gunships (Max 4 Fixed-Wing Jets).'
     },
     CHINA_PROPAGANDA_CENTER: {
       id: 'CHINA_PROPAGANDA_CENTER',
@@ -1952,6 +1954,43 @@ window.ZH_DATA = (function () {
       voiceMove: 'Tactical fighter reporting.',
       description: 'Agile delta-wing jet fighter firing incendiary napalm missiles that create firestorms.'
     },
+    CHINA_J16: {
+      id: 'CHINA_J16',
+      faction: 'CHINA',
+      name: 'J-16 Qianlong Strike Fighter',
+      shortName: 'J-16',
+      category: 'AIRCRAFT',
+      locomotor: 'AIRCRAFT',
+      cost: 1600,
+      buildTime: 13,
+      hp: 640,
+      speed: 196,
+      radius: 18,
+      sight: 340,
+      isAir: true,
+      maxAmmo: 4,
+      reloadTime: 3.5,
+      supersonicSpeedBoost: 1.38,
+      detectsStealth: true,
+      hasPointDefenseLaser: true,
+      pdlCooldown: 1.15,
+      ability: 'EW_JAM_PULSE',
+      weapon: {
+        damage: 135,
+        range: 295,
+        cooldown: 1.25,
+        damageType: 'ARMOR_PIERCING',
+        projectileSpeed: 700,
+        projType: 'MISSILE',
+        splash: 38,
+        clearsGarrison: true,
+        antiAir: true
+      },
+      voiceSelect: 'J-16 Qianlong online — AESA radar locked.',
+      voiceMove: 'Twin WS-10B Taihang at full afterburner.',
+      voiceAttack: 'Firing PL-15 and KD-88 standoff strike!',
+      description: '4.5-Gen heavy twin-engine multirole strike fighter & SEAD electronic warfare jet (Flanker-N). Equipped with AESA radar (detects stealth), wingtip J-16D EW jamming pods (intercepts missiles & fires SEAD EMP Jamming Pulse), WS-10B supersonic boost, and 4-salvo PL-15 / KD-88 standoff missiles.'
+    },
     CHINA_NUKE_MIG: {
       id: 'CHINA_NUKE_MIG',
       faction: 'CHINA',
@@ -3004,6 +3043,17 @@ window.ZH_DATA = (function () {
       range: 55,
       targetType: 'ENEMY_VEHICLE',
       desc: 'Stealthed operative forces open an enemy vehicle hatch and permanently commandeers the vehicle for your army!'
+    },
+    EW_JAM_PULSE: {
+      id: 'EW_JAM_PULSE',
+      name: 'J-16D SEAD Electronic Warfare Pulse',
+      shortName: 'EW PULSE',
+      hotkey: 'F',
+      cooldown: 22,
+      range: 310,
+      radius: 145,
+      targetType: 'GROUND_OR_UNIT',
+      desc: 'Wingtip J-16D EW jamming pods and LD-10 anti-radiation seekers unleash a high-power AESA electromagnetic pulse that EMP-disables enemy vehicles and defense structures for 6s while dealing 95 AP anti-radiation damage!'
     }
   };
 
@@ -3020,6 +3070,7 @@ window.ZH_DATA = (function () {
     USA_RANGER: 'FLASHBANG',
     USA_MISSILE_DEFENDER: 'LASER_LOCK',
     CHINA_DRAGON_TANK: 'FLAME_WALL',
+    CHINA_J16: 'EW_JAM_PULSE',
     CHINA_OVERLORD: 'OVERLORD_SPEAKER',
     CHINA_EMPEROR_OVERLORD: 'OVERLORD_GATLING',
     GLA_JARMEN_KELL: 'PILOT_SNIPE',
@@ -3178,10 +3229,10 @@ window.ZH_DATA = (function () {
     USA_COMANCHE: '🚁', USA_COMBAT_CHINOOK: '🚁', CHINA_HELIX: '🚁',
     USA_RAPTOR: '✈', USA_KING_RAPTOR: '✈', USA_STEALTH_FIGHTER: '🛩',
     USA_AURORA: '🛫', USA_AURORA_ALPHA: '🛫',
-    CHINA_MIG: '✈', CHINA_NUKE_MIG: '☢',
+    CHINA_MIG: '✈', CHINA_J16: '🛩', CHINA_NUKE_MIG: '☢',
     // Abilities
     FLASHBANG: '💥', LASER_LOCK: '🎯', TIMED_DEMO_CHARGE: '💣', REMOTE_C4_CHARGE: '💣',
-    FLAME_WALL: '🔥', OVERLORD_SPEAKER: '📢', OVERLORD_GATLING: '🔫', OVERLORD_BUNKER: '🛡',
+    FLAME_WALL: '🔥', EW_JAM_PULSE: '⚡', OVERLORD_SPEAKER: '📢', OVERLORD_GATLING: '🔫', OVERLORD_BUNKER: '🛡',
     HELIX_NAPALM_BOMB: '🔥', PILOT_SNIPE: '🎯', HIJACK_VEHICLE: '🔓',
     DISGUISE_BOMB_TRUCK: '🎭', DEPLOY_MOBILE_HACK: '💻'
   };

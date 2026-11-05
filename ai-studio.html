@@ -1,0 +1,2014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>C&amp;C Generals: Zero Hour — AI Strategy &amp; Capability Studio</title>
+  <style>
+    :root {
+      --bg-0: #05080f;
+      --bg-1: #0b111e;
+      --bg-2: #111a2e;
+      --bg-3: #1a2642;
+      --border: #233252;
+      --border-hi: #38bdf8;
+      --text-0: #f8fafc;
+      --text-1: #cbd5e1;
+      --text-2: #94a3b8;
+      --accent: #38bdf8;
+      --amber: #f59e0b;
+      --green: #22c55e;
+      --red: #ef4444;
+      --purple: #a855f7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg-0);
+      color: var(--text-0);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      font-size: 12.5px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* Top Header Bar */
+    .studio-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      background: linear-gradient(180deg, #0f172a 0%, #090d16 100%);
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-badge {
+      background: rgba(56, 189, 248, 0.14);
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      color: var(--accent);
+      font-weight: 800;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      padding: 3px 7px;
+      border-radius: 4px;
+    }
+    .brand-title {
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      color: #f8fafc;
+    }
+    .brand-sub {
+      font-size: 11px;
+      color: var(--text-2);
+    }
+
+    .mode-tabs {
+      display: flex;
+      gap: 6px;
+      background: var(--bg-0);
+      padding: 3px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+    }
+    .mode-tab {
+      background: transparent;
+      color: var(--text-1);
+      border: 1px solid transparent;
+      padding: 6px 13px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .mode-tab:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .mode-tab.active {
+      background: rgba(56, 189, 248, 0.16);
+      color: var(--accent);
+      border-color: rgba(56, 189, 248, 0.45);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn {
+      background: var(--bg-2);
+      color: var(--text-0);
+      border: 1px solid var(--border);
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      text-decoration: none;
+      transition: all 0.12s ease;
+    }
+    .btn:hover {
+      border-color: var(--accent);
+      background: var(--bg-3);
+    }
+    .btn-primary {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: rgba(56, 189, 248, 0.55);
+      color: #e0f2fe;
+    }
+    .btn-primary:hover {
+      background: rgba(56, 189, 248, 0.28);
+    }
+    .btn-amber {
+      background: rgba(245, 158, 11, 0.18);
+      border-color: rgba(245, 158, 11, 0.55);
+      color: #fef3c7;
+    }
+    .btn-green {
+      background: rgba(34, 197, 94, 0.18);
+      border-color: rgba(34, 197, 94, 0.55);
+      color: #dcfce7;
+    }
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.45);
+      color: #fee2e2;
+    }
+
+    /* Main Workspace Layout */
+    .workspace {
+      display: none;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .workspace.active {
+      display: grid;
+    }
+    #ws-micro {
+      grid-template-columns: 310px 1fr 380px;
+    }
+    #ws-commander {
+      grid-template-columns: 350px 1fr 350px;
+    }
+    #ws-rl {
+      grid-template-columns: 340px 1fr 390px;
+    }
+
+    .panel {
+      background: var(--bg-1);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .panel-right {
+      border-right: none;
+      border-left: 1px solid var(--border);
+    }
+    .panel-header {
+      padding: 9px 12px;
+      background: rgba(15, 23, 42, 0.85);
+      border-bottom: 1px solid var(--border);
+      font-weight: 800;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-1);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .panel-body {
+      padding: 10px 12px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    /* Unit Roster & Scenario List */
+    .filter-row {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+    .filter-pill {
+      flex: 1;
+      text-align: center;
+      padding: 4px 6px;
+      border-radius: 4px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      color: var(--text-1);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .filter-pill.active {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .unit-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 250px;
+      overflow-y: auto;
+      padding-right: 2px;
+      margin-bottom: 10px;
+    }
+    .unit-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      border-radius: 5px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: all 0.1s ease;
+    }
+    .unit-row:hover {
+      border-color: #475569;
+    }
+    .unit-row.selected {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--accent);
+    }
+    .unit-row-left {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+    .faction-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .unit-name {
+      font-weight: 700;
+      color: var(--text-0);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .posture-tag {
+      font-size: 9.5px;
+      font-weight: 700;
+      padding: 2px 5px;
+      border-radius: 3px;
+      background: rgba(148, 163, 184, 0.15);
+      color: var(--text-1);
+      letter-spacing: 0.03em;
+      flex-shrink: 0;
+    }
+    .posture-tag.KITE_SKIRMISHER { background: rgba(56, 189, 248, 0.2); color: #7dd3fc; }
+    .posture-tag.HIT_AND_RUN { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
+    .posture-tag.CRUSH_ASSAULT { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+    .posture-tag.ARTILLERY_SIEGE { background: rgba(168, 85, 247, 0.2); color: #d8b4fe; }
+
+    /* Scenario Cards */
+    .scenario-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 10px;
+    }
+    .scenario-btn {
+      text-align: left;
+      padding: 7px 9px;
+      border-radius: 5px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      color: var(--text-0);
+      cursor: pointer;
+      transition: all 0.12s ease;
+    }
+    .scenario-btn:hover, .scenario-btn.active {
+      border-color: var(--amber);
+      background: rgba(245, 158, 11, 0.12);
+    }
+    .scenario-title {
+      font-weight: 700;
+      font-size: 11.5px;
+      color: #fde68a;
+      margin-bottom: 2px;
+    }
+    .scenario-desc {
+      font-size: 10.5px;
+      color: var(--text-2);
+      line-height: 1.3;
+    }
+
+    /* Center Viewport */
+    .center-stage {
+      display: flex;
+      flex-direction: column;
+      background: #060a12;
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+    }
+    .stage-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 12px;
+      background: var(--bg-1);
+      border-bottom: 1px solid var(--border);
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+      background: #070b14;
+    }
+    canvas.arena-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: crosshair;
+    }
+    .canvas-hud-overlay {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+      gap: 10px;
+    }
+    .hud-card {
+      background: rgba(9, 14, 26, 0.86);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(6px);
+      padding: 7px 11px;
+      border-radius: 6px;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    .batch-results-bar {
+      padding: 8px 12px;
+      background: rgba(15, 23, 42, 0.95);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .metric-strip {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+    }
+    .metric-label {
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-2);
+    }
+    .metric-val {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--text-0);
+    }
+
+    /* Controls & Sliders in Inspector */
+    .sub-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-0);
+      flex-shrink: 0;
+    }
+    .sub-tab {
+      flex: 1;
+      padding: 8px 6px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 11px;
+      color: var(--text-2);
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+    }
+    .sub-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      background: rgba(56, 189, 248, 0.08);
+    }
+    .section-title {
+      font-size: 10.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+      margin: 12px 0 6px 0;
+      padding-bottom: 3px;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+    }
+    .section-title:first-child {
+      margin-top: 2px;
+    }
+    .control-row {
+      margin-bottom: 8px;
+    }
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11.5px;
+      color: var(--text-1);
+      margin-bottom: 3px;
+    }
+    .control-val {
+      font-weight: 700;
+      color: #fde68a;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+      height: 5px;
+    }
+    select, input[type="number"], input[type="text"] {
+      width: 100%;
+      background: var(--bg-2);
+      color: var(--text-0);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 5px 7px;
+      font-size: 11.5px;
+    }
+    .archetype-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+    .arch-btn {
+      padding: 6px 7px;
+      border-radius: 5px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      color: var(--text-1);
+      font-size: 10.5px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: left;
+    }
+    .arch-btn.active {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.18);
+      color: #fff;
+    }
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 6px;
+      font-size: 11.5px;
+      color: var(--text-1);
+      cursor: pointer;
+    }
+    .derived-box {
+      background: var(--bg-0);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .squad-chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 5px;
+    }
+    .squad-chip {
+      font-size: 10.5px;
+      padding: 3px 6px;
+      border-radius: 4px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .squad-chip button {
+      background: none;
+      border: none;
+      color: var(--red);
+      cursor: pointer;
+      padding: 0;
+      font-weight: 800;
+    }
+    textarea.code-ledger {
+      width: 100%;
+      height: 220px;
+      background: #050811;
+      color: #93c5fd;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      resize: vertical;
+      user-select: text;
+    }
+    .toast-banner {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      background: rgba(15, 23, 42, 0.96);
+      border: 1px solid var(--accent);
+      color: #f8fafc;
+      padding: 9px 14px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      z-index: 999;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== TOP HEADER BAR ==================== -->
+  <header class="studio-header">
+    <div class="brand-group">
+      <span class="brand-badge">SAGE AI LAB</span>
+      <div>
+        <div class="brand-title">AI STRATEGY &amp; UNIT CAPABILITY STUDIO</div>
+        <div class="brand-sub">Unit Micro-Brains • Live Capability Tuning • Commander Doctrines • Headless 60Hz RL Harness</div>
+      </div>
+    </div>
+
+    <div class="mode-tabs" role="tablist">
+      <button class="mode-tab active" data-ws="ws-micro" id="tab-ws-micro">🧠 1. Unit Brain &amp; Capability Lab</button>
+      <button class="mode-tab" data-ws="ws-commander" id="tab-ws-commander">🎖️ 2. Commander War Room</button>
+      <button class="mode-tab" data-ws="ws-rl" id="tab-ws-rl">🧬 3. RL &amp; Evolution Lab</button>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn btn-green" id="btn-save-policies" title="Persist all Brain, Capability &amp; Commander edits to localStorage so the main game uses them">💾 Save to Game</button>
+      <button class="btn" id="btn-reset-all" title="Restore all units and commanders to baseline Zero Hour defaults">↺ Reset Defaults</button>
+      <a class="btn" href="index.html?studio=1">🎨 3D Unit Studio</a>
+      <a class="btn btn-primary" href="index.html">🎮 Launch Game</a>
+    </div>
+  </header>
+
+  <!-- ==================== WORKSPACE 1: UNIT BRAIN & CAPABILITY LAB ==================== -->
+  <main class="workspace active" id="ws-micro">
+    <!-- Left Column: Unit Roster + Tactical Micro Scenarios -->
+    <aside class="panel">
+      <div class="panel-header">
+        <span>Unit Roster (39 Units)</span>
+        <span id="roster-count-label" style="color:var(--accent)">ALL</span>
+      </div>
+      <div class="panel-body">
+        <div class="filter-row">
+          <div class="filter-pill active" data-faction="ALL">ALL</div>
+          <div class="filter-pill" data-faction="USA">🦅 USA</div>
+          <div class="filter-pill" data-faction="CHINA">🐉 CHINA</div>
+          <div class="filter-pill" data-faction="GLA">🦂 GLA</div>
+        </div>
+
+        <div class="unit-list" id="unit-roster-list"></div>
+
+        <div class="section-title">Tactical Micro Scenarios</div>
+        <div class="scenario-list" id="scenario-list"></div>
+
+        <div class="section-title">Arena Squad Composer</div>
+        <div style="display:flex; gap:4px; margin-bottom:6px;">
+          <button class="btn btn-primary" id="btn-add-blue" style="flex:1; justify-content:center;">+1 Blue (Team 0)</button>
+          <button class="btn btn-danger" id="btn-add-red" style="flex:1; justify-content:center;">+1 Red (Team 1)</button>
+        </div>
+        <div style="font-size:10.5px; color:var(--text-2); margin-bottom:4px;">
+          Tip: Left-click canvas to spawn selected unit for <b>Blue</b>, Right-click for <b>Red</b>.
+        </div>
+        <div>
+          <div style="font-size:10.5px; font-weight:700; color:#60a5fa;">BLUE SQUAD (TEAM 0)</div>
+          <div class="squad-chip-list" id="blue-squad-chips"></div>
+        </div>
+        <div style="margin-top:6px;">
+          <div style="font-size:10.5px; font-weight:700; color:#f87171;">RED SQUAD (TEAM 1)</div>
+          <div class="squad-chip-list" id="red-squad-chips"></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center Column: Interactive 60Hz Micro-Arena Canvas -->
+    <section class="center-stage">
+      <div class="stage-toolbar">
+        <div class="toolbar-group">
+          <button class="btn btn-primary" id="btn-play-pause">⏸ Pause</button>
+          <button class="btn" id="btn-step-tick" title="Advance exactly 1 deterministic 60Hz tick">⏭ Step 1 Tick</button>
+          <button class="btn btn-amber" id="btn-restart-arena">🔄 Restart Arena</button>
+        </div>
+
+        <div class="toolbar-group">
+          <span style="font-size:11px; color:var(--text-2);">Sim Speed:</span>
+          <button class="btn speed-btn" data-speed="0.5">0.5x</button>
+          <button class="btn speed-btn btn-primary" data-speed="1">1x</button>
+          <button class="btn speed-btn" data-speed="2">2x</button>
+          <button class="btn speed-btn" data-speed="4">4x</button>
+          <button class="btn speed-btn" data-speed="8">8x</button>
+        </div>
+
+        <div class="toolbar-group">
+          <label class="check-row" style="margin:0;">
+            <input type="checkbox" id="chk-overlay-rings" checked />
+            <span>Range &amp; Kite Rings</span>
+          </label>
+          <label class="check-row" style="margin:0;">
+            <input type="checkbox" id="chk-overlay-thoughts" checked />
+            <span>AI Thought Badges</span>
+          </label>
+          <label class="check-row" style="margin:0;">
+            <input type="checkbox" id="chk-overlay-vectors" checked />
+            <span>Target/Kite Vectors</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="canvas-wrap">
+        <canvas id="micro-canvas" class="arena-canvas"></canvas>
+        <div class="canvas-hud-overlay">
+          <div class="hud-card" id="arena-live-left">
+            <div style="font-weight:800; color:#60a5fa;">BLUE TEAM 0</div>
+            <div id="hud-blue-summary">Units: 0 • HP: 0</div>
+          </div>
+          <div class="hud-card" style="text-align:center;">
+            <div style="font-weight:800; color:var(--amber);" id="hud-sim-clock">TICK 0 • 0.0s</div>
+            <div id="hud-selected-focus" style="color:var(--text-1); font-size:10.5px;">Inspecting: USA_HUMVEE</div>
+          </div>
+          <div class="hud-card" id="arena-live-right" style="text-align:right;">
+            <div style="font-weight:800; color:#f87171;">RED TEAM 1</div>
+            <div id="hud-red-summary">Units: 0 • HP: 0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="batch-results-bar">
+        <div class="toolbar-group">
+          <button class="btn btn-amber" id="btn-run-batch">⚡ Run 20 Headless Rollouts (60Hz)</button>
+          <span style="font-size:11px; color:var(--text-2);" id="batch-status-note">Deterministic multi-seed benchmark</span>
+        </div>
+        <div class="metric-strip">
+          <div class="metric-item">
+            <span class="metric-label">Blue Win Rate</span>
+            <span class="metric-val" id="m-win-rate" style="color:var(--green);">—</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Avg RL Reward</span>
+            <span class="metric-val" id="m-avg-reward" style="color:var(--accent);">—</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Avg Blue HP Left</span>
+            <span class="metric-val" id="m-avg-hp">—</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">Avg Duration</span>
+            <span class="metric-val" id="m-avg-dur">—</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: Dual Inspector (Unit Brain + Unit Capabilities) -->
+    <aside class="panel panel-right">
+      <div class="panel-header">
+        <span id="inspector-unit-title">USA_HUMVEE</span>
+        <button class="btn" id="btn-reset-unit" style="padding:2px 7px; font-size:10.5px;">↺ Reset Unit</button>
+      </div>
+      <div class="sub-tabs">
+        <button class="sub-tab active" data-subtab="sub-brain" id="btn-sub-brain">🧠 Unit Brain (How It Thinks)</button>
+        <button class="sub-tab" data-subtab="sub-caps" id="btn-sub-caps">⚙️ Capabilities (Stats &amp; Sensors)</button>
+      </div>
+
+      <!-- SUB-TAB A: UNIT BRAIN -->
+      <div class="panel-body" id="sub-brain">
+        <div class="section-title">Engagement Posture Archetype</div>
+        <div class="archetype-grid" id="archetype-buttons"></div>
+
+        <div class="section-title">Micro-Positioning &amp; Reflex Parameters</div>
+        <div class="control-row">
+          <div class="control-label">
+            <span>Preferred Standoff Range %</span>
+            <span class="control-val" id="val-pref-range">90%</span>
+          </div>
+          <input type="range" id="rng-pref-range" min="0.50" max="0.98" step="0.02" value="0.90" />
+        </div>
+
+        <div class="control-row">
+          <div class="control-label">
+            <span>Kite Danger Trigger % of Range</span>
+            <span class="control-val" id="val-kite-danger">64%</span>
+          </div>
+          <input type="range" id="rng-kite-danger" min="0.00" max="0.85" step="0.02" value="0.64" />
+        </div>
+
+        <div class="control-row">
+          <div class="control-label">
+            <span>Self-Preservation Retreat HP %</span>
+            <span class="control-val" id="val-retreat-hp">28%</span>
+          </div>
+          <input type="range" id="rng-retreat-hp" min="0.00" max="0.65" step="0.02" value="0.28" />
+        </div>
+
+        <div class="control-row">
+          <div class="control-label">
+            <span>Focus-Fire Low-HP Targets Weight</span>
+            <span class="control-val" id="val-focus-lowhp">1.05</span>
+          </div>
+          <input type="range" id="rng-focus-lowhp" min="0.00" max="2.00" step="0.05" value="1.05" />
+        </div>
+
+        <div class="control-row">
+          <div class="control-label">
+            <span>Damage-Matrix Counter Bias</span>
+            <span class="control-val" id="val-counter-bias">0.90</span>
+          </div>
+          <input type="range" id="rng-counter-bias" min="0.00" max="2.00" step="0.05" value="0.90" />
+        </div>
+
+        <label class="check-row">
+          <input type="checkbox" id="chk-brain-dodge" checked />
+          <span>Automatically Dodge Radiation / Toxin / Flame Pools</span>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="chk-brain-ability" checked />
+          <span>Autonomously Trigger [F] Special Ability When Optimal</span>
+        </label>
+
+        <div class="section-title">Target Priority Weights (By Enemy Class)</div>
+        <div id="target-priority-sliders"></div>
+      </div>
+
+      <!-- SUB-TAB B: UNIT CAPABILITIES -->
+      <div class="panel-body" id="sub-caps" style="display:none;">
+        <div class="section-title">Chassis, Hull &amp; Sensor Envelope</div>
+        <div class="control-row">
+          <div class="control-label"><span>Max Hit Points (HP)</span><span class="control-val" id="val-cap-hp">280</span></div>
+          <input type="range" id="rng-cap-hp" min="60" max="2500" step="10" value="280" />
+        </div>
+        <div class="control-row">
+          <div class="control-label"><span>Top Speed (px/s)</span><span class="control-val" id="val-cap-speed">115</span></div>
+          <input type="range" id="rng-cap-speed" min="30" max="260" step="2" value="115" />
+        </div>
+        <div class="control-row">
+          <div class="control-label"><span>Sensor Sight Radius (px)</span><span class="control-val" id="val-cap-sight">240</span></div>
+          <input type="range" id="rng-cap-sight" min="120" max="450" step="10" value="240" />
+        </div>
+        <div class="control-row">
+          <div class="control-label"><span>Production Cost ($)</span><span class="control-val" id="val-cap-cost">700</span></div>
+          <input type="range" id="rng-cap-cost" min="100" max="3000" step="25" value="700" />
+        </div>
+
+        <div class="section-title">Locomotor Kinematics</div>
+        <div class="control-row">
+          <div class="control-label"><span>Turn Rate (deg/s)</span><span class="control-val" id="val-cap-turn">275°/s</span></div>
+          <input type="range" id="rng-cap-turn" min="60" max="540" step="5" value="275" />
+        </div>
+        <div class="control-row">
+          <div class="control-label"><span>Acceleration Response</span><span class="control-val" id="val-cap-accel">3.5x</span></div>
+          <input type="range" id="rng-cap-accel" min="1.0" max="8.0" step="0.2" value="3.5" />
+        </div>
+        <label class="check-row">
+          <input type="checkbox" id="chk-cap-stealth" />
+          <span>Passive Stealth Cloak When Not Firing</span>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="chk-cap-pdl" />
+          <span>Point-Defense Laser (Zaps Enemy Missiles)</span>
+        </label>
+
+        <div class="section-title">Primary Weapon &amp; Ballistics</div>
+        <div id="cap-weapon-section">
+          <div class="control-row">
+            <div class="control-label"><span>Weapon Damage per Shot</span><span class="control-val" id="val-cap-dmg">26</span></div>
+            <input type="range" id="rng-cap-dmg" min="4" max="600" step="2" value="26" />
+          </div>
+          <div class="control-row">
+            <div class="control-label"><span>Weapon Max Range (px)</span><span class="control-val" id="val-cap-range">195</span></div>
+            <input type="range" id="rng-cap-range" min="80" max="460" step="5" value="195" />
+          </div>
+          <div class="control-row">
+            <div class="control-label"><span>Attack Cooldown (s)</span><span class="control-val" id="val-cap-cd">0.55s</span></div>
+            <input type="range" id="rng-cap-cd" min="0.15" max="4.50" step="0.05" value="0.55" />
+          </div>
+          <div class="control-row">
+            <div class="control-label"><span>Damage Type</span></div>
+            <select id="sel-cap-dmgtype">
+              <option value="SMALL_ARMS">SMALL_ARMS (Anti-Infantry)</option>
+              <option value="SNIPER">SNIPER (Lethal vs Infantry)</option>
+              <option value="ARMOR_PIERCING">ARMOR_PIERCING (Anti-Tank/Air)</option>
+              <option value="HIGH_EXPLOSIVE">HIGH_EXPLOSIVE (Artillery/Siege)</option>
+              <option value="FLAME_TOXIN">FLAME_TOXIN (Incendiary/Bio)</option>
+            </select>
+          </div>
+          <label class="check-row" style="margin-top:6px;">
+            <input type="checkbox" id="chk-cap-antiair" />
+            <span>Can Target Aircraft (Anti-Air Capable)</span>
+          </label>
+        </div>
+
+        <div class="section-title">Derived Combat Telemetry</div>
+        <div class="derived-box" id="derived-telemetry-box"></div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ==================== WORKSPACE 2: COMMANDER WAR ROOM ==================== -->
+  <main class="workspace" id="ws-commander">
+    <!-- Left Column: Commander Doctrine Editor -->
+    <aside class="panel">
+      <div class="panel-header">
+        <span>Commander Strategy Editor</span>
+      </div>
+      <div class="panel-body">
+        <div class="control-row">
+          <div class="control-label"><span>Inspecting Commander Doctrine</span></div>
+          <select id="sel-commander-general"></select>
+        </div>
+
+        <div class="section-title">Macro Pacing &amp; Squad Allocation</div>
+        <div class="control-row">
+          <div class="control-label"><span>Primary Assault Wave Size</span><span class="control-val" id="val-cmd-wavesize">6</span></div>
+          <input type="range" id="rng-cmd-wavesize" min="3" max="15" step="1" value="6" />
+        </div>
+        <div class="control-row">
+          <div class="control-label"><span>Flanker Harvester-Raid Split %</span><span class="control-val" id="val-cmd-flank">35%</span></div>
+          <input type="range" id="rng-cmd-flank" min="0.00" max="0.75" step="0.05" value="0.35" />
+        </div>
+        <div class="control-row">
+          <div class="control-label"><span>Dynamic Counter-Composition Gain</span><span class="control-val" id="val-cmd-countergain">1.0x</span></div>
+          <input type="range" id="rng-cmd-countergain" min="0.0" max="3.0" step="0.1" value="1.0" />
+        </div>
+        <div class="control-row">
+          <div class="control-label"><span>Army Retreat HP Threshold %</span><span class="control-val" id="val-cmd-retreat">25%</span></div>
+          <input type="range" id="rng-cmd-retreat" min="0.00" max="0.50" step="0.02" value="0.25" />
+        </div>
+        <label class="check-row">
+          <input type="checkbox" id="chk-cmd-turtle" />
+          <span>Prefer Turtling &amp; Superweapon Fortification</span>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="chk-cmd-garrison" />
+          <span>Prioritize Civilian Bunker Garrison Control</span>
+        </label>
+
+        <div class="section-title">Unit Production Mix Weights</div>
+        <div id="cmd-unit-weights-list"></div>
+      </div>
+    </aside>
+
+    <!-- Center Column: Live AI vs AI Skirmish War Room -->
+    <section class="center-stage">
+      <div class="stage-toolbar">
+        <div class="toolbar-group">
+          <button class="btn btn-amber" id="btn-start-skirmish">⚔️ Launch AI vs AI Skirmish</button>
+          <button class="btn" id="btn-skirmish-speed-1">1x</button>
+          <button class="btn btn-primary" id="btn-skirmish-speed-4">4x</button>
+          <button class="btn" id="btn-skirmish-speed-12">12x</button>
+        </div>
+        <div class="toolbar-group">
+          <span style="font-size:11px; color:var(--text-2);">Blue AI:</span>
+          <select id="sel-skirmish-blue" style="width:155px;"></select>
+          <span style="font-size:11px; color:var(--text-2);">vs Red AI:</span>
+          <select id="sel-skirmish-red" style="width:155px;"></select>
+        </div>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="skirmish-canvas" class="arena-canvas"></canvas>
+        <div class="canvas-hud-overlay">
+          <div class="hud-card" id="skirmish-hud-left">Blue Commander Telemetry</div>
+          <div class="hud-card" id="skirmish-hud-right" style="text-align:right;">Red Commander Telemetry</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: 32x32 Fog-of-War Perception Grid & Macro Log -->
+    <aside class="panel panel-right">
+      <div class="panel-header">
+        <span>32×32 Commander Perception Heatmap</span>
+      </div>
+      <div class="panel-body">
+        <div style="font-size:11px; color:var(--text-2); margin-bottom:8px;">
+          Live visualization of <code style="color:var(--accent)">ZH_AI.getTeamMemory(teamId)</code>: Green cells = scouted enemy value targets, Red cells = perceived enemy threat density.
+        </div>
+        <canvas id="perception-canvas" width="320" height="320" style="width:100%; aspect-ratio:1; background:#050811; border:1px solid var(--border); border-radius:6px;"></canvas>
+
+        <div class="section-title">Dynamic Counter-Weights Snapshot</div>
+        <div id="live-counter-weights-box" style="font-size:11px; color:var(--text-1); line-height:1.5;"></div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ==================== WORKSPACE 3: RL & EVOLUTION LAB ==================== -->
+  <main class="workspace" id="ws-rl">
+    <!-- Left Column: RL / Evolution Configuration -->
+    <aside class="panel">
+      <div class="panel-header">
+        <span>(1+λ) Evolutionary RL Optimizer</span>
+      </div>
+      <div class="panel-body">
+        <div style="font-size:11.5px; color:var(--text-1); line-height:1.45; margin-bottom:10px;">
+          Run headless 60Hz rollouts to automatically evolve a unit's <b>Micro Brain</b> parameters against the active Micro-Arena scenario.
+        </div>
+
+        <div class="control-row">
+          <div class="control-label"><span>Target Unit to Optimize</span></div>
+          <select id="sel-rl-unit"></select>
+        </div>
+
+        <div class="control-row">
+          <div class="control-label"><span>Generations</span><span class="control-val" id="val-rl-gens">8</span></div>
+          <input type="range" id="rng-rl-gens" min="3" max="20" step="1" value="8" />
+        </div>
+
+        <div class="control-row">
+          <div class="control-label"><span>Candidates per Generation (λ)</span><span class="control-val" id="val-rl-pop">5</span></div>
+          <input type="range" id="rng-rl-pop" min="3" max="10" step="1" value="5" />
+        </div>
+
+        <div class="control-row">
+          <div class="control-label"><span>Mutation Step Sigma (σ)</span><span class="control-val" id="val-rl-sigma">0.18</span></div>
+          <input type="range" id="rng-rl-sigma" min="0.05" max="0.40" step="0.01" value="0.18" />
+        </div>
+
+        <button class="btn btn-green" id="btn-start-evolution" style="width:100%; justify-content:center; padding:9px; font-size:12.5px; margin-top:8px;">
+          🧬 Run Headless Evolution Now
+        </button>
+
+        <div class="section-title">Gym-Style RL API Reference</div>
+        <div style="font-size:11px; color:var(--text-2); line-height:1.5;">
+          <div>• <code style="color:#93c5fd">ZH_RL_ENV.extractObservation(engine, teamId)</code></div>
+          <div>• <code style="color:#93c5fd">ZH_RL_ENV.runHeadlessMicroEpisode(scenario, opts)</code></div>
+          <div>• <code style="color:#93c5fd">ZH_RL_ENV.runHeadlessBatch(scenario, episodes)</code></div>
+          <div>• <code style="color:#93c5fd">ZH_RL_ENV.mutateBrainCandidate(brain, sigma)</code></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center Column: Evolution Fitness Curve & Generation Log -->
+    <section class="center-stage" style="padding:14px; overflow-y:auto;">
+      <div style="font-weight:800; font-size:13px; margin-bottom:8px; color:var(--accent);">
+        Evolutionary Fitness &amp; Win-Rate Trajectory
+      </div>
+      <canvas id="rl-chart-canvas" width="680" height="240" style="width:100%; height:240px; background:#050811; border:1px solid var(--border); border-radius:6px; margin-bottom:12px;"></canvas>
+
+      <div style="font-weight:800; font-size:12px; margin-bottom:6px; color:var(--text-1);">
+        Generation-by-Generation Telemetry Log
+      </div>
+      <div id="rl-log-box" style="background:#050811; border:1px solid var(--border); border-radius:6px; padding:10px; font-family:ui-monospace, monospace; font-size:11px; color:var(--text-1); flex:1; overflow-y:auto; line-height:1.5;">
+        Ready. Select a unit and click "Run Headless Evolution Now" to evolve its Micro Brain at 60Hz.
+      </div>
+    </section>
+
+    <!-- Right Column: Antigravity Policy JSON Ledger -->
+    <aside class="panel panel-right">
+      <div class="panel-header">
+        <span>Antigravity Policy Ledger (JSON)</span>
+        <button class="btn btn-primary" id="btn-copy-json" style="padding:2px 7px; font-size:10.5px;">📋 Copy JSON</button>
+      </div>
+      <div class="panel-body">
+        <div style="font-size:11px; color:var(--text-2); margin-bottom:6px;">
+          Export or paste a policy snapshot below. You can share this JSON with Antigravity to co-design unit capabilities and AI strategies.
+        </div>
+        <textarea class="code-ledger" id="policy-json-box" spellcheck="false"></textarea>
+        <div style="display:flex; gap:6px; margin-top:8px;">
+          <button class="btn btn-primary" id="btn-refresh-json" style="flex:1; justify-content:center;">🔄 Refresh Snapshot</button>
+          <button class="btn btn-amber" id="btn-apply-json" style="flex:1; justify-content:center;">⚡ Import &amp; Apply JSON</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div class="toast-banner" id="toast-banner">Saved!</div>
+
+  <!-- Core Clean-Room Zero Hour Engine Scripts -->
+  <script src="js/rng.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/spatial.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/unit_models.js"></script>
+  <script src="js/vfx.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/ai_policies.js"></script>
+
+  <script>
+  (function () {
+    'use strict';
+
+    ZH_AI_POLICIES.initRegistries();
+
+    // Curated Micro Scenarios
+    const SCENARIOS = [
+      {
+        id: 'HUMVEE_KITE',
+        title: '1. Humvee Kiting vs. Battlemaster Column',
+        desc: '3x US Humvees + 2x Missile Defenders kiting 4x China Battlemasters at max range.',
+        focusUnit: 'USA_HUMVEE',
+        team0General: 'USA_GRANGER',
+        team1General: 'CHINA_KWAI',
+        team0: [
+          { unitId: 'USA_HUMVEE', count: 3 },
+          { unitId: 'USA_MISSILE_DEFENDER', count: 2 }
+        ],
+        team1: [
+          { unitId: 'CHINA_BATTLEMASTER', count: 4 }
+        ]
+      },
+      {
+        id: 'BUGGY_SWARM',
+        title: '2. Rocket Buggy Hit-and-Run vs. Overlord',
+        desc: '4x GLA Rocket Buggies darting in to salvo 1x China Overlord + 2x Gattling Tanks.',
+        focusUnit: 'GLA_ROCKET_BUGGY',
+        team0General: 'GLA_JUHIZ',
+        team1General: 'CHINA_KWAI',
+        team0: [
+          { unitId: 'GLA_ROCKET_BUGGY', count: 4 }
+        ],
+        team1: [
+          { unitId: 'CHINA_OVERLORD', count: 1 },
+          { unitId: 'CHINA_GATTLING_TANK', count: 2 }
+        ]
+      },
+      {
+        id: 'OVERLORD_CRUSH',
+        title: '3. Overlord Heavy Crush vs. Missile Line',
+        desc: '2x China Overlords using CRUSH_ASSAULT to flatten 8x US Missile Defenders.',
+        focusUnit: 'CHINA_OVERLORD',
+        team0General: 'CHINA_KWAI',
+        team1General: 'USA_TOWNES',
+        team0: [
+          { unitId: 'CHINA_OVERLORD', count: 2 }
+        ],
+        team1: [
+          { unitId: 'USA_MISSILE_DEFENDER', count: 8 }
+        ]
+      },
+      {
+        id: 'JARMEN_HIJACK',
+        title: '4. Jarmen Kell Pilot Snipe + Hijacker Ambush',
+        desc: '1x Jarmen Kell + 2x Hijackers + 3x RPG Troopers vs. 2x Paladin + 2x Crusader.',
+        focusUnit: 'GLA_JARMEN_KELL',
+        team0General: 'GLA_KASSAD',
+        team1General: 'USA_TOWNES',
+        team0: [
+          { unitId: 'GLA_JARMEN_KELL', count: 1 },
+          { unitId: 'GLA_HIJACKER', count: 2 },
+          { unitId: 'GLA_RPG_TROOPER', count: 3 }
+        ],
+        team1: [
+          { unitId: 'USA_PALADIN', count: 2 },
+          { unitId: 'USA_CRUSADER', count: 2 }
+        ]
+      },
+      {
+        id: 'ARTILLERY_SIEGE',
+        title: '5. Tomahawk & Crusader Combined Arms',
+        desc: '2x US Tomahawks + 3x Crusaders vs. 3x GLA Scorpion Tanks + 4x RPG Troopers.',
+        focusUnit: 'USA_TOMAHAWK',
+        team0General: 'USA_ALEXANDER',
+        team1General: 'GLA_THRAX',
+        team0: [
+          { unitId: 'USA_TOMAHAWK', count: 2 },
+          { unitId: 'USA_CRUSADER', count: 3 }
+        ],
+        team1: [
+          { unitId: 'GLA_SCORPION', count: 3 },
+          { unitId: 'GLA_RPG_TROOPER', count: 4 }
+        ]
+      }
+    ];
+
+    let activeWorkspace = 'ws-micro';
+    let selectedFactionFilter = 'ALL';
+    let selectedUnitId = 'USA_HUMVEE';
+    let activeScenario = JSON.parse(JSON.stringify(SCENARIOS[0]));
+
+    // Micro Arena Engine State
+    const microCanvas = document.getElementById('micro-canvas');
+    let microEngine = null;
+    let microPaused = false;
+    let microSpeed = 1;
+    let showRings = true;
+    let showThoughts = true;
+    let showVectors = true;
+
+    // Skirmish Engine State
+    const skirmishCanvas = document.getElementById('skirmish-canvas');
+    let skirmishEngine = null;
+    let skirmishSpeed = 4;
+
+    function showToast(msg) {
+      const el = document.getElementById('toast-banner');
+      el.textContent = msg;
+      el.style.display = 'block';
+      clearTimeout(el._timer);
+      el._timer = setTimeout(() => { el.style.display = 'none'; }, 2200);
+    }
+
+    // ========================================================================
+    // Workspace Tab Switching
+    // ========================================================================
+    document.querySelectorAll('.mode-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.mode-tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.workspace').forEach(w => w.classList.remove('active'));
+        btn.classList.add('active');
+        activeWorkspace = btn.dataset.ws;
+        document.getElementById(activeWorkspace).classList.add('active');
+        if (activeWorkspace === 'ws-micro') {
+          resizeMicroCanvas();
+        } else if (activeWorkspace === 'ws-commander') {
+          if (!skirmishEngine) initSkirmishMatch();
+          resizeSkirmishCanvas();
+        } else if (activeWorkspace === 'ws-rl') {
+          refreshJsonLedger();
+        }
+      });
+    });
+
+    // Sub-tabs (Unit Brain vs Capabilities)
+    document.querySelectorAll('.sub-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.sub-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const target = btn.dataset.subtab;
+        document.getElementById('sub-brain').style.display = target === 'sub-brain' ? 'block' : 'none';
+        document.getElementById('sub-caps').style.display = target === 'sub-caps' ? 'block' : 'none';
+      });
+    });
+
+    // ========================================================================
+    // Roster & Scenario Initialization
+    // ========================================================================
+    function renderUnitRoster() {
+      const container = document.getElementById('unit-roster-list');
+      container.innerHTML = '';
+      const entries = Object.values(ZH_DATA.UNITS).filter(
+        u => selectedFactionFilter === 'ALL' || u.faction === selectedFactionFilter
+      );
+      document.getElementById('roster-count-label').textContent = `${entries.length} UNITS`;
+
+      const fColors = { USA: '#3b82f6', CHINA: '#ef4444', GLA: '#eab308' };
+
+      for (const u of entries) {
+        const brain = ZH_AI_POLICIES.getUnitBrain(u.id);
+        const row = document.createElement('div');
+        row.className = 'unit-row' + (u.id === selectedUnitId ? ' selected' : '');
+        row.innerHTML = `
+          <div class="unit-row-left">
+            <span class="faction-dot" style="background:${fColors[u.faction] || '#94a3b8'}"></span>
+            <span class="unit-name">${u.name}</span>
+          </div>
+          <span class="posture-tag ${brain ? brain.posture : ''}">${brain ? brain.posture.replace('_', ' ') : 'STD'}</span>
+        `;
+        row.addEventListener('click', () => {
+          selectedUnitId = u.id;
+          renderUnitRoster();
+          populateUnitInspector(u.id);
+        });
+        container.appendChild(row);
+      }
+    }
+
+    document.querySelectorAll('.filter-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        selectedFactionFilter = pill.dataset.faction;
+        renderUnitRoster();
+      });
+    });
+
+    function renderScenarioList() {
+      const container = document.getElementById('scenario-list');
+      container.innerHTML = '';
+      for (const sc of SCENARIOS) {
+        const btn = document.createElement('button');
+        btn.className = 'scenario-btn' + (activeScenario.id === sc.id ? ' active' : '');
+        btn.innerHTML = `
+          <div class="scenario-title">${sc.title}</div>
+          <div class="scenario-desc">${sc.desc}</div>
+        `;
+        btn.addEventListener('click', () => {
+          activeScenario = JSON.parse(JSON.stringify(sc));
+          selectedUnitId = sc.focusUnit;
+          renderScenarioList();
+          renderUnitRoster();
+          populateUnitInspector(selectedUnitId);
+          renderSquadChips();
+          resetMicroArena();
+          runBatchEvaluation();
+        });
+        container.appendChild(btn);
+      }
+    }
+
+    function renderSquadChips() {
+      const renderSide = (list, elId) => {
+        const el = document.getElementById(elId);
+        el.innerHTML = '';
+        list.forEach((item, idx) => {
+          const def = ZH_DATA.UNITS[item.unitId];
+          const chip = document.createElement('span');
+          chip.className = 'squad-chip';
+          chip.innerHTML = `${item.count}x ${def ? def.shortName : item.unitId} <button title="Remove">×</button>`;
+          chip.querySelector('button').addEventListener('click', () => {
+            list.splice(idx, 1);
+            renderSquadChips();
+            resetMicroArena();
+          });
+          el.appendChild(chip);
+        });
+      };
+      renderSide(activeScenario.team0, 'blue-squad-chips');
+      renderSide(activeScenario.team1, 'red-squad-chips');
+    }
+
+    document.getElementById('btn-add-blue').addEventListener('click', () => {
+      const existing = activeScenario.team0.find(i => i.unitId === selectedUnitId);
+      if (existing) existing.count++;
+      else activeScenario.team0.push({ unitId: selectedUnitId, count: 1 });
+      renderSquadChips();
+      resetMicroArena();
+    });
+
+    document.getElementById('btn-add-red').addEventListener('click', () => {
+      const existing = activeScenario.team1.find(i => i.unitId === selectedUnitId);
+      if (existing) existing.count++;
+      else activeScenario.team1.push({ unitId: selectedUnitId, count: 1 });
+      renderSquadChips();
+      resetMicroArena();
+    });
+
+    // ========================================================================
+    // Unit Inspector (Brain + Capabilities)
+    // ========================================================================
+    const TARGET_CLASSES = ['INFANTRY', 'LIGHT_VEHICLE', 'TANK', 'AIRCRAFT', 'BUILDING', 'HARVESTER', 'HERO'];
+
+    function initTargetPrioritySliders() {
+      const container = document.getElementById('target-priority-sliders');
+      container.innerHTML = '';
+      for (const cls of TARGET_CLASSES) {
+        const row = document.createElement('div');
+        row.className = 'control-row';
+        row.innerHTML = `
+          <div class="control-label">
+            <span>vs. ${cls}</span>
+            <span class="control-val" id="val-tp-${cls}">1.00x</span>
+          </div>
+          <input type="range" id="rng-tp-${cls}" min="0.00" max="3.00" step="0.05" value="1.00" />
+        `;
+        const input = row.querySelector('input');
+        input.addEventListener('input', () => {
+          const val = parseFloat(input.value);
+          document.getElementById(`val-tp-${cls}`).textContent = val.toFixed(2) + 'x';
+          ZH_AI_POLICIES.updateUnitBrain(selectedUnitId, { targetPriority: { [cls]: val } });
+        });
+        container.appendChild(row);
+      }
+    }
+
+    function populateUnitInspector(unitId) {
+      document.getElementById('inspector-unit-title').textContent = unitId;
+      document.getElementById('hud-selected-focus').textContent = `Inspecting: ${unitId}`;
+
+      const brain = ZH_AI_POLICIES.getUnitBrain(unitId);
+      const caps = ZH_AI_POLICIES.getUnitCapabilities(unitId);
+      if (!brain || !caps) return;
+
+      // 1. Render Posture Archetype Buttons
+      const archContainer = document.getElementById('archetype-buttons');
+      archContainer.innerHTML = '';
+      for (const arch of Object.values(ZH_AI_POLICIES.POSTURE_ARCHETYPES)) {
+        const b = document.createElement('button');
+        b.className = 'arch-btn' + (brain.posture === arch.id ? ' active' : '');
+        b.textContent = arch.name;
+        b.title = arch.desc;
+        b.addEventListener('click', () => {
+          ZH_AI_POLICIES.applyPostureArchetype(unitId, arch.id);
+          populateUnitInspector(unitId);
+          renderUnitRoster();
+        });
+        archContainer.appendChild(b);
+      }
+
+      // 2. Brain sliders
+      const setSlider = (id, valId, val, fmt) => {
+        const el = document.getElementById(id);
+        const vEl = document.getElementById(valId);
+        if (el) el.value = val;
+        if (vEl) vEl.textContent = fmt(val);
+      };
+
+      setSlider('rng-pref-range', 'val-pref-range', brain.preferredRangeFrac, v => Math.round(v * 100) + '%');
+      setSlider('rng-kite-danger', 'val-kite-danger', brain.kiteDangerFrac, v => Math.round(v * 100) + '%');
+      setSlider('rng-retreat-hp', 'val-retreat-hp', brain.retreatHpPct, v => Math.round(v * 100) + '%');
+      setSlider('rng-focus-lowhp', 'val-focus-lowhp', brain.focusLowHpWeight, v => (+v).toFixed(2));
+      setSlider('rng-counter-bias', 'val-counter-bias', brain.counterBiasWeight, v => (+v).toFixed(2));
+
+      document.getElementById('chk-brain-dodge').checked = Boolean(brain.dodgeHazards);
+      document.getElementById('chk-brain-ability').checked = Boolean(brain.autoAbility);
+
+      for (const cls of TARGET_CLASSES) {
+        const w = (brain.targetPriority && brain.targetPriority[cls] !== undefined) ? brain.targetPriority[cls] : 1.0;
+        setSlider(`rng-tp-${cls}`, `val-tp-${cls}`, w, v => (+v).toFixed(2) + 'x');
+      }
+
+      // 3. Capabilities sliders
+      setSlider('rng-cap-hp', 'val-cap-hp', caps.hp, v => v);
+      setSlider('rng-cap-speed', 'val-cap-speed', caps.speed, v => v + ' px/s');
+      setSlider('rng-cap-sight', 'val-cap-sight', caps.sight, v => v + ' px');
+      setSlider('rng-cap-cost', 'val-cap-cost', caps.cost, v => '$' + v);
+      setSlider('rng-cap-turn', 'val-cap-turn', caps.turnRateDeg, v => Math.round(v) + '°/s');
+      setSlider('rng-cap-accel', 'val-cap-accel', caps.accelFrac, v => (+v).toFixed(1) + 'x');
+
+      document.getElementById('chk-cap-stealth').checked = Boolean(caps.stealthed);
+      document.getElementById('chk-cap-pdl').checked = Boolean(caps.pointDefenseLaser);
+
+      const wSec = document.getElementById('cap-weapon-section');
+      if (caps.weapon) {
+        wSec.style.opacity = '1';
+        setSlider('rng-cap-dmg', 'val-cap-dmg', caps.weapon.damage, v => v);
+        setSlider('rng-cap-range', 'val-cap-range', caps.weapon.range, v => v + ' px');
+        setSlider('rng-cap-cd', 'val-cap-cd', caps.weapon.cooldown, v => (+v).toFixed(2) + 's');
+        document.getElementById('sel-cap-dmgtype').value = caps.weapon.damageType || 'SMALL_ARMS';
+        document.getElementById('chk-cap-antiair').checked = Boolean(caps.weapon.antiAir);
+      } else {
+        wSec.style.opacity = '0.4';
+      }
+
+      updateDerivedTelemetryBox(caps);
+    }
+
+    function updateDerivedTelemetryBox(caps) {
+      const box = document.getElementById('derived-telemetry-box');
+      if (!caps.weapon) {
+        box.innerHTML = `<div style="grid-column:1/-1; color:var(--text-2);">Unarmed Support / Builder / Harvester Unit</div>`;
+        return;
+      }
+      const rawDps = caps.weapon.damage / Math.max(0.1, caps.weapon.cooldown);
+      const dm = (ZH_DATA.DAMAGE_MATRIX && ZH_DATA.DAMAGE_MATRIX[caps.weapon.damageType]) || { INFANTRY: 1, TANK: 1, BUILDING: 1 };
+      const dpsInf = (rawDps * (dm.INFANTRY || 1)).toFixed(1);
+      const dpsTank = (rawDps * (dm.TANK || 1)).toFixed(1);
+      const hpPer100 = ((caps.hp / Math.max(50, caps.cost)) * 100).toFixed(0);
+
+      box.innerHTML = `
+        <div class="metric-item"><span class="metric-label">Raw DPS</span><span class="metric-val" style="color:var(--accent)">${rawDps.toFixed(1)}</span></div>
+        <div class="metric-item"><span class="metric-label">HP per $100 Cost</span><span class="metric-val">${hpPer100} HP</span></div>
+        <div class="metric-item"><span class="metric-label">DPS vs Infantry</span><span class="metric-val" style="color:var(--green)">${dpsInf}</span></div>
+        <div class="metric-item"><span class="metric-label">DPS vs Tank Armor</span><span class="metric-val" style="color:var(--amber)">${dpsTank}</span></div>
+      `;
+    }
+
+    // Wire Brain Control Events
+    const bindBrainSlider = (id, valId, key, fmt) => {
+      const el = document.getElementById(id);
+      el.addEventListener('input', () => {
+        const v = parseFloat(el.value);
+        document.getElementById(valId).textContent = fmt(v);
+        ZH_AI_POLICIES.updateUnitBrain(selectedUnitId, { [key]: v });
+      });
+    };
+    bindBrainSlider('rng-pref-range', 'val-pref-range', 'preferredRangeFrac', v => Math.round(v * 100) + '%');
+    bindBrainSlider('rng-kite-danger', 'val-kite-danger', 'kiteDangerFrac', v => Math.round(v * 100) + '%');
+    bindBrainSlider('rng-retreat-hp', 'val-retreat-hp', 'retreatHpPct', v => Math.round(v * 100) + '%');
+    bindBrainSlider('rng-focus-lowhp', 'val-focus-lowhp', 'focusLowHpWeight', v => v.toFixed(2));
+    bindBrainSlider('rng-counter-bias', 'val-counter-bias', 'counterBiasWeight', v => v.toFixed(2));
+
+    document.getElementById('chk-brain-dodge').addEventListener('change', e => {
+      ZH_AI_POLICIES.updateUnitBrain(selectedUnitId, { dodgeHazards: e.target.checked });
+    });
+    document.getElementById('chk-brain-ability').addEventListener('change', e => {
+      ZH_AI_POLICIES.updateUnitBrain(selectedUnitId, { autoAbility: e.target.checked });
+    });
+
+    // Wire Capability Control Events
+    const bindCapSlider = (id, valId, patchBuilder, fmt) => {
+      const el = document.getElementById(id);
+      el.addEventListener('input', () => {
+        const v = parseFloat(el.value);
+        document.getElementById(valId).textContent = fmt(v);
+        const caps = ZH_AI_POLICIES.applyUnitCapabilityOverride(selectedUnitId, patchBuilder(v), microEngine);
+        if (caps) updateDerivedTelemetryBox(caps);
+      });
+    };
+    bindCapSlider('rng-cap-hp', 'val-cap-hp', v => ({ hp: Math.round(v) }), v => Math.round(v));
+    bindCapSlider('rng-cap-speed', 'val-cap-speed', v => ({ speed: Math.round(v) }), v => Math.round(v) + ' px/s');
+    bindCapSlider('rng-cap-sight', 'val-cap-sight', v => ({ sight: Math.round(v) }), v => Math.round(v) + ' px');
+    bindCapSlider('rng-cap-cost', 'val-cap-cost', v => ({ cost: Math.round(v) }), v => '$' + Math.round(v));
+    bindCapSlider('rng-cap-turn', 'val-cap-turn', v => ({ turnRateDeg: Math.round(v) }), v => Math.round(v) + '°/s');
+    bindCapSlider('rng-cap-accel', 'val-cap-accel', v => ({ accelFrac: v }), v => v.toFixed(1) + 'x');
+    bindCapSlider('rng-cap-dmg', 'val-cap-dmg', v => ({ weapon: { damage: Math.round(v) } }), v => Math.round(v));
+    bindCapSlider('rng-cap-range', 'val-cap-range', v => ({ weapon: { range: Math.round(v) } }), v => Math.round(v) + ' px');
+    bindCapSlider('rng-cap-cd', 'val-cap-cd', v => ({ weapon: { cooldown: v } }), v => v.toFixed(2) + 's');
+
+    document.getElementById('sel-cap-dmgtype').addEventListener('change', e => {
+      const caps = ZH_AI_POLICIES.applyUnitCapabilityOverride(selectedUnitId, { weapon: { damageType: e.target.value } }, microEngine);
+      if (caps) updateDerivedTelemetryBox(caps);
+    });
+    document.getElementById('chk-cap-antiair').addEventListener('change', e => {
+      ZH_AI_POLICIES.applyUnitCapabilityOverride(selectedUnitId, { weapon: { antiAir: e.target.checked } }, microEngine);
+    });
+    document.getElementById('chk-cap-stealth').addEventListener('change', e => {
+      ZH_AI_POLICIES.applyUnitCapabilityOverride(selectedUnitId, { stealthed: e.target.checked }, microEngine);
+    });
+    document.getElementById('chk-cap-pdl').addEventListener('change', e => {
+      ZH_AI_POLICIES.applyUnitCapabilityOverride(selectedUnitId, { pointDefenseLaser: e.target.checked }, microEngine);
+    });
+
+    document.getElementById('btn-reset-unit').addEventListener('click', () => {
+      ZH_AI_POLICIES.resetUnitBrain(selectedUnitId);
+      ZH_AI_POLICIES.resetUnitCapabilities(selectedUnitId, microEngine);
+      populateUnitInspector(selectedUnitId);
+      renderUnitRoster();
+      showToast(`Reset ${selectedUnitId} to baseline!`);
+    });
+
+    // ========================================================================
+    // Micro Arena Simulation & AI Telemetry Overlay Renderer
+    // ========================================================================
+    function resizeMicroCanvas() {
+      const rect = microCanvas.parentElement.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        microCanvas.width = Math.floor(rect.width);
+        microCanvas.height = Math.floor(rect.height);
+        if (microEngine) {
+          microEngine.cam.x = 1500 - microCanvas.width / 2;
+          microEngine.cam.y = 1500 - microCanvas.height / 2;
+        }
+      }
+    }
+
+    function resetMicroArena() {
+      resizeMicroCanvas();
+      microEngine = new window.GameEngine(microCanvas, {
+        playerGeneralId: activeScenario.team0General || 'USA_GRANGER',
+        aiGeneralId: activeScenario.team1General || 'CHINA_KWAI',
+        aiDifficulty: 'HARD',
+        skirmishMapId: 'DESERT_STORM',
+        seed: 2026
+      });
+
+      // Clear full skirmish entities to create a focused Micro Sandbox around (1500, 1500)
+      microEngine.units.length = 0;
+      microEngine.buildings.length = 0;
+      microEngine.supplyDocks.length = 0;
+      microEngine.techStructures.length = 0;
+      microEngine.garrisonBunkers.length = 0;
+      microEngine.projectiles.length = 0;
+      microEngine.hazards.length = 0;
+      if (microEngine.navGrid) microEngine.navGrid.rebuild(microEngine);
+
+      const cx = 1500;
+      const cy = 1500;
+      microEngine.cam.zoom = 1.0;
+      microEngine.cam.x = cx - microCanvas.width / 2;
+      microEngine.cam.y = cy - microCanvas.height / 2;
+
+      const spawnSquad = (list, teamId, baseX, baseY, targetX, targetY) => {
+        let idx = 0;
+        for (const item of list) {
+          const count = item.count || 1;
+          for (let c = 0; c < count; c++) {
+            const row = Math.floor(idx / 4);
+            const col = idx % 4;
+            const sx = baseX + (teamId === 0 ? -row * 46 : row * 46);
+            const sy = baseY + (col - 1.5) * 48;
+            const u = microEngine.spawnUnit(item.unitId, teamId, sx, sy);
+            if (u) {
+              u.state = 'ATTACK_MOVE';
+              u.targetX = targetX;
+              u.targetY = targetY;
+            }
+            idx++;
+          }
+        }
+      };
+
+      spawnSquad(activeScenario.team0, 0, cx - 210, cy, cx + 210, cy);
+      spawnSquad(activeScenario.team1, 1, cx + 210, cy, cx - 210, cy);
+    }
+
+    function drawMicroOverlays(ctx, engine) {
+      const camX = engine.cam.x;
+      const camY = engine.cam.y;
+      const zoom = engine.cam.zoom || 1;
+
+      ctx.save();
+      for (const u of engine.units) {
+        if (!u || u.hp <= 0) continue;
+        const sx = (u.x - camX) * zoom;
+        const sy = (u.y - camY) * zoom;
+        const brain = ZH_AI_POLICIES.getUnitBrain(u.defId);
+        const wRange = engine.getEffectiveWeaponRange(u);
+
+        // 1. Weapon Range & Kite Danger Rings (for selected unit type or all units)
+        if (showRings && wRange > 0 && (u.defId === selectedUnitId || u.team === 0)) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, wRange * zoom, 0, Math.PI * 2);
+          ctx.strokeStyle = u.team === 0 ? 'rgba(56, 189, 248, 0.22)' : 'rgba(239, 68, 68, 0.18)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.stroke();
+
+          if (brain && brain.kiteDangerFrac > 0) {
+            ctx.beginPath();
+            ctx.arc(sx, sy, wRange * brain.kiteDangerFrac * zoom, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(245, 158, 11, 0.28)';
+            ctx.stroke();
+          }
+          ctx.setLineDash([]);
+        }
+
+        // 2. AI Target / Kiting Vector Rays
+        if (showVectors && u._aiVector) {
+          const vx = (u._aiVector.x - camX) * zoom;
+          const vy = (u._aiVector.y - camY) * zoom;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(vx, vy);
+          ctx.strokeStyle = u._aiVector.color || '#fde047';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(vx, vy, 3, 0, Math.PI * 2);
+          ctx.fillStyle = u._aiVector.color || '#fde047';
+          ctx.fill();
+        }
+
+        // 3. AI Thought Badge above unit
+        if (showThoughts && u._aiThought) {
+          const label = u._aiThought;
+          ctx.font = '700 10px -apple-system, BlinkMacSystemFont, sans-serif';
+          const tw = ctx.measureText(label).width;
+          const bx = sx - tw / 2 - 5;
+          const by = sy - (u.radius || 14) * zoom - 26;
+          ctx.fillStyle = 'rgba(9, 14, 26, 0.85)';
+          ctx.strokeStyle = u.team === 0 ? 'rgba(56, 189, 248, 0.65)' : 'rgba(239, 68, 68, 0.65)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.roundRect(bx, by, tw + 10, 15, 3);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#f8fafc';
+          ctx.fillText(label, bx + 5, by + 11);
+        }
+      }
+      ctx.restore();
+    }
+
+    // Click on Micro Canvas to spawn units directly
+    microCanvas.addEventListener('mousedown', e => {
+      if (!microEngine) return;
+      const rect = microCanvas.getBoundingClientRect();
+      const wx = microEngine.cam.x + (e.clientX - rect.left) / (microEngine.cam.zoom || 1);
+      const wy = microEngine.cam.y + (e.clientY - rect.top) / (microEngine.cam.zoom || 1);
+      const teamId = e.button === 2 ? 1 : 0;
+      const u = microEngine.spawnUnit(selectedUnitId, teamId, wx, wy);
+      if (u) {
+        u.state = 'ATTACK_MOVE';
+        u.targetX = 1500;
+        u.targetY = 1500;
+      }
+    });
+    microCanvas.addEventListener('contextmenu', e => e.preventDefault());
+
+    function runBatchEvaluation() {
+      const stats = ZH_AI_POLICIES.runHeadlessBatch(activeScenario, 20);
+      document.getElementById('m-win-rate').textContent = `${stats.winRatePct}%`;
+      document.getElementById('m-avg-reward').textContent = stats.avgReward > 0 ? `+${stats.avgReward}` : `${stats.avgReward}`;
+      document.getElementById('m-avg-hp').textContent = `${stats.avgMyHpPct}%`;
+      document.getElementById('m-avg-dur').textContent = `${stats.avgDurationSec}s`;
+    }
+
+    document.getElementById('btn-run-batch').addEventListener('click', () => {
+      runBatchEvaluation();
+      showToast('Completed 20 headless 60Hz rollouts!');
+    });
+
+    document.getElementById('btn-play-pause').addEventListener('click', e => {
+      microPaused = !microPaused;
+      e.currentTarget.textContent = microPaused ? '▶ Play' : '⏸ Pause';
+    });
+    document.getElementById('btn-step-tick').addEventListener('click', () => {
+      microPaused = true;
+      document.getElementById('btn-play-pause').textContent = '▶ Play';
+      if (microEngine) microEngine.update(1 / 60);
+    });
+    document.getElementById('btn-restart-arena').addEventListener('click', () => {
+      resetMicroArena();
+    });
+
+    document.querySelectorAll('.speed-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('btn-primary'));
+        btn.classList.add('btn-primary');
+        microSpeed = parseFloat(btn.dataset.speed);
+      });
+    });
+
+    document.getElementById('chk-overlay-rings').addEventListener('change', e => { showRings = e.target.checked; });
+    document.getElementById('chk-overlay-thoughts').addEventListener('change', e => { showThoughts = e.target.checked; });
+    document.getElementById('chk-overlay-vectors').addEventListener('change', e => { showVectors = e.target.checked; });
+
+    // ========================================================================
+    // Workspace 2: Commander War Room & 32x32 Perception Heatmap
+    // ========================================================================
+    function initCommanderControls() {
+      const selGen = document.getElementById('sel-commander-general');
+      const selBlue = document.getElementById('sel-skirmish-blue');
+      const selRed = document.getElementById('sel-skirmish-red');
+      selGen.innerHTML = '';
+      selBlue.innerHTML = '';
+      selRed.innerHTML = '';
+
+      for (const g of Object.values(ZH_DATA.GENERALS)) {
+        const opt = `<option value="${g.id}">${g.badge} ${g.name} (${g.faction})</option>`;
+        selGen.insertAdjacentHTML('beforeend', opt);
+        selBlue.insertAdjacentHTML('beforeend', opt);
+        selRed.insertAdjacentHTML('beforeend', opt);
+      }
+      selBlue.value = 'USA_GRANGER';
+      selRed.value = 'CHINA_KWAI';
+
+      selGen.addEventListener('change', () => populateCommanderInspector(selGen.value));
+      populateCommanderInspector(selGen.value);
+    }
+
+    function populateCommanderInspector(genId) {
+      const strat = ZH_AI_POLICIES.getCommanderStrategy(genId);
+      if (!strat) return;
+      document.getElementById('rng-cmd-wavesize').value = strat.waveSize;
+      document.getElementById('val-cmd-wavesize').textContent = strat.waveSize;
+      document.getElementById('rng-cmd-flank').value = strat.flankRatio;
+      document.getElementById('val-cmd-flank').textContent = Math.round(strat.flankRatio * 100) + '%';
+      document.getElementById('rng-cmd-countergain').value = strat.counterAdaptationGain;
+      document.getElementById('val-cmd-countergain').textContent = strat.counterAdaptationGain.toFixed(1) + 'x';
+      document.getElementById('rng-cmd-retreat').value = strat.retreatThreshold;
+      document.getElementById('val-cmd-retreat').textContent = Math.round(strat.retreatThreshold * 100) + '%';
+
+      document.getElementById('chk-cmd-turtle').checked = Boolean(strat.preferTurtling);
+      document.getElementById('chk-cmd-garrison').checked = Boolean(strat.preferGarrisons);
+
+      const listEl = document.getElementById('cmd-unit-weights-list');
+      listEl.innerHTML = '';
+      for (const [uId, w] of Object.entries(strat.unitWeights || {})) {
+        const row = document.createElement('div');
+        row.className = 'control-row';
+        row.innerHTML = `
+          <div class="control-label"><span>${uId}</span><span class="control-val" id="val-cw-${uId}">${w}</span></div>
+          <input type="range" min="0" max="10" step="1" value="${w}" />
+        `;
+        const inp = row.querySelector('input');
+        inp.addEventListener('input', () => {
+          const nv = parseInt(inp.value, 10);
+          document.getElementById(`val-cw-${uId}`).textContent = nv;
+          ZH_AI_POLICIES.updateCommanderStrategy(genId, { unitWeights: { [uId]: nv } });
+        });
+        listEl.appendChild(row);
+      }
+    }
+
+    document.getElementById('rng-cmd-wavesize').addEventListener('input', e => {
+      const v = parseInt(e.target.value, 10);
+      document.getElementById('val-cmd-wavesize').textContent = v;
+      ZH_AI_POLICIES.updateCommanderStrategy(document.getElementById('sel-commander-general').value, { waveSize: v });
+    });
+    document.getElementById('rng-cmd-flank').addEventListener('input', e => {
+      const v = parseFloat(e.target.value);
+      document.getElementById('val-cmd-flank').textContent = Math.round(v * 100) + '%';
+      ZH_AI_POLICIES.updateCommanderStrategy(document.getElementById('sel-commander-general').value, { flankRatio: v });
+    });
+    document.getElementById('rng-cmd-countergain').addEventListener('input', e => {
+      const v = parseFloat(e.target.value);
+      document.getElementById('val-cmd-countergain').textContent = v.toFixed(1) + 'x';
+      ZH_AI_POLICIES.updateCommanderStrategy(document.getElementById('sel-commander-general').value, { counterAdaptationGain: v });
+    });
+    document.getElementById('rng-cmd-retreat').addEventListener('input', e => {
+      const v = parseFloat(e.target.value);
+      document.getElementById('val-cmd-retreat').textContent = Math.round(v * 100) + '%';
+      ZH_AI_POLICIES.updateCommanderStrategy(document.getElementById('sel-commander-general').value, { retreatThreshold: v });
+    });
+
+    function resizeSkirmishCanvas() {
+      const rect = skirmishCanvas.parentElement.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        skirmishCanvas.width = Math.floor(rect.width);
+        skirmishCanvas.height = Math.floor(rect.height);
+      }
+    }
+
+    function initSkirmishMatch() {
+      resizeSkirmishCanvas();
+      const blueGen = document.getElementById('sel-skirmish-blue').value || 'USA_GRANGER';
+      const redGen = document.getElementById('sel-skirmish-red').value || 'CHINA_KWAI';
+      skirmishEngine = new window.GameEngine(skirmishCanvas, {
+        playerGeneralId: blueGen,
+        aiGeneralId: redGen,
+        aiDifficulty: 'HARD',
+        skirmishMapId: 'DESERT_STORM',
+        seed: 4040
+      });
+      skirmishEngine.cam.zoom = 0.42;
+      skirmishEngine.cam.x = 200;
+      skirmishEngine.cam.y = 200;
+    }
+
+    document.getElementById('btn-start-skirmish').addEventListener('click', () => initSkirmishMatch());
+    document.getElementById('btn-skirmish-speed-1').addEventListener('click', () => { skirmishSpeed = 1; });
+    document.getElementById('btn-skirmish-speed-4').addEventListener('click', () => { skirmishSpeed = 4; });
+    document.getElementById('btn-skirmish-speed-12').addEventListener('click', () => { skirmishSpeed = 12; });
+
+    function renderPerceptionHeatmap() {
+      if (!skirmishEngine || !window.ZH_AI) return;
+      const pCanvas = document.getElementById('perception-canvas');
+      const pCtx = pCanvas.getContext('2d');
+      const mem = ZH_AI.getTeamMemory(1);
+      pCtx.fillStyle = '#050811';
+      pCtx.fillRect(0, 0, 320, 320);
+      if (!mem) return;
+
+      const cellPx = 10;
+      for (let i = 0; i < 1024; i++) {
+        const cx = i % 32;
+        const cy = Math.floor(i / 32);
+        const threat = mem.threatGrid[i] || 0;
+        const val = mem.valueGrid[i] || 0;
+        if (threat > 1 || val > 1) {
+          const r = Math.min(255, Math.round(threat * 0.25));
+          const g = Math.min(255, Math.round(val * 0.15));
+          pCtx.fillStyle = `rgba(${r}, ${g}, 60, 0.85)`;
+          pCtx.fillRect(cx * cellPx, cy * cellPx, cellPx - 1, cellPx - 1);
+        }
+      }
+    }
+
+    // ========================================================================
+    // Workspace 3: Evolutionary RL Optimizer & Antigravity JSON Ledger
+    // ========================================================================
+    function initRlControls() {
+      const sel = document.getElementById('sel-rl-unit');
+      sel.innerHTML = '';
+      for (const u of Object.values(ZH_DATA.UNITS)) {
+        if (!u.weapon) continue;
+        sel.insertAdjacentHTML('beforeend', `<option value="${u.id}">${u.name} (${u.id})</option>`);
+      }
+      sel.value = 'USA_HUMVEE';
+
+      document.getElementById('rng-rl-gens').addEventListener('input', e => {
+        document.getElementById('val-rl-gens').textContent = e.target.value;
+      });
+      document.getElementById('rng-rl-pop').addEventListener('input', e => {
+        document.getElementById('val-rl-pop').textContent = e.target.value;
+      });
+      document.getElementById('rng-rl-sigma').addEventListener('input', e => {
+        document.getElementById('val-rl-sigma').textContent = parseFloat(e.target.value).toFixed(2);
+      });
+    }
+
+    function drawRlChart(history) {
+      const c = document.getElementById('rl-chart-canvas');
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#050811';
+      ctx.fillRect(0, 0, c.width, c.height);
+      if (!history || history.length === 0) return;
+
+      const pad = 34;
+      const w = c.width - pad * 2;
+      const h = c.height - pad * 2;
+      const rewards = history.map(d => d.reward);
+      const minR = Math.min(...rewards, -200);
+      const maxR = Math.max(...rewards, 400);
+
+      ctx.strokeStyle = '#1e293b';
+      ctx.beginPath();
+      ctx.moveTo(pad, pad);
+      ctx.lineTo(pad, c.height - pad);
+      ctx.lineTo(c.width - pad, c.height - pad);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      history.forEach((pt, idx) => {
+        const x = pad + (idx / Math.max(1, history.length - 1)) * w;
+        const y = c.height - pad - ((pt.reward - minR) / Math.max(1, maxR - minR)) * h;
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      history.forEach((pt, idx) => {
+        const x = pad + (idx / Math.max(1, history.length - 1)) * w;
+        const y = c.height - pad - ((pt.reward - minR) / Math.max(1, maxR - minR)) * h;
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '10px monospace';
+        ctx.fillText(`G${pt.gen}: ${pt.reward} (${pt.winRate}%)`, x - 24, y - 8);
+      });
+    }
+
+    document.getElementById('btn-start-evolution').addEventListener('click', () => {
+      const unitId = document.getElementById('sel-rl-unit').value;
+      const gens = parseInt(document.getElementById('rng-rl-gens').value, 10);
+      const pop = parseInt(document.getElementById('rng-rl-pop').value, 10);
+      const sigma = parseFloat(document.getElementById('rng-rl-sigma').value);
+      const logBox = document.getElementById('rl-log-box');
+
+      let championBrain = JSON.parse(JSON.stringify(ZH_AI_POLICIES.getUnitBrain(unitId)));
+      const baseEval = ZH_AI_POLICIES.runHeadlessBatch(activeScenario, 5);
+      let bestReward = baseEval.avgReward;
+      let bestWinRate = baseEval.winRatePct;
+
+      const history = [{ gen: 0, reward: bestReward, winRate: bestWinRate }];
+      logBox.innerHTML = `[GEN 0 Baseline] ${unitId} • Avg Reward: ${bestReward} • Win Rate: ${bestWinRate}% • Posture: ${championBrain.posture}<br/>`;
+      drawRlChart(history);
+
+      let g = 1;
+      function stepGeneration() {
+        if (g > gens) {
+          ZH_AI_POLICIES.updateUnitBrain(unitId, championBrain);
+          selectedUnitId = unitId;
+          populateUnitInspector(unitId);
+          renderUnitRoster();
+          refreshJsonLedger();
+          logBox.innerHTML += `<b style="color:#22c55e">✓ Evolution Complete! Champion policy applied to ${unitId} (Reward: ${bestReward}, Win Rate: ${bestWinRate}%).</b>`;
+          showToast(`Evolved ${unitId} Brain! Win Rate: ${bestWinRate}%`);
+          return;
+        }
+
+        for (let p = 0; p < pop; p++) {
+          const cand = ZH_AI_POLICIES.mutateBrainCandidate(championBrain, sigma);
+          ZH_AI_POLICIES.updateUnitBrain(unitId, cand);
+          const ev = ZH_AI_POLICIES.runHeadlessBatch(activeScenario, 5);
+          if (ev.avgReward > bestReward) {
+            bestReward = ev.avgReward;
+            bestWinRate = ev.winRatePct;
+            championBrain = JSON.parse(JSON.stringify(cand));
+          }
+        }
+        ZH_AI_POLICIES.updateUnitBrain(unitId, championBrain);
+        history.push({ gen: g, reward: bestReward, winRate: bestWinRate });
+        logBox.innerHTML += `[GEN ${g}/${gens}] Best Reward: <b>${bestReward}</b> • Win Rate: <b>${bestWinRate}%</b> • Posture: ${championBrain.posture} (Kite=${Math.round(championBrain.kiteDangerFrac * 100)}%, Range=${Math.round(championBrain.preferredRangeFrac * 100)}%)<br/>`;
+        logBox.scrollTop = logBox.scrollHeight;
+        drawRlChart(history);
+        g++;
+        setTimeout(stepGeneration, 20);
+      }
+      setTimeout(stepGeneration, 20);
+    });
+
+    function refreshJsonLedger() {
+      const snap = ZH_AI_POLICIES.exportPolicySnapshot();
+      document.getElementById('policy-json-box').value = JSON.stringify(snap, null, 2);
+    }
+
+    document.getElementById('btn-refresh-json').addEventListener('click', refreshJsonLedger);
+    document.getElementById('btn-copy-json').addEventListener('click', () => {
+      refreshJsonLedger();
+      navigator.clipboard.writeText(document.getElementById('policy-json-box').value);
+      showToast('Copied Policy JSON to clipboard!');
+    });
+    document.getElementById('btn-apply-json').addEventListener('click', () => {
+      try {
+        const parsed = JSON.parse(document.getElementById('policy-json-box').value);
+        ZH_AI_POLICIES.importPolicySnapshot(parsed, microEngine);
+        populateUnitInspector(selectedUnitId);
+        renderUnitRoster();
+        showToast('Imported & applied Policy JSON!');
+      } catch (err) {
+        showToast('Invalid JSON: ' + err.message);
+      }
+    });
+
+    document.getElementById('btn-save-policies').addEventListener('click', () => {
+      ZH_AI_POLICIES.savePoliciesToStorage();
+      showToast('Saved all AI Brains, Capabilities & Doctrines to Game!');
+    });
+
+    document.getElementById('btn-reset-all').addEventListener('click', () => {
+      ZH_AI_POLICIES.resetAllPolicies(microEngine);
+      populateUnitInspector(selectedUnitId);
+      renderUnitRoster();
+      resetMicroArena();
+      showToast('Reset all units & commanders to factory defaults!');
+    });
+
+    // ========================================================================
+    // Main 60Hz Studio Animation Loop
+    // ========================================================================
+    function tickLoop() {
+      if (activeWorkspace === 'ws-micro' && microEngine) {
+        if (!microPaused) {
+          const steps = microSpeed >= 1 ? Math.round(microSpeed) : (microEngine.simTick % 2 === 0 ? 1 : 0);
+          for (let i = 0; i < steps; i++) {
+            microEngine.update(1 / 60);
+          }
+        }
+        microEngine.render();
+        const ctx = microCanvas.getContext('2d');
+        drawMicroOverlays(ctx, microEngine);
+
+        const blueUnits = microEngine.units.filter(u => u.team === 0 && u.hp > 0);
+        const redUnits = microEngine.units.filter(u => u.team === 1 && u.hp > 0);
+        const sumHp = arr => Math.round(arr.reduce((a, b) => a + b.hp, 0));
+        document.getElementById('hud-blue-summary').textContent = `Units: ${blueUnits.length} • HP: ${sumHp(blueUnits)}`;
+        document.getElementById('hud-red-summary').textContent = `Units: ${redUnits.length} • HP: ${sumHp(redUnits)}`;
+        document.getElementById('hud-sim-clock').textContent = `TICK ${microEngine.simTick} • ${microEngine.gameTime.toFixed(1)}s`;
+      } else if (activeWorkspace === 'ws-commander' && skirmishEngine) {
+        for (let i = 0; i < skirmishSpeed; i++) {
+          skirmishEngine.update(1 / 60);
+          if (window.ZH_AI) {
+            ZH_AI.updateTeam(skirmishEngine, 0, 1 / 60);
+            ZH_AI.updateTeam(skirmishEngine, 1, 1 / 60);
+          }
+        }
+        skirmishEngine.render();
+        renderPerceptionHeatmap();
+
+        const t0 = skirmishEngine.teams[0];
+        const t1 = skirmishEngine.teams[1];
+        const u0 = skirmishEngine.units.filter(u => u.team === 0 && u.hp > 0).length;
+        const u1 = skirmishEngine.units.filter(u => u.team === 1 && u.hp > 0).length;
+        document.getElementById('skirmish-hud-left').innerHTML = `<b>BLUE (${t0.general.name})</b><br/>Credits: $${Math.round(t0.credits)} • Units: ${u0}`;
+        document.getElementById('skirmish-hud-right').innerHTML = `<b>RED (${t1.general.name})</b><br/>Credits: $${Math.round(t1.credits)} • Units: ${u1}`;
+
+        const cw = ZH_AI.computeCounterWeights(skirmishEngine, 1, 0);
+        document.getElementById('live-counter-weights-box').innerHTML =
+          `Anti-Air Boost: <b>${cw.antiAirBoost}x</b> • Anti-Armor Boost: <b>${cw.antiArmorBoost}x</b> • Anti-Infantry Boost: <b>${cw.antiInfBoost}x</b>`;
+      }
+
+      requestAnimationFrame(tickLoop);
+    }
+
+    window.addEventListener('resize', () => {
+      if (activeWorkspace === 'ws-micro') resizeMicroCanvas();
+      else if (activeWorkspace === 'ws-commander') resizeSkirmishCanvas();
+    });
+
+    // Boot Studio
+    initTargetPrioritySliders();
+    renderUnitRoster();
+    renderScenarioList();
+    renderSquadChips();
+    populateUnitInspector(selectedUnitId);
+    initCommanderControls();
+    initRlControls();
+    resetMicroArena();
+    runBatchEvaluation();
+    requestAnimationFrame(tickLoop);
+  })();
+  </script>
+</body>
+</html>
